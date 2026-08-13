@@ -1,0 +1,12 @@
+Metadata-Version: 2.4
+Name: quant-hub
+Version: 0.1.0
+Summary: A modular quantitative finance research and trading workstation.
+Requires-Python: >=3.11
+Requires-Dist: numpy>=1.26
+Requires-Dist: pandas>=2.0
+Requires-Dist: matplotlib>=3.8
+Provides-Extra: ibkr
+Requires-Dist: ibapi; extra == "ibkr"
+Provides-Extra: dev
+Requires-Dist: pytest>=8; extra == "dev"

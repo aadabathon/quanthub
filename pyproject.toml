@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "quant-hub"
+version = "0.1.0"
+description = "A modular quantitative finance research and trading workstation."
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.26",
+    "pandas>=2.0",
+    "matplotlib>=3.8",
+]
+
+[project.optional-dependencies]
+# The IBKR TWS API is optional: the application runs fully on synthetic data
+# without it. PyPI carries an old build (9.81); the current official package
+# is distributed at https://interactivebrokers.github.io - either works for
+# the read-only functionality in v0.1.
+ibkr = ["ibapi"]
+dev = ["pytest>=8"]
+
+[project.scripts]
+quant-hub = "quant_hub.app:main"
+
+[tool.setuptools.packages.find]
+include = ["quant_hub*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

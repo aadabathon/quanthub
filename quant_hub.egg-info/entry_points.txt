@@ -1,0 +1,2 @@
+[console_scripts]
+quant-hub = quant_hub.app:main
