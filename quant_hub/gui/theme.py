@@ -42,11 +42,19 @@ PALETTE = Palette()
 
 FONT_UI = ("Segoe UI", 10)
 FONT_UI_BOLD = ("Segoe UI", 10, "bold")
+FONT_SMALL = ("Segoe UI", 9)
 FONT_TITLE = ("Segoe UI Semibold", 13)
 FONT_HEADING = ("Segoe UI Semibold", 11)
 FONT_MONO = ("Consolas", 10)
 FONT_MONO_LG = ("Consolas", 20, "bold")
 FONT_MONO_SM = ("Consolas", 9)
+
+# Spacing scale: use these instead of ad-hoc pixel values in views.
+SPACE_XS = 4
+SPACE_S = 8
+SPACE_M = 12
+SPACE_L = 16
+SPACE_XL = 24
 
 
 def apply_theme(root: tk.Tk) -> None:
@@ -74,6 +82,14 @@ def apply_theme(root: tk.Tk) -> None:
     style.configure("Page.TFrame", background=p.page)
     style.configure("Surface.TFrame", background=p.surface)
     style.configure("Nav.TFrame", background=p.surface_alt)
+    # A bordered panel: groups of controls / stats sit in these.
+    style.configure(
+        "Card.TFrame",
+        background=p.surface,
+        bordercolor=p.border,
+        borderwidth=1,
+        relief="solid",
+    )
     style.configure("TLabel", background=p.surface, foreground=p.text)
     style.configure("Title.TLabel", font=FONT_TITLE, background=p.page, foreground=p.text)
     style.configure("ViewTitle.TLabel", font=FONT_TITLE, foreground=p.text)
@@ -83,6 +99,17 @@ def apply_theme(root: tk.Tk) -> None:
     style.configure("Mono.TLabel", font=FONT_MONO)
     style.configure("Hero.TLabel", font=FONT_MONO_LG)
     style.configure("Header.TLabel", background=p.page, foreground=p.text_secondary)
+    # Uppercase card captions ("SIMULATION", "SAMPLE ESTIMATES", ...).
+    style.configure("CardHeading.TLabel", font=FONT_SMALL, foreground=p.muted)
+    # Small captions next to input fields (μ, σ, days, ...).
+    style.configure("Field.TLabel", font=FONT_SMALL, foreground=p.text_secondary)
+    # Section captions in the navigation rail ("MODELS").
+    style.configure(
+        "NavSection.TLabel",
+        font=FONT_SMALL,
+        foreground=p.muted,
+        background=p.surface_alt,
+    )
 
     # Navigation buttons ---------------------------------------------------
     style.configure(
@@ -176,6 +203,22 @@ def apply_theme(root: tk.Tk) -> None:
         foreground=[("selected", p.text)],
     )
     style.map("Treeview.Heading", background=[("active", p.surface_alt)])
+
+    # Notebook (dashboard tabs) -------------------------------------------
+    style.configure("TNotebook", background=p.surface, borderwidth=0, tabmargins=(0, 0, 0, 0))
+    style.configure(
+        "TNotebook.Tab",
+        background=p.surface_alt,
+        foreground=p.text_secondary,
+        padding=(14, 6),
+        borderwidth=0,
+        font=FONT_UI,
+    )
+    style.map(
+        "TNotebook.Tab",
+        background=[("selected", p.surface)],
+        foreground=[("selected", p.text)],
+    )
 
     # Misc -----------------------------------------------------------------
     style.configure("TSeparator", background=p.border)

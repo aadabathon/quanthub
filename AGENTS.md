@@ -20,9 +20,12 @@ codebase themselves — the standing constraint is:
   with owner approval between milestones. No large refactors without an
   explained justification first.
 - No new dependencies without an explanation of why. Currently allowed:
-  numpy, pandas, matplotlib, ibapi (optional), pytest. Explicitly banned for
-  now: React/Electron/Qt, Flask/FastAPI, databases, Docker, cloud infra, ML
-  frameworks, DI frameworks.
+  numpy, pandas, matplotlib, ibapi (optional), pytest. Local SQLite
+  persistence via the standard-library `sqlite3` is allowed and is the
+  preferred persistence mechanism for historical market data (D17).
+  Explicitly banned for now: React/Electron/Qt, Flask/FastAPI, external
+  database infrastructure (PostgreSQL/MySQL/Redis/Dockerized/cloud DBs),
+  Docker, cloud infra, ML frameworks, DI frameworks.
 
 ## Hard rules
 
@@ -31,8 +34,9 @@ codebase themselves — the standing constraint is:
    unfinished feature. Do not add reconnect-automatically behavior either.
 2. **Layering is enforced by `tests/test_layering.py`** — `data/` imports
    nothing from other layers and never tkinter/ibapi; only `broker/` may
-   import ibapi; `visualization/` and `services/` never import tkinter. If
-   your change fights the layering test, your design is wrong, not the test.
+   import ibapi; `storage/` knows only `data/` and sqlite3; `visualization/`
+   and `services/` never import tkinter. If your change fights the layering
+   test, your design is wrong, not the test.
 3. **Only the GUI thread touches Tkinter.** Background → GUI crossings go
    through `events.py` (EventBus) or `gui/task_runner.py`. Never call a
    blocking service/broker method directly from a widget callback — submit it
@@ -56,9 +60,16 @@ python -m quant_hub             # launch the app
 Smoke-testing GUI changes: build via `quant_hub.app.create_app()` (returns
 `(root, main_window)` without entering the mainloop), drive
 `main_window.show_view(name)` with `root.after`, then `root.destroy()`.
+Two gotchas: scripts outside the project dir need
+`PYTHONPATH=...\tradinghub` (the editable install is not on every
+interpreter path), and screenshots via `PIL.ImageGrab` capture whatever
+window is frontmost — call `root.attributes("-topmost", True)` and
+`root.update()` first or you photograph your own terminal.
 
 ## Repo layout note
 
-The git repo root is the *parent* directory (`Fin-SW/`), which also contains
-the separate `DCF_proj` package. This project lives entirely under
-`tradinghub/`. Commit only when the owner asks; they manage GitHub setup.
+The project lives at `C:\Users\adams\Projects\tradinghub`, which is its own
+git repository (the old parent `Fin-SW/` arrangement is history). Generated
+artifacts (`__pycache__/`, `*.pyc`, local DBs) are `.gitignore`d and are
+never project state. Commit only when the owner asks; they manage GitHub
+setup.

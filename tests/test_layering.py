@@ -3,8 +3,10 @@
 The rules the whole design rests on:
 
 * ``data``     -- pure domain. No tkinter, no ibapi, no other quant_hub layer.
-* ``services`` -- may use ``data`` and broker *interfaces*; never GUI or ibapi.
-* ``broker``   -- the only package allowed to import ibapi; never GUI.
+* ``services`` -- may use ``data``, ``storage``, and broker *interfaces*;
+                  never GUI or ibapi.
+* ``broker``   -- the only package allowed to import ibapi; never GUI/storage.
+* ``storage``  -- sqlite3 + ``data`` only; never GUI, broker, or ibapi.
 * ``visualization`` -- matplotlib only; no tkinter (embedding happens in gui).
 
 Source files are scanned as text (rather than imported) so the test needs no
@@ -21,11 +23,14 @@ PACKAGE_ROOT = Path(quant_hub.__file__).parent
 # package (relative to quant_hub) -> forbidden import roots
 RULES = {
     "data": ["tkinter", "ibapi", "quant_hub.gui", "quant_hub.broker",
-             "quant_hub.services", "quant_hub.visualization"],
+             "quant_hub.services", "quant_hub.visualization", "quant_hub.storage"],
     "services": ["tkinter", "ibapi", "quant_hub.gui", "quant_hub.visualization"],
-    "broker": ["tkinter", "quant_hub.gui", "quant_hub.visualization"],
+    "broker": ["tkinter", "quant_hub.gui", "quant_hub.visualization",
+               "quant_hub.storage"],
+    "storage": ["tkinter", "ibapi", "quant_hub.gui", "quant_hub.broker",
+                "quant_hub.services", "quant_hub.visualization"],
     "visualization": ["tkinter", "ibapi", "quant_hub.gui", "quant_hub.broker",
-                      "quant_hub.services"],
+                      "quant_hub.services", "quant_hub.storage"],
 }
 
 _IMPORT_RE = re.compile(

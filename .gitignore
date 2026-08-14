@@ -1,0 +1,15 @@
+# Python build/runtime artifacts — never project state.
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+
+# Local environments / editor state
+.venv/
+venv/
+.idea/
+.vscode/
+
+# Acquired market data lives in ~/.quant_hub/, but never commit a stray DB.
+*.db
+*.sqlite3

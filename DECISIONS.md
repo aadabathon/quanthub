@@ -108,3 +108,132 @@ across processes, unlike salted `hash()`); each symbol's full path is
 simulated from a fixed base date (2015-01-02) and sliced, so different
 requested windows return consistent overlapping prices — the vendor-like
 property research code relies on.
+
+## D15 — Dashboard = synthetic laboratory with ONE simulation state (2026-08-13)
+
+Milestone 3 rebuilt the dashboard around a single state triple
+`(GBMSimulationResult | None, SeriesAnalysis, MonteCarloSummary | None)`
+produced by one TaskRunner job — charts and stats never regenerate data
+independently, so everything on screen always describes the same draw. Two
+entry paths feed it: "Run Simulation" (custom GBM, true parameters known →
+TRUE vs ESTIMATE panel, σ reference line, Monte Carlo tab) and "Load" (any
+`DataSource` → same analytics/charts, TRUE column shows "—", no Monte
+Carlo). The Load path was deliberately kept so the IBKR/CSV future flows
+through the identical pipeline. Consequence: `SeriesAnalysis` (in
+`data/stats.py`) is the one bundle the GUI consumes; new metrics get added
+there, not in widget code.
+
+## D16 — Estimator conventions: μ̂ inverts Ito; plain-moment g1/g2 (2026-08-13)
+
+Under GBM, log returns have mean :math:`(\mu - \sigma^2/2)\Delta t`, so the
+annualized mean log return estimates the *log drift*, not μ. The dashboard's
+μ̂ therefore adds the Ito correction back: `mu_hat = r̄·p + sigma_hat²/2`
+(derivation in `data/stats.py`). Both the log-drift estimate and μ̂ are shown
+so the two "drifts" people conflate stay visibly distinct. Skewness/excess
+kurtosis use the plain moment estimators (g1 = m3/m2^1.5, g2 = m4/m2² − 3)
+rather than pandas' bias-adjusted versions, because hand-computable values
+make the tests verifiable; small-sample bias is acceptable in a diagnostics
+panel and is itself part of the estimation-uncertainty story. Annualization
+lives in one place: every stats function takes `periods_per_year` defaulting
+to `TRADING_DAYS_PER_YEAR = 252` in `data/stats.py`.
+
+## D17 — SQLite (stdlib `sqlite3`) is the approved persistence mechanism (2026-08-14)
+
+Supersedes the ambiguity in the old "no databases" rule, with explicit owner
+approval: local SQLite persistence via Python's standard-library ``sqlite3``
+is allowed and is the *preferred* store for historical market data (no new
+dependency). What stays banned is external database infrastructure —
+PostgreSQL, MySQL, Redis, Dockerized or cloud databases — unless a future
+milestone explicitly requires it. Default location: ``~/.quant_hub/
+market_data.db`` (``AppConfig.db_path``); acquired market data is a local
+asset, not source code, so it lives outside the repository.
+
+## D18 — Coverage ranges, not bar existence, drive cache decisions (2026-08-14)
+
+Weekends/holidays make "no bar stored" ambiguous, so the store keeps an
+explicit ``coverage`` table of successfully-synced date intervals per
+(instrument, source, bar size), merged into maximal disjoint ranges on
+write. Sync classification (FULL_HIT / PARTIAL_HIT / MISS) is pure interval
+arithmetic (``data/ranges.py`` + ``services/sync.py``) and every decision is
+logged. Two deliberate consequences: (a) D11 stands — fetches still end
+"now"; a leading/interior gap degrades to fetching from the gap to now,
+harmless because inserts upsert; (b) **today is never marked covered**: a
+same-day daily bar is provisional until the session closes, so a request
+ending "now" always re-fetches exactly today's bar, which refreshes it
+(verified live: the partial bar's close moved between passes). Failed
+syncs record nothing and fail the whole request — no silently partial data.
+
+## D19 — Daily bars are naive session dates; intraday deferred (2026-08-14)
+
+A daily bar's "timestamp" is an exchange session *date* — inherently
+timezone-free. Storing it as "UTC midnight" would manufacture off-by-one-day
+bugs while adding no information, so daily (and weekly/monthly) bars are
+naive dates end-to-end (matching the codebase's existing naive
+``DatetimeIndex`` convention), stored as ISO text which orders
+lexicographically = chronologically. Intraday bar sizes are *rejected* at
+the broker boundary until a future milestone defines the timezone policy
+(most likely UTC internally, converted at ingestion). Verified live: ibapi
+9.81 daily bars arrive as ``YYYYMMDD`` strings.
+
+## D20 — Cache is a decorator over a raw-bars port (2026-08-14)
+
+``CachedSource`` implements ``DataSource`` (so ``MarketService`` and the GUI
+are unchanged) but consumes a second, lower-level port: ``BarSource.
+fetch_bars(...) -> DataFrame`` (possibly empty, unvalidated). Rationale:
+``get_history -> PriceHistory`` *cannot represent* an empty response
+(``PriceHistory`` rejects emptiness by design), yet "this window had no
+sessions" is a legal, expected sync outcome. ``IBKRSource`` implements both
+ports. Validation happens exactly once, in the cache layer via
+``data/bars.py``, before persistence. Synthetic data deliberately bypasses
+the cache: generated experiments are reproducible from parameters;
+persistence is for acquired observations.
+
+## D21 — IBKR US-stock volume is stored as shares, not broker lots (2026-08-14)
+
+Live shakedown (2026-08-14, TWS 7496, ibapi 9.81) confirmed IBKR reports
+historical US-stock volume in lots of 100 (SPY daily ≈ 850k lots ≈ 85M
+shares). The IBKR adapter multiplies by 100 so the canonical frame stores
+shares — the broker-independent unit. Revisit per security type if non-STK
+contracts arrive.
+
+## D22 — Entitlement advisories are not failures; quotes stream briefly (2026-08-14)
+
+Raw-callback probe against live TWS proved: with ``reqMarketDataType(3)``,
+error 10167 is an *advisory* followed ~300ms later by delayed ticks
+(68/75/76 + tickString 88 = last-trade epoch) and a ``marketDataType=3``
+callback; 10089 (for this account, e.g. AAPL) is an advisory followed by
+*silence*; snapshot mode holds the line ~11s while streaming delivers the
+same burst in <0.6s. Therefore: quote requests stream and self-cancel,
+completing on the first usable price tick plus a short burst grace;
+advisory codes (10167/10089/10090) accumulate on the pending slot and
+never fail it or touch connection state; a priceless timeout raises
+``NoMarketDataError`` carrying the advisory text. ``quote_timeout_s`` (5s)
+bounds unavailable instruments. The old bug — failing the request on the
+advisory before the promised delayed ticks arrived — is what broke the
+watchlist.
+
+## D23 — Quote provenance is first-class; no global active source (2026-08-14)
+
+``Quote`` carries ``MarketDataMode`` (live/frozen/delayed/delayed-frozen/
+synthetic/unknown — IBKR's own market-data-type vocabulary plus ours);
+"unavailable" is deliberately NOT a mode: it is the absence of a quote,
+represented by a typed error whose reason the Markets UI shows per row.
+``MarketService.active_source`` is deleted — a process-global mutable
+source meant the Dashboard's combobox silently changed what Markets rows
+meant. Every call now names its source; pages own and display their choice
+(Markets' selector, Simulator = synthetic by construction). Tick codes and
+callback shapes still never escape ``broker/``.
+
+## D24 — Dashboard = overview; the GBM lab moved to Simulator (2026-08-14)
+
+Supersedes D15's *page placement* only: the laboratory (with its
+single-state-triple invariant, TRUE-vs-ESTIMATE panel, and Monte Carlo tab
+— all intact) now lives on a dedicated Simulator page, synthetic-only. The
+Dashboard is a deliberately *static* workstation overview (connection card,
+persisted-store summary, page guide) — the configurable-widget system,
+drag-and-drop, layout persistence, and a SettingsStore were consciously
+deferred, not forgotten. Markets keeps a persist-only "Sync 1Y history"
+button so the M4 ingestion pipeline remains reachable from the GUI until a
+richer historical-research page exists. Navigation gained titled sections
+(core pages / MODELS placeholders).
+

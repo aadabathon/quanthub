@@ -3,13 +3,14 @@
 Layering (imports may only point downward):
 
     gui/            Tkinter presentation. No math, no broker calls.
-    services/       Application facade. Orchestrates data sources.
+    services/       Application facade + market-data cache/sync.
     data/           Pure domain code (NumPy/pandas only). Usable from
                     notebooks, scripts, and tests without the GUI.
     broker/         Infrastructure. The only package that touches ibapi.
+    storage/        SQLite persistence for acquired bars (stdlib sqlite3).
 
 Cross-cutting: ``events`` (thread-safe bus), ``config`` (static settings).
 ``tests/test_layering.py`` enforces the import rules.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.4.0"

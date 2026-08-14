@@ -10,11 +10,16 @@ and fails the build on violations.
 ```
 gui/            Tkinter/ttk presentation. Renders state, forwards user intent.
                 No math, no data munging, no broker calls beyond interfaces.
-services/       Application facade. May import data/ and broker interfaces
-                (broker/base.py, broker/types.py). Never tkinter, never ibapi.
-data/           Pure domain: types, generators, statistics. NumPy/pandas only.
-                Imports nothing from any other quant_hub package.
+services/       Application facade + caching. May import data/, storage/, and
+                broker interfaces (broker/base.py, broker/types.py). Never
+                tkinter, never ibapi.
+data/           Pure domain: types, generators, statistics, validation,
+                interval math. NumPy/pandas only. Imports nothing from any
+                other quant_hub package.
 broker/         Infrastructure. The ONLY package allowed to import ibapi.
+                Never storage.
+storage/        SQLite persistence (stdlib sqlite3). Knows data/ only —
+                no broker, no GUI, no services.
 visualization/  Matplotlib figure construction. No tkinter (GUI embeds).
 ```
 
@@ -37,26 +42,48 @@ quant_hub/
 ├── config.py                  AppConfig
 ├── events.py                  EventBus (thread-safe), LogEvent, log handler
 ├── gui/
-│   ├── main_window.py         shell: header/nav/container/log + THE PUMP
+│   ├── main_window.py         shell: header/nav (titled sections)/container/
+│   │                          log + THE PUMP
 │   ├── theme.py               all colors, fonts, ttk styles (dark terminal)
 │   ├── task_runner.py         worker thread + result queue (tkinter-free)
 │   ├── views/base.py          View base class (on_show/on_hide lifecycle)
-│   ├── views/dashboard.py     symbol/range/source → chart + stats
-│   ├── views/markets.py       quote watchlist
+│   ├── views/dashboard.py     workstation overview: connection + store cards
+│   ├── views/simulator.py     the GBM/Monte Carlo laboratory (synthetic only)
+│   ├── views/markets.py       watchlist: page-owned source, provenance
+│   │                          columns, per-row unavailable reasons, history sync
 │   ├── views/placeholder.py   ONE class for all 7 future modules
-│   └── widgets/               log_panel.py, status_bar.py (ConnectionBar)
+│   └── widgets/               log_panel.py (collapsible), status_bar.py
 ├── broker/
 │   ├── base.py                Broker protocol, ConnectionState, ConnectionEvent
 │   ├── types.py               ContractSpec, HistoricalBar, BrokerError tree
-│   ├── ibkr.py                IBKRBroker: callbacks → blocking calls
-│   └── market_source.py       IBKRSource: Broker → DataSource adapter
+│   │                          (incl. InvalidContract/NoHistoricalData/Pacing)
+│   ├── ibkr.py                IBKRBroker: callbacks → blocking calls;
+│   │                          bar-size whitelist, error-code classification
+│   └── market_source.py       IBKRSource: Broker → DataSource + BarSource
+│                              adapter (volume lots→shares per D21)
 ├── data/
 │   ├── types.py               PriceHistory (validated), Quote
-│   ├── sources.py             DataSource protocol, SyntheticSource
-│   ├── synthetic.py           GBM (the quant-module exemplar)
-│   └── stats.py               ReturnStats, summary_stats, max_drawdown
-├── services/market_service.py source registry + get_history/get_quote facade
-└── visualization/charts.py    ChartStyle, create_figure, plot_price_history
+│   ├── sources.py             DataSource + BarSource protocols, SyntheticSource
+│   ├── bars.py                canonical OHLCV validation for ACQUIRED data
+│   │                          (structural raise vs row-drop + report)
+│   ├── ranges.py              DateRange (closed session-date intervals),
+│   │                          merge/subtract — coverage arithmetic
+│   ├── synthetic.py           GBM generator (the quant-module exemplar)
+│   ├── simulation.py          GBMSimulationResult, run_gbm_simulation,
+│   │                          monte_carlo_summary (closed forms documented)
+│   └── stats.py               full analytics layer: returns/CAGR/rolling vol/
+│                              drawdown/moments, GBM estimation (μ̂, σ̂),
+│                              ReturnStats + SeriesAnalysis bundles
+├── services/
+│   ├── market_service.py      source registry + get_history/get_quote facade
+│   ├── sync.py                SyncStatus/SyncPlan: FULL_HIT/PARTIAL_HIT/MISS
+│   └── cached_source.py       CachedSource: BarSource + BarStore → DataSource
+├── storage/bar_store.py       SQLite schema (instruments/bars/coverage),
+│                              upsert with counts, range queries, coverage
+└── visualization/charts.py    ChartStyle + figure-level compositions:
+                               plot_price_history, plot_lab_overview (price/
+                               drawdown/distribution/rolling vol),
+                               plot_monte_carlo (fan + terminal dist)
 ```
 
 ## Concurrency model
@@ -83,24 +110,82 @@ Two seams confine all threading:
 Why not asyncio: Tkinter has no native asyncio integration and the official
 ibapi is thread-based. Threads + queues is the smallest correct model.
 
-## Data flow
+## Page responsibilities and data flow (M6, D23/D24)
 
 ```
-Dashboard "Load" (GUI thread)
-  └► TaskRunner.submit ──────────────── (task-worker thread)
-       └► MarketService.get_history ── active DataSource
-            ├─ SyntheticSource ─ GBM path, sliced ────► PriceHistory
-            └─ IBKRSource ─ IBKRBroker.get_history ──► PriceHistory
-  ◄─ result queue ◄──────────────────────
-after-pump → on_done(history) (GUI thread)
-  ├► visualization.charts.plot_price_history → FigureCanvasTkAgg
-  └► data.stats.summary_stats → stats labels
+Dashboard  = workstation overview (connection card, persisted-store summary)
+Markets    = real market observations: explicit source, provenance columns
+Simulator  = controlled stochastic experiments (the GBM/Monte Carlo lab)
+MODELS…    = placeholders for future specialized workflows
 ```
+
+**No global source state.** ``MarketService.get_history/get_quote`` take a
+required ``source`` argument; each page owns and displays its choice
+(Markets' selector; Simulator is synthetic by construction). The Simulator
+keeps the D15 invariant: one TaskRunner job → one immutable
+``(sim, analysis, mc)`` triple → every chart/stat renders from it.
+
+**Quotes carry provenance** (``Quote.mode: MarketDataMode`` — live/frozen/
+delayed/delayed-frozen/synthetic/unknown; timestamp = trade time when the
+source provides it). Inside ``broker/ibkr.py`` (D22): quote requests
+stream briefly and self-cancel; live+delayed tick ids and the
+``marketDataType`` callback are normalized; entitlement advisories
+(10167/10089) never fail the request or touch connection state; no usable
+price within ``quote_timeout_s`` raises ``NoMarketDataError`` with the
+advisory as the reason, which Markets renders as an UNAVAILABLE row with
+the reason in its detail line. Connection health and per-instrument
+entitlement are therefore fully independent states.
+
+Historical series still flow ``MarketService → CachedSource → SeriesAnalysis
+→ charts`` (Markets' "Sync 1Y history" persists without charting; a richer
+historical-research surface is a later milestone).
 
 `PriceHistory` (sorted unique DatetimeIndex; `close` required, finite, > 0;
 OHLCV passed through when present) is the contract that makes every consumer
 source-agnostic. Validation lives there once — future models must not
 re-validate defensively.
+
+## Market-data persistence (Milestone 4)
+
+Real (IBKR) history flows through a caching pipeline that synthetic data
+deliberately bypasses (experiments are reproducible from parameters;
+persistence is for acquired observations):
+
+```
+IBKRBroker ──► IBKRSource.fetch_bars (raw frame, volume lots→shares)
+                  ▲ only when the sync plan says fetch
+CachedSource.get_history            (services/cached_source.py, task-worker)
+  1  BarStore.coverage ──► plan_sync ──► FULL_HIT | PARTIAL_HIT | MISS
+  2  fetch only missing ranges  ──► validate_ohlcv_frame (data/bars.py)
+  3  BarStore.insert_bars (upsert; inserted/replaced counted + logged)
+  4  record coverage, capped at YESTERDAY (today's bar is provisional)
+  5  BarStore.query_bars over the full window ──► PriceHistory
+```
+
+Key properties (decisions D17–D21):
+
+- **Store**: SQLite via stdlib `sqlite3`, default `~/.quant_hub/
+  market_data.db` (`AppConfig.db_path`). Three tables — `instruments`
+  (identity: symbol/sec_type/exchange/currency), `bars` (PK: instrument,
+  source, bar_size, ts; CHECK constraints on OHLC sanity; re-insert
+  replaces), `coverage` (synced date intervals, merged on write).
+  Uniqueness is database-enforced, never Python-only.
+- **Coverage ≠ bar existence**: weekends/holidays make "no bar" ambiguous,
+  so cache decisions come from explicit coverage intervals; the arithmetic
+  is pure (`data/ranges.py`, `services/sync.py`) and every decision logs as
+  full-hit / partial-hit / miss with fetch ranges and insert counts.
+- **Time**: daily/weekly/monthly bars are naive exchange session dates
+  stored as ISO text (lexicographic = chronological). Intraday bar sizes
+  are rejected at the broker boundary until a timezone policy exists (D19),
+  and the analytics annualization (252/yr) assumes daily anyway.
+- **Same-day bars**: never marked covered; a request ending "now" refetches
+  exactly today's bar each time, upserting the provisional value.
+- **Failure**: a failed fetch fails the whole request (no silently partial
+  series); `BrokerError` subclasses distinguish not-connected / invalid
+  contract / no data / pacing / timeout, and the GUI shows the message.
+- **Fetch semantics**: D11 stands — IBKR requests end "now" with a duration;
+  the adapter slices. A leading/interior coverage gap therefore fetches
+  from the gap to now; harmless, because inserts upsert and coverage merges.
 
 ## GUI conventions
 
@@ -114,9 +199,14 @@ re-validate defensively.
 - Views subclass `gui/views/base.View`, are created lazily on first
   navigation, and stay alive (state survives switching). Register new views
   in `app.py`'s `view_specs`.
-- Long-lived matplotlib: the dashboard owns ONE Figure; redraws go through
-  `plot_price_history(fig, ...)` which clears and redraws — never create a
-  new Figure/canvas per refresh.
+- Long-lived matplotlib: one Figure per embedded canvas for the life of the
+  view (the dashboard has two — Path Analysis and Monte Carlo tabs). All
+  redraws go through `visualization.charts.plot_*(fig, ...)` functions that
+  clear and repopulate in place — never create a new Figure/canvas per
+  refresh. Chart functions render only; every plotted quantity arrives
+  precomputed from `data/`.
+- Spacing uses the `SPACE_*` scale from `theme.py`; control groups sit in
+  `Card.TFrame` panels with `CardHeading.TLabel` captions.
 
 ## Quant-module conventions (follow the GBM exemplar)
 

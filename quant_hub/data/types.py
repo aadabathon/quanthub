@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from enum import Enum
 
 import numpy as np
 import pandas as pd
@@ -24,14 +25,37 @@ REQUIRED_COLUMNS = ("close",)
 OPTIONAL_COLUMNS = ("open", "high", "low", "volume")
 
 
+class MarketDataMode(Enum):
+    """Provenance/freshness of a quote — first-class metadata, not a log line.
+
+    Mirrors IBKR's market-data-type vocabulary (live/frozen/delayed/
+    delayed-frozen) plus our own sources. Deliberately NOT here:
+    "unavailable" — an unavailable quote is the *absence* of a quote and is
+    represented by a raised error carrying the reason, never by a Quote.
+    """
+
+    LIVE = "live"
+    FROZEN = "frozen"
+    DELAYED = "delayed"
+    DELAYED_FROZEN = "delayed-frozen"
+    SYNTHETIC = "synthetic"
+    UNKNOWN = "unknown"
+
+
 @dataclass(frozen=True)
 class Quote:
-    """A single observed price for a symbol at a point in time."""
+    """A single observed price for a symbol at a point in time.
+
+    ``timestamp`` is the trade time when the source provides it (IBKR does,
+    via its last-timestamp tick), else the receipt time. ``mode`` says how
+    fresh/real the price is; every source stamps it explicitly.
+    """
 
     symbol: str
     price: float
     timestamp: datetime
     source: str
+    mode: MarketDataMode = MarketDataMode.UNKNOWN
 
     def __post_init__(self) -> None:
         if not self.symbol:

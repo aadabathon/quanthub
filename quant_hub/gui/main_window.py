@@ -19,13 +19,16 @@ from quant_hub.gui.widgets.log_panel import LogPanel
 from quant_hub.gui.widgets.status_bar import ConnectionBar
 
 ViewFactory = Callable[[tk.Misc], View]
+# Navigation is grouped into titled sections (None = untitled): core pages
+# first, then the planned model modules behind a separator.
+ViewSections = list[tuple[str | None, list[tuple[str, ViewFactory]]]]
 
 
 class MainWindow(ttk.Frame):
     def __init__(
         self,
         root: tk.Tk,
-        view_specs: list[tuple[str, ViewFactory]],
+        view_sections: ViewSections,
         broker: Broker,
         tasks: TaskRunner,
         bus: EventBus,
@@ -37,7 +40,9 @@ class MainWindow(ttk.Frame):
         self._tasks = tasks
         self._pump_interval_ms = pump_interval_ms
 
-        self._factories = dict(view_specs)
+        self._factories = {
+            name: factory for _, specs in view_sections for name, factory in specs
+        }
         self._views: dict[str, View] = {}       # created lazily
         self._nav_buttons: dict[str, ttk.Button] = {}
         self._active_name: str | None = None
@@ -61,15 +66,22 @@ class MainWindow(ttk.Frame):
         nav = ttk.Frame(self, style="Nav.TFrame", width=170)
         nav.grid(row=1, column=0, sticky="ns")
         nav.grid_propagate(False)
-        for name in self._factories:
-            button = ttk.Button(
-                nav,
-                text=name,
-                style="Nav.TButton",
-                command=lambda n=name: self.show_view(n),
-            )
-            button.pack(fill="x")
-            self._nav_buttons[name] = button
+        for index, (section_title, specs) in enumerate(view_sections):
+            if index > 0:
+                ttk.Separator(nav).pack(fill="x", padx=12, pady=(10, 4))
+            if section_title:
+                ttk.Label(nav, text=section_title, style="NavSection.TLabel").pack(
+                    fill="x", padx=16, pady=(2, 2)
+                )
+            for name, _factory in specs:
+                button = ttk.Button(
+                    nav,
+                    text=name,
+                    style="Nav.TButton",
+                    command=lambda n=name: self.show_view(n),
+                )
+                button.pack(fill="x")
+                self._nav_buttons[name] = button
 
         # -- view container -----------------------------------------------
         self._container = ttk.Frame(self, style="Surface.TFrame")

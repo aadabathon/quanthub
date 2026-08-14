@@ -35,6 +35,7 @@ from __future__ import annotations
 import logging
 import math
 import threading
+import time
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -44,10 +45,16 @@ from quant_hub.broker.types import (
     BrokerUnavailableError,
     ContractSpec,
     HistoricalBar,
+    InvalidContractError,
+    NoHistoricalDataError,
+    NoMarketDataError,
     NotConnectedError,
+    PacingViolationError,
+    QuoteResult,
     RequestTimeoutError,
 )
 from quant_hub.config import AppConfig
+from quant_hub.data.types import MarketDataMode
 from quant_hub.events import EventBus
 
 if TYPE_CHECKING:
@@ -66,23 +73,55 @@ except ImportError:
 
 # TWS error codes that are informational status messages, not failures.
 _INFO_CODES = {2104, 2106, 2107, 2108, 2119, 2158}
+
+# Entitlement ADVISORIES tied to a market-data request. Verified live
+# (2026-08-14, TWS 7496): 10167 ("Displaying delayed market data") is
+# followed ~300ms later by delayed ticks — failing the request on it was
+# the bug that broke the watchlist. 10089/10090 are recorded the same way;
+# if no ticks ever follow (observed for AAPL under 10089), the request
+# times out into NoMarketDataError carrying the advisory text.
+_ADVISORY_CODES = {10167, 10089, 10090}
+# 300 = "can't find EId": our own cancel of an already-dead stream.
+_IGNORABLE_CODES = {300}
+
+# Bar sizes accepted for history requests. Deliberately the session-date
+# family only: the storage/time convention treats bars as naive session
+# dates (see data/bars.py), which holds for daily-and-coarser bars but NOT
+# for intraday, whose timezone policy is a future milestone.
+_VALID_BAR_SIZES = ("1 day", "1 week", "1 month")
 # Tick types accepted as "the last price", in order of preference.
-# 4=LAST, 68=DELAYED_LAST, 9=CLOSE, 75=DELAYED_CLOSE.
+# 4=LAST, 68=DELAYED_LAST, 9=CLOSE, 75=DELAYED_CLOSE. Live and delayed ids
+# are normalized here — nothing outside this file sees tick codes.
 _PRICE_TICK_PRIORITY = (4, 68, 9, 75)
+# tickString types carrying the last-trade time as epoch seconds:
+# 45=LAST_TIMESTAMP, 88=DELAYED_LAST_TIMESTAMP.
+_TIMESTAMP_TICKS = (45, 88)
+# marketDataType callback values -> provenance (IBKR's own vocabulary).
+_MDT_TO_MODE = {
+    1: MarketDataMode.LIVE,
+    2: MarketDataMode.FROZEN,
+    3: MarketDataMode.DELAYED,
+    4: MarketDataMode.DELAYED_FROZEN,
+}
+# After the first usable price tick, wait briefly for the rest of the same
+# burst (close/open/timestamp/mode arrive within milliseconds — observed
+# live) before reading the buffers.
+_QUOTE_BURST_GRACE_S = 0.35
 
 
 def duration_string(start: datetime, end: datetime) -> str:
     """Convert a [start, end] window to an IBKR durationStr.
 
     IBKR expresses history requests as "duration back from the end time".
-    Durations up to a year are expressed in days (inclusive of both ends);
-    longer windows use years, rounded UP so the window is always covered --
-    the ``IBKRSource`` adapter slices the returned frame back down to
+    Durations up to a year are expressed in days (inclusive of both ends,
+    so ``start == end`` is a legal single-session window: "1 D"); longer
+    windows use years, rounded UP so the window is always covered -- the
+    ``IBKRSource`` adapter slices the returned frame back down to
     [start, end], so over-fetching is harmless. Pure function, unit-tested
     without ibapi.
     """
-    if start >= end:
-        raise ValueError(f"start ({start}) must be before end ({end})")
+    if start > end:
+        raise ValueError(f"start ({start}) must not be after end ({end})")
     days = (end - start).days
     if days < 365:
         return f"{days + 1} D"
@@ -106,13 +145,21 @@ def parse_ib_date(raw: str) -> datetime:
 
 
 class _Pending:
-    """Rendezvous slot between the requesting thread and the network thread."""
+    """Rendezvous slot between the requesting thread and the network thread.
+
+    ``done`` means "something decisive happened": history complete, a usable
+    price tick, a fatal error, or connection loss. Advisory entitlement
+    notices accumulate in ``notices`` without waking the waiter.
+    """
 
     def __init__(self) -> None:
         self.done = threading.Event()
         self.bars: list[HistoricalBar] = []
         self.ticks: dict[int, float] = {}
         self.error: BrokerError | None = None
+        self.notices: list[str] = []
+        self.market_data_type: int | None = None
+        self.trade_time: float | None = None  # epoch seconds, from tickString
 
 
 if _HAVE_IBAPI:
@@ -144,9 +191,15 @@ if _HAVE_IBAPI:
         def historicalDataEnd(self, reqId: int, start: str, end: str) -> None:
             self._owner._on_request_done(reqId)
 
-        # -- market data snapshot -------------------------------------------
+        # -- market data (streaming quote, cancelled by the requester) ------
         def tickPrice(self, reqId: int, tickType: int, price: float, attrib: Any) -> None:
             self._owner._on_tick_price(reqId, tickType, price)
+
+        def tickString(self, reqId: int, tickType: int, value: str) -> None:
+            self._owner._on_tick_string(reqId, tickType, value)
+
+        def marketDataType(self, reqId: int, marketDataType: int) -> None:
+            self._owner._on_market_data_type(reqId, marketDataType)
 
         def tickSnapshotEnd(self, reqId: int) -> None:
             self._owner._on_request_done(reqId)
@@ -222,9 +275,16 @@ class IBKRBroker:
         self._set_state(ConnectionState.CONNECTED)
 
     def disconnect(self) -> None:
-        """Close the connection. Safe to call in any state."""
-        self._teardown()
+        """Close the connection. Safe to call in any state.
+
+        State is flipped *before* the socket teardown: closing the socket
+        makes ibapi fire ``connectionClosed`` on the network thread, and
+        ``_on_connection_closed`` must see the user-initiated state so a
+        deliberate disconnect is not reported as an ERROR (observed against
+        live TWS, 2026-08-14).
+        """
         self._set_state(ConnectionState.DISCONNECTED, "disconnected by user")
+        self._teardown()
 
     def _teardown(self) -> None:
         if self._app is not None:
@@ -238,15 +298,24 @@ class IBKRBroker:
 
     # --------------------------------------------------------------- requests
     def get_history(
-        self, spec: ContractSpec, start: datetime, end: datetime
+        self,
+        spec: ContractSpec,
+        start: datetime,
+        end: datetime,
+        bar_size: str = "1 day",
     ) -> list[HistoricalBar]:
-        """Fetch daily TRADES bars.
+        """Fetch TRADES bars at ``bar_size`` (daily-or-coarser only).
 
-        Limitation (v0.1): the request always ends "now" -- IBKR anchors
+        Limitation (D11): the request always ends "now" -- IBKR anchors
         history as a duration back from an end time, and pinning historical
         end times needs per-version timezone formatting. The window length is
-        honored via ``duration_string(start, end)``.
+        honored via ``duration_string(start, end)``; callers slice.
         """
+        if bar_size not in _VALID_BAR_SIZES:
+            raise ValueError(
+                f"unsupported bar size {bar_size!r}; supported: {_VALID_BAR_SIZES} "
+                "(intraday sizes need a timezone policy first)"
+            )
         req_id, pending = self._register_request()
         contract = self._to_contract(spec)
         self._app.reqHistoricalData(
@@ -254,7 +323,7 @@ class IBKRBroker:
             contract=contract,
             endDateTime="",  # now
             durationStr=duration_string(start, end),
-            barSizeSetting="1 day",
+            barSizeSetting=bar_size,
             whatToShow="TRADES",
             useRTH=1,
             formatDate=1,
@@ -264,22 +333,52 @@ class IBKRBroker:
         self._await(req_id, pending, cancel=self._app.cancelHistoricalData)
         return list(pending.bars)
 
-    def get_last_price(self, spec: ContractSpec) -> float:
-        """One-shot snapshot of the most recent price for ``spec``."""
+    def get_market_quote(self, spec: ContractSpec) -> QuoteResult:
+        """One-shot quote with provenance (live/delayed/frozen) and trade time.
+
+        Uses a brief *streaming* ``reqMktData`` (snapshot mode holds the
+        line open ~11s under delayed entitlement — observed live), completes
+        on the first usable price tick plus a short burst grace, and always
+        cancels the stream. Entitlement advisories (10167/10089) never fail
+        the request; if no price arrives within ``quote_timeout_s`` the
+        advisory text becomes the ``NoMarketDataError`` reason.
+        """
         req_id, pending = self._register_request()
-        self._app.reqMktData(req_id, self._to_contract(spec), "", True, False, [])
+        self._app.reqMktData(req_id, self._to_contract(spec), "", False, False, [])
         try:
-            self._await(req_id, pending, cancel=self._app.cancelMktData)
-        except RequestTimeoutError:
-            # Snapshots sometimes deliver ticks but never a snapshot-end;
-            # accept whatever arrived before giving up.
-            if not pending.ticks:
-                raise
-        for tick_type in _PRICE_TICK_PRIORITY:
-            price = pending.ticks.get(tick_type)
-            if price is not None and price > 0:
-                return price
-        raise BrokerError(f"no usable price ticks received for {spec.symbol}")
+            decisive = pending.done.wait(timeout=self._config.quote_timeout_s)
+            if decisive and pending.error is None:
+                # Let the rest of the tick burst (close/timestamp/mode) land.
+                time.sleep(_QUOTE_BURST_GRACE_S)
+            try:
+                self._app.cancelMktData(req_id)
+            except Exception:
+                _logger.debug("cancelMktData failed for %d", req_id, exc_info=True)
+            if pending.error is not None:
+                raise pending.error
+
+            price = None
+            for tick_type in _PRICE_TICK_PRIORITY:
+                candidate = pending.ticks.get(tick_type)
+                if candidate is not None and candidate > 0:
+                    price = candidate
+                    break
+            if price is None:
+                reason = pending.notices[-1] if pending.notices else (
+                    f"no ticks within {self._config.quote_timeout_s:.0f}s"
+                )
+                raise NoMarketDataError(f"no market data for {spec.symbol}: {reason}")
+
+            mode = _MDT_TO_MODE.get(pending.market_data_type, MarketDataMode.UNKNOWN)
+            at = (
+                datetime.fromtimestamp(pending.trade_time)
+                if pending.trade_time
+                else datetime.now()
+            )
+            return QuoteResult(price=price, mode=mode, at=at)
+        finally:
+            with self._lock:
+                self._pending.pop(req_id, None)
 
     # ---------------------------------------------------------- request plumbing
     def _register_request(self) -> tuple[int, _Pending]:
@@ -340,14 +439,42 @@ class IBKRBroker:
         if was_connected:
             self._set_state(ConnectionState.ERROR, "connection closed by TWS")
 
+    @staticmethod
+    def _classify_error(code: int, message: str) -> BrokerError:
+        """Map TWS error codes to the typed error tree (best effort).
+
+        Code 162 is overloaded by TWS: it covers both "no data for the
+        query" and pacing violations, distinguishable only by message text.
+        """
+        text = f"IBKR error {code}: {message}"
+        lowered = message.lower()
+        if code == 200:
+            return InvalidContractError(text)
+        if code == 162:
+            if "pacing" in lowered:
+                return PacingViolationError(text)
+            return NoHistoricalDataError(text)
+        if code == 420:
+            return PacingViolationError(text)
+        return BrokerError(text)
+
     def _on_error(self, req_id: int, code: int, message: str) -> None:
         if code in _INFO_CODES:
             _logger.info("IBKR status %d: %s", code, message)
             return
+        if code in _IGNORABLE_CODES:
+            _logger.debug("IBKR %d (reqId=%d): %s", code, req_id, message)
+            return
         with self._lock:
             pending = self._pending.get(req_id)
         if pending is not None:
-            pending.error = BrokerError(f"IBKR error {code}: {message}")
+            if code in _ADVISORY_CODES:
+                # Entitlement notice, NOT a failure: delayed ticks may still
+                # follow. Never touches connection state.
+                pending.notices.append(message)
+                _logger.info("IBKR advisory %d (reqId=%d): %s", code, req_id, message)
+                return
+            pending.error = self._classify_error(code, message)
             pending.done.set()
             return
         # Errors not tied to a request: connectivity problems, etc.
@@ -380,6 +507,25 @@ class IBKRBroker:
             pending = self._pending.get(req_id)
         if pending is not None and price > 0:
             pending.ticks[tick_type] = float(price)
+            if tick_type in _PRICE_TICK_PRIORITY:
+                pending.done.set()  # a usable price arrived: wake the waiter
+
+    def _on_tick_string(self, req_id: int, tick_type: int, value: str) -> None:
+        if tick_type not in _TIMESTAMP_TICKS:
+            return
+        with self._lock:
+            pending = self._pending.get(req_id)
+        if pending is not None:
+            try:
+                pending.trade_time = float(value)
+            except (TypeError, ValueError):
+                _logger.debug("unparseable timestamp tick %r", value)
+
+    def _on_market_data_type(self, req_id: int, market_data_type: int) -> None:
+        with self._lock:
+            pending = self._pending.get(req_id)
+        if pending is not None:
+            pending.market_data_type = market_data_type
 
     def _on_request_done(self, req_id: int) -> None:
         with self._lock:

@@ -17,18 +17,45 @@ owner before implementation begins.
   (chart + return stats), quote watchlist, read-only IBKR connectivity
   (connect/disconnect/daily history/snapshot), 68 tests incl. layering
   enforcement. See [CURRENT_STATE.md](CURRENT_STATE.md).
+- **v0.2 — Synthetic laboratory (Milestone 3)** (2026-08-13): full analytics
+  layer in `data/stats.py` (simple/log returns, CAGR, rolling vol, drawdown,
+  moments, GBM μ̂/σ̂ estimation), `data/simulation.py` (one-call GBM
+  experiments + Monte Carlo terminal stats vs closed forms), reusable chart
+  compositions (path/drawdown/distribution/rolling-vol overview; MC fan +
+  terminal distribution), dashboard rebuilt as an interactive GBM lab with
+  TRUE-vs-ESTIMATE diagnostics, card-based control system, tabbed charts.
+  114 tests. Decisions D15–D16.
+- **v0.3 — IBKR ingestion + persistence (Milestone 4)** (2026-08-14):
+  IBKR → validation (`data/bars.py`) → SQLite (`storage/bar_store.py`:
+  instruments/bars/coverage, DB-enforced uniqueness) → coverage-based
+  incremental sync (`services/sync.py`, FULL_HIT/PARTIAL_HIT/MISS logged) →
+  `CachedSource` behind the unchanged `DataSource` protocol. **First live
+  TWS contact passed** (port 7496, read-only): SPY daily bars fetched,
+  persisted, and rendered through the existing dashboard; relaunch serves
+  from disk. Volume lots→shares; typed IBKR errors; 210 tests. D17–D21.
+
+- **v0.4 — Product architecture + quote provenance (Milestone 6, reduced)**
+  (2026-08-14): Dashboard/Markets/Simulator responsibility split (D24);
+  `MarketService.active_source` deleted — sources are explicit per call
+  (D23); IBKR quote path fixed live: entitlement advisories no longer fail
+  requests, delayed ticks + `marketDataType` normalize into
+  `Quote.mode: MarketDataMode`, unavailable = typed error with the TWS
+  reason shown per row (D22); nav sections, collapsible log. 223 tests.
+  Deferred consciously: dashboard widget framework/persistence,
+  SettingsStore, watchlist persistence, Markets historical detail pane.
 
 ## Near-term candidates (order decided with the owner)
 
-- **IBKR shakedown** — first live test against paper TWS (port 7497): connect,
-  pull SPY history into the dashboard, snapshot quotes; fix whatever the old
-  9.81 ibapi build surfaces. Small, high-value, de-risks everything broker-shaped.
 - **First real model module** (creates `models/`, per D6): likely **GARCH(1,1)**
   (fits the synthetic-validation story: simulate → fit → recover parameters)
   or **Kalman filtering** (local-level/trend on prices). Full math derivation
-  first, following the GBM exemplar conventions.
+  first, following the GBM exemplar conventions. Can now validate on both
+  synthetic worlds and real persisted SPY history.
 - **Synthetic-data expansion** — mean-reverting (OU), correlated assets,
   regime-switching generators. These feed model validation before real data.
+- **Pinned historical end-times** (lifts D11) — makes backfill/interior-gap
+  fetches minimal instead of gap-to-now; prerequisite for deep backfills
+  without over-fetch.
 
 ## Later (unordered)
 
@@ -38,13 +65,13 @@ owner before implementation begins.
 - Portfolio analytics: CAGR/geometric-growth optimization, Kelly-style
   sizing, risk metrics beyond drawdown.
 - Strategy research + backtesting engine (consumes the same `PriceHistory`
-  and future model outputs; no GUI coupling).
-- Caching/local persistence of market data (a `CachedSource` behind the same
-  `DataSource` protocol — this is why the protocol exists).
+  and future model outputs; no GUI coupling — the SQLite store now provides
+  its reproducible data foundation).
+- Frequency-aware annualization in `data/stats.py`, then expose the already-
+  plumbed weekly/monthly (and eventually intraday, per D19) bar sizes.
 - Paper trading; execution only after that, as its own guarded design phase.
 - Streaming (non-snapshot) market data via the broker's existing
   callback-confinement pattern.
-- Pinned historical end-times for IBKR requests (lifts D11).
 - Possible web deployment of selected research tools (explicitly out of scope
   until the owner raises it).
 

@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 
 from quant_hub.data.synthetic import GeometricBrownianMotion
-from quant_hub.data.types import PriceHistory, Quote
+from quant_hub.data.types import MarketDataMode, PriceHistory, Quote
 
 
 @runtime_checkable
@@ -32,6 +32,27 @@ class DataSource(Protocol):
 
     def get_quote(self, symbol: str) -> Quote:
         """Return the most recent available price. Raises on failure."""
+        ...
+
+
+@runtime_checkable
+class BarSource(Protocol):
+    """A provider of *raw* historical bars, one level below ``DataSource``.
+
+    ``get_history`` promises a validated, non-empty ``PriceHistory`` — which
+    is the right contract for consumers but cannot express "the window
+    contained no sessions" (a weekend, a holiday), a perfectly legal outcome
+    while synchronizing a cache. ``fetch_bars`` therefore returns a plain
+    OHLCV frame, possibly empty and *not yet validated*; the caching layer
+    validates it once (``data/bars.py``) before persisting.
+    """
+
+    name: str
+
+    def fetch_bars(
+        self, symbol: str, start: datetime, end: datetime, bar_size: str
+    ) -> pd.DataFrame:
+        """Raw bars covering [start, end]; may be empty. Raises on failure."""
         ...
 
 
@@ -92,4 +113,5 @@ class SyntheticSource:
             price=float(history.closes.iloc[-1]),
             timestamp=history.end,
             source=self.name,
+            mode=MarketDataMode.SYNTHETIC,
         )

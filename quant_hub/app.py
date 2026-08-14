@@ -16,12 +16,15 @@ from quant_hub.broker.market_source import IBKRSource
 from quant_hub.config import AppConfig
 from quant_hub.data.sources import SyntheticSource
 from quant_hub.events import EventBus, EventBusLogHandler
+from quant_hub.services.cached_source import CachedSource
+from quant_hub.storage.bar_store import BarStore
 from quant_hub.gui.main_window import MainWindow
 from quant_hub.gui.task_runner import TaskRunner
 from quant_hub.gui.theme import apply_theme
 from quant_hub.gui.views.dashboard import DashboardView
 from quant_hub.gui.views.markets import MarketsView
 from quant_hub.gui.views.placeholder import PlaceholderView
+from quant_hub.gui.views.simulator import SimulatorView
 from quant_hub.services.market_service import MarketService
 
 _logger = logging.getLogger(__name__)
@@ -51,6 +54,11 @@ def _setup_logging(bus: EventBus) -> None:
     bus_handler.setFormatter(logging.Formatter("%(message)s"))
     root_logger.addHandler(bus_handler)
 
+    # ibapi's own loggers narrate every request/response at INFO; that
+    # belongs in a wire trace, not the GUI log panel (observed against live
+    # TWS, 2026-08-14). Our broker module logs the meaningful events itself.
+    logging.getLogger("ibapi").setLevel(logging.WARNING)
+
 
 def create_app(config: AppConfig | None = None) -> tuple[tk.Tk, MainWindow]:
     """Build and wire the full application without starting the event loop.
@@ -63,9 +71,13 @@ def create_app(config: AppConfig | None = None) -> tuple[tk.Tk, MainWindow]:
     _setup_logging(bus)
 
     broker = IBKRBroker(config, bus)
+    store = BarStore(config.db_path)
+    # IBKR is wrapped in the cache; synthetic stays direct (generated
+    # experiments are reproducible from their parameters — persistence is
+    # for acquired observations only). No active source: every caller names
+    # its source explicitly (D23).
     market_service = MarketService(
-        sources=[SyntheticSource(), IBKRSource(broker)],
-        active="synthetic",
+        sources=[SyntheticSource(), CachedSource(IBKRSource(broker), store)],
     )
     tasks = TaskRunner()
 
@@ -75,20 +87,32 @@ def create_app(config: AppConfig | None = None) -> tuple[tk.Tk, MainWindow]:
     root.minsize(1000, 640)
     apply_theme(root)
 
-    view_specs = [
+    view_sections = [
         (
-            "Dashboard",
-            lambda parent: DashboardView(parent, market_service, tasks, config),
+            None,
+            [
+                (
+                    "Dashboard",
+                    lambda parent: DashboardView(
+                        parent, broker.state, store, tasks, bus, config
+                    ),
+                ),
+                ("Markets", lambda parent: MarketsView(parent, market_service, tasks)),
+                ("Simulator", lambda parent: SimulatorView(parent, tasks, config)),
+            ],
         ),
-        ("Markets", lambda parent: MarketsView(parent, market_service, tasks)),
-    ] + [
-        (title, lambda parent, t=title, d=desc: PlaceholderView(parent, t, d))
-        for title, desc in _PLACEHOLDERS
+        (
+            "MODELS",
+            [
+                (title, lambda parent, t=title, d=desc: PlaceholderView(parent, t, d))
+                for title, desc in _PLACEHOLDERS
+            ],
+        ),
     ]
 
     window = MainWindow(
         root,
-        view_specs=view_specs,
+        view_sections=view_sections,
         broker=broker,
         tasks=tasks,
         bus=bus,
@@ -102,13 +126,15 @@ def create_app(config: AppConfig | None = None) -> tuple[tk.Tk, MainWindow]:
             broker.disconnect()
         except Exception:
             _logger.exception("error disconnecting broker at shutdown")
+        try:
+            store.close()
+        except Exception:
+            _logger.exception("error closing bar store at shutdown")
         root.destroy()
 
     root.protocol("WM_DELETE_WINDOW", on_close)
 
-    _logger.info(
-        "Quant Hub v%s ready — data source: synthetic, IBKR disconnected", __version__
-    )
+    _logger.info("Quant Hub v%s ready — IBKR disconnected", __version__)
     return root, window
 
 

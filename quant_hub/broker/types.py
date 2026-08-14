@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
+from quant_hub.data.types import MarketDataMode
+
 
 @dataclass(frozen=True)
 class ContractSpec:
@@ -18,6 +20,19 @@ class ContractSpec:
     sec_type: str = "STK"
     exchange: str = "SMART"
     currency: str = "USD"
+
+
+@dataclass(frozen=True)
+class QuoteResult:
+    """A broker's answer to a quote request: price + provenance + trade time.
+
+    The symbol/source labeling happens in the adapter (``market_source``);
+    this is just what the wire produced, normalized away from tick codes.
+    """
+
+    price: float
+    mode: MarketDataMode
+    at: datetime
 
 
 @dataclass(frozen=True)
@@ -46,3 +61,24 @@ class NotConnectedError(BrokerError):
 
 class RequestTimeoutError(BrokerError):
     """The broker did not answer a request within the configured timeout."""
+
+
+class InvalidContractError(BrokerError):
+    """The broker does not recognize the requested instrument (IBKR code 200)."""
+
+
+class NoHistoricalDataError(BrokerError):
+    """The broker has no historical data for the request (IBKR code 162)."""
+
+
+class PacingViolationError(BrokerError):
+    """Historical-data requests are being made too fast; wait and retry."""
+
+
+class NoMarketDataError(BrokerError):
+    """No usable quote could be obtained for the instrument.
+
+    Distinct from ``NotConnectedError``: the connection is fine, but this
+    instrument produced no ticks (typically a market-data entitlement gap —
+    the message carries TWS's stated reason).
+    """

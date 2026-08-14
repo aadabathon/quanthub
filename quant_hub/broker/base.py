@@ -11,7 +11,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Protocol
 
-from quant_hub.broker.types import ContractSpec, HistoricalBar
+from quant_hub.broker.types import ContractSpec, HistoricalBar, QuoteResult
 
 
 class ConnectionState(Enum):
@@ -45,7 +45,11 @@ class Broker(Protocol):
     def disconnect(self) -> None: ...
 
     def get_history(
-        self, spec: ContractSpec, start: datetime, end: datetime
+        self,
+        spec: ContractSpec,
+        start: datetime,
+        end: datetime,
+        bar_size: str = "1 day",
     ) -> list[HistoricalBar]: ...
 
-    def get_last_price(self, spec: ContractSpec) -> float: ...
+    def get_market_quote(self, spec: ContractSpec) -> QuoteResult: ...

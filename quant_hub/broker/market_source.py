@@ -15,11 +15,21 @@ from quant_hub.broker.base import Broker
 from quant_hub.broker.types import ContractSpec, HistoricalBar
 from quant_hub.data.types import PriceHistory, Quote
 
+#: IBKR reports historical volume for US stocks in lots of 100 shares
+#: (verified against live TWS 2026-08-14: SPY daily volume arrived as
+#: ~850k lots ≈ 85M shares). The canonical representation stores *shares*,
+#: so the adapter multiplies out the broker's unit. US equities only —
+#: revisit if other security types are added.
+VOLUME_LOT_SIZE = 100
+
 
 def bars_to_frame(bars: list[HistoricalBar]) -> pd.DataFrame:
-    """Convert broker bars to the canonical OHLCV frame. Pure, unit-tested."""
-    if not bars:
-        raise ValueError("no bars to convert")
+    """Convert broker bars to the canonical OHLCV frame (possibly empty).
+
+    Pure, unit-tested. An empty frame is a legal result: "the window held
+    no sessions" is information, not an error, and the caching layer needs
+    to see it as such.
+    """
     frame = pd.DataFrame(
         {
             "open": [b.open for b in bars],
@@ -34,23 +44,45 @@ def bars_to_frame(bars: list[HistoricalBar]) -> pd.DataFrame:
 
 
 class IBKRSource:
-    """``DataSource`` backed by a live (read-only) broker connection."""
+    """IBKR as a data provider: implements both ``DataSource`` (validated
+    ``PriceHistory`` for direct consumers) and ``BarSource`` (raw frames,
+    possibly empty, for the caching layer)."""
 
     name = "ibkr"
 
     def __init__(self, broker: Broker) -> None:
         self._broker = broker
 
+    def fetch_bars(
+        self, symbol: str, start: datetime, end: datetime, bar_size: str = "1 day"
+    ) -> pd.DataFrame:
+        """Raw OHLCV bars in [start, end]; empty if the window has no sessions."""
+        symbol = symbol.upper().strip()
+        bars = self._broker.get_history(
+            ContractSpec(symbol=symbol), start, end, bar_size=bar_size
+        )
+        frame = bars_to_frame(bars)
+        frame["volume"] *= VOLUME_LOT_SIZE  # broker lots -> shares
+        # The broker may over-fetch (durations round up, D11); trim to the window.
+        return frame.loc[start:end]
+
     def get_history(self, symbol: str, start: datetime, end: datetime) -> PriceHistory:
         symbol = symbol.upper().strip()
-        bars = self._broker.get_history(ContractSpec(symbol=symbol), start, end)
-        # The broker may over-fetch (durations round up); trim to the window.
-        frame = bars_to_frame(bars).loc[start:end]
+        frame = self.fetch_bars(symbol, start, end)
+        if len(frame) == 0:
+            raise ValueError(
+                f"IBKR returned no daily bars for {symbol} in "
+                f"{start:%Y-%m-%d}..{end:%Y-%m-%d}"
+            )
         return PriceHistory(symbol=symbol, source=self.name, frame=frame)
 
     def get_quote(self, symbol: str) -> Quote:
         symbol = symbol.upper().strip()
-        price = self._broker.get_last_price(ContractSpec(symbol=symbol))
+        result = self._broker.get_market_quote(ContractSpec(symbol=symbol))
         return Quote(
-            symbol=symbol, price=price, timestamp=datetime.now(), source=self.name
+            symbol=symbol,
+            price=result.price,
+            timestamp=result.at,
+            source=self.name,
+            mode=result.mode,
         )

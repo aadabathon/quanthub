@@ -18,7 +18,7 @@ from quant_hub.gui.theme import FONT_UI_BOLD, PALETTE
 
 _logger = logging.getLogger(__name__)
 
-_STATE_COLORS = {
+STATE_COLORS = {
     ConnectionState.DISCONNECTED: PALETTE.muted,
     ConnectionState.CONNECTING: PALETTE.warning,
     ConnectionState.CONNECTED: PALETTE.good,
@@ -38,7 +38,7 @@ class ConnectionBar(ttk.Frame):
             self,
             text="●",  # ●
             background=PALETTE.page,
-            foreground=_STATE_COLORS[ConnectionState.DISCONNECTED],
+            foreground=STATE_COLORS[ConnectionState.DISCONNECTED],
             font=FONT_UI_BOLD,
         )
         self._label = ttk.Label(self, text="IBKR: DISCONNECTED", style="Header.TLabel")
@@ -65,7 +65,7 @@ class ConnectionBar(ttk.Frame):
         _logger.error("IBKR: %s", exc)
 
     def _on_connection_event(self, event: ConnectionEvent) -> None:
-        self._indicator.configure(foreground=_STATE_COLORS[event.state])
+        self._indicator.configure(foreground=STATE_COLORS[event.state])
         self._label.configure(text=f"IBKR: {event.state.value.upper()}")
         connected = event.state is ConnectionState.CONNECTED
         connecting = event.state is ConnectionState.CONNECTING

@@ -20,5 +20,7 @@ Non-negotiables, in brief:
   to the owner — they maintain every line.
 
 Commands (from `tradinghub/`): `python -m pytest -q` · `python -m quant_hub` ·
-install `pip install -e ".[dev,ibkr]"`. Git root is the parent `Fin-SW/`;
-commit only when asked.
+install `pip install -e ".[dev,ibkr]"`. The project directory
+(`C:\Users\adams\Projects\tradinghub`) is its own git repository; commit
+only when asked. Local SQLite (stdlib `sqlite3`, D17) is the approved store
+for acquired market data — `~/.quant_hub/market_data.db`; no external DBs.

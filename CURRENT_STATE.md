@@ -1,59 +1,65 @@
 # CURRENT_STATE.md
 
 **Update this file whenever meaningful work lands.** Last updated:
-**2026-08-13** (v0.1 complete).
+**2026-08-14** (v0.4 — Milestone 6 (reduced): product architecture + quote
+provenance — complete).
 
 ## Status
 
-v0.1 foundation is implemented, tested, and verified running (GUI launched
-and visually checked). `pip install -e ".[dev,ibkr]"` done against system
-Python 3.12.6; `python -m pytest -q` → **68 passed**; `python -m quant_hub`
-opens the workstation.
+v0.4 implemented and live-verified against TWS 7496. `python -m pytest -q`
+→ **223 passed** (no network needed).
 
-Working end-to-end today:
+Page architecture (D24): **Dashboard** = workstation overview (IBKR
+connection card, local-store summary card, page guide); **Markets** = real
+observations with a page-owned source selector, columns
+Symbol/Last/Mode/As-of/Source, per-row UNAVAILABLE states with the TWS
+reason shown in the detail line, and a persist-only "Sync 1Y history"
+button; **Simulator** = the GBM/Monte Carlo laboratory, synthetic-only,
+math/analytics/tests untouched; MODELS nav section holds the 7
+placeholders. Log panel is collapsible (header strip shows the latest
+message).
 
-- Dashboard: symbol/range/source → chart + return stats on synthetic data.
-- Markets: watchlist quotes (add/remove/refresh) on synthetic data.
-- IBKR: connect/disconnect UI + broker plumbing for daily history and
-  snapshot quotes (see "Untested" below).
-- Log panel streaming all `logging` output; connection status indicator.
-- 7 placeholder views (Options Lab, Volatility, Kalman, GARCH, Markov,
-  Portfolio, Research).
+Quote provenance (D22/D23): `Quote.mode: MarketDataMode`; IBKR quotes
+stream briefly (self-cancelled), normalize live+delayed ticks and the
+`marketDataType` callback, treat entitlement errors 10167/10089 as
+advisories, and time out into `NoMarketDataError` carrying the advisory
+text. `MarketService.active_source` is **deleted** — every call names its
+source; no page can change another page's data meaning.
+
+**Live verification (2026-08-14):** SPY/QQQ/MSFT/TLT/GLD → DELAYED quotes
+with real per-symbol last-trade timestamps; AAPL → UNAVAILABLE ("requires
+additional subscription for API") while the connection stayed CONNECTED;
+synthetic refresh labels rows SYNTHETIC; Simulator runs; Dashboard store
+card lists the persisted series.
 
 ## Untested / known limits
 
-- **IBKR has never been tested against a live TWS/Gateway** — no TWS was
-  available during development. Code is defensive (timeouts, graceful ERROR
-  state, app fully functional without it), but expect a shakedown session:
-  first `Connect` click with paper TWS on 127.0.0.1:7497 may surface
-  version quirks in the installed `ibapi` 9.81 (PyPI). Official 10.x from
-  interactivebrokers.github.io is the upgrade path; both signatures are
-  tolerated.
-- IBKR history requests always end "now" (D11); durations round up and the
-  adapter slices.
-- `get_last_price` relies on delayed data (`reqMarketDataType(3)`) when no
-  market-data subscriptions exist.
-- Stats panel needs ≥ 2 prices; vol/Sharpe are NaN-guarded ("n/a").
-- No persistence of any kind (watchlist edits, window size, symbols are all
-  session-only). Deliberate for v0.1.
+- Quote refresh is serial (one TaskRunner worker, D9): each entitled symbol
+  ~1s; an unavailable symbol costs the full `quote_timeout_s` (5s).
+- FROZEN/DELAYED_FROZEN modes are normalized but not yet observed live
+  (market was open during verification).
+- 10089's meaning is account-dependent; for this account it means no API
+  delayed data for that instrument (verified for AAPL).
+- Watchlist symbols, Markets source, dashboard layout, and window geometry
+  are **not persisted** (deferred with the SettingsStore, per the reduced-M6
+  scope). Historical charting has no GUI surface yet — "Sync 1Y history"
+  persists only; richer historical research is a later milestone.
+- Prior M4 limits unchanged (end-"now" fetches, daily bars only, STK/USD
+  only, no retry/backoff).
 
-## Version control
+## Version control / environment
 
-**Nothing is committed yet.** The git repo root is the parent `Fin-SW/`
-directory; the owner is redoing their GitHub setup and handles commits.
-A root `.gitignore` exists. `git status` shows `tradinghub/` untracked.
-
-## Environment
-
-- Windows 11, system Python 3.12.6 (no venv), numpy 2.0.2 / pandas 2.2.3 /
-  matplotlib 3.10.0 / pytest 9.0.3 / ibapi 9.81.1.post1.
-- Package installed editable as `quant-hub`; console script `quant-hub` also
-  works.
+Repo at `C:\Users\adams\Projects\tradinghub` (one `init` commit; M3+M4+M6
+uncommitted; owner commits; `__pycache__` still tracked by the old commit —
+untracking is the owner's call). Windows 11, Python 3.12.6, ibapi
+9.81.1.post1; TWS live on 127.0.0.1:7496, Read-Only API enabled. Store:
+`~/.quant_hub/market_data.db`.
 
 ## Next-step candidates (owner picks; see ROADMAP.md)
 
-1. Live IBKR shakedown against paper TWS.
-2. First model module (GARCH(1,1) or Kalman) — creates `models/`, follows the
-   GBM exemplar, math derivation first.
-3. Synthetic-data expansion (OU / correlated / regime-switching) to feed
-   model validation.
+1. First model module (GARCH(1,1) or Kalman) — the platform is now shaped
+   for it (creates `models/`, D6).
+2. Historical-research surface (chart persisted series; the deferred
+   Markets detail pane) + SettingsStore for UI preferences.
+3. Synthetic-data expansion (OU / correlated / regime-switching).
+4. Pinned historical end-times (lifts D11).
