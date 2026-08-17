@@ -21,7 +21,11 @@ dependencies = [
 ibkr = ["ibapi"]
 dev = ["pytest>=8"]
 
-[project.scripts]
+[project.gui-scripts]
+# gui-scripts (not scripts) so the generated launcher is a windowed exe --
+# no console window, so it can be double-clicked or pinned like a normal
+# Windows app. `python -m quant_hub` still gives console/log output for
+# debugging.
 quant-hub = "quant_hub.app:main"
 
 [tool.setuptools.packages.find]

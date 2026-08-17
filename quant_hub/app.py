@@ -8,6 +8,7 @@ the entire dependency-injection story of this application.
 from __future__ import annotations
 
 import logging
+import sys
 import tkinter as tk
 
 from quant_hub import __version__
@@ -45,11 +46,17 @@ def _setup_logging(bus: EventBus) -> None:
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.INFO)
 
-    console = logging.StreamHandler()
-    console.setFormatter(
-        logging.Formatter("%(asctime)s %(levelname)-8s %(name)s: %(message)s")
-    )
-    root_logger.addHandler(console)
+    # Windowed launches (the gui-scripts entry point, i.e. double-clicking
+    # the app) have no console: sys.stderr is None, so a StreamHandler here
+    # would target nothing. The event-bus handler below (-> Log panel) is
+    # the real log surface for that case; console output is a `python -m
+    # quant_hub` debugging convenience only.
+    if sys.stderr is not None:
+        console = logging.StreamHandler()
+        console.setFormatter(
+            logging.Formatter("%(asctime)s %(levelname)-8s %(name)s: %(message)s")
+        )
+        root_logger.addHandler(console)
 
     bus_handler = EventBusLogHandler(bus)
     bus_handler.setFormatter(logging.Formatter("%(message)s"))
