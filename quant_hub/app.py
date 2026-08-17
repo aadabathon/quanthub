@@ -18,6 +18,7 @@ from quant_hub.data.sources import SyntheticSource
 from quant_hub.events import EventBus, EventBusLogHandler
 from quant_hub.services.cached_source import CachedSource
 from quant_hub.storage.bar_store import BarStore
+from quant_hub.storage.state_store import ViewStateStore
 from quant_hub.gui.main_window import MainWindow
 from quant_hub.gui.task_runner import TaskRunner
 from quant_hub.gui.theme import apply_theme
@@ -72,6 +73,9 @@ def create_app(config: AppConfig | None = None) -> tuple[tk.Tk, MainWindow]:
 
     broker = IBKRBroker(config, bus)
     store = BarStore(config.db_path)
+    # Same db file as the bar store — just a second, unrelated table. Each
+    # view owns its own state shape as an opaque JSON blob (see module doc).
+    state_store = ViewStateStore(config.db_path)
     # IBKR is wrapped in the cache; synthetic stays direct (generated
     # experiments are reproducible from their parameters — persistence is
     # for acquired observations only). No active source: every caller names
@@ -97,8 +101,14 @@ def create_app(config: AppConfig | None = None) -> tuple[tk.Tk, MainWindow]:
                         parent, broker.state, store, tasks, bus, config
                     ),
                 ),
-                ("Markets", lambda parent: MarketsView(parent, market_service, tasks)),
-                ("Simulator", lambda parent: SimulatorView(parent, tasks, config)),
+                (
+                    "Markets",
+                    lambda parent: MarketsView(parent, market_service, tasks, state_store),
+                ),
+                (
+                    "Simulator",
+                    lambda parent: SimulatorView(parent, tasks, config, state_store),
+                ),
             ],
         ),
         (
@@ -121,6 +131,12 @@ def create_app(config: AppConfig | None = None) -> tuple[tk.Tk, MainWindow]:
 
     def on_close() -> None:
         _logger.info("shutting down")
+        # The active view never gets on_hide from a tab switch it didn't
+        # make — give it one now so its state is saved before we close.
+        try:
+            window.shutdown()
+        except Exception:
+            _logger.exception("error saving view state at shutdown")
         tasks.shutdown()
         try:
             broker.disconnect()
@@ -130,6 +146,10 @@ def create_app(config: AppConfig | None = None) -> tuple[tk.Tk, MainWindow]:
             store.close()
         except Exception:
             _logger.exception("error closing bar store at shutdown")
+        try:
+            state_store.close()
+        except Exception:
+            _logger.exception("error closing view-state store at shutdown")
         root.destroy()
 
     root.protocol("WM_DELETE_WINDOW", on_close)

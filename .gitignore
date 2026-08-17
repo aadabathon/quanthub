@@ -13,3 +13,4 @@ venv/
 # Acquired market data lives in ~/.quant_hub/, but never commit a stray DB.
 *.db
 *.sqlite3
+personal/*

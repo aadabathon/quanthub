@@ -24,10 +24,12 @@ from quant_hub.gui.task_runner import TaskRunner
 from quant_hub.gui.theme import FONT_MONO, PALETTE, SPACE_L, SPACE_S
 from quant_hub.gui.views.base import View
 from quant_hub.services.market_service import MarketService
+from quant_hub.storage.state_store import ViewStateStore
 
 _logger = logging.getLogger(__name__)
 
 _DEFAULT_WATCHLIST = ("SPY", "QQQ", "AAPL", "MSFT", "TLT", "GLD")
+_STATE_KEY = "markets"
 
 
 def _fmt_time(ts: datetime) -> str:
@@ -37,12 +39,18 @@ def _fmt_time(ts: datetime) -> str:
 
 class MarketsView(View):
     def __init__(
-        self, parent: tk.Misc, market_service: MarketService, tasks: TaskRunner
+        self,
+        parent: tk.Misc,
+        market_service: MarketService,
+        tasks: TaskRunner,
+        state_store: ViewStateStore,
     ) -> None:
         super().__init__(parent)
         self._market = market_service
         self._tasks = tasks
-        self._symbols: list[str] = list(_DEFAULT_WATCHLIST)
+        self._state_store = state_store
+        saved = state_store.load(_STATE_KEY)
+        self._symbols: list[str] = list(saved.get("symbols") or _DEFAULT_WATCHLIST)
         self._reasons: dict[str, str] = {}  # symbol -> why unavailable
         self._refreshed_once = False
 
@@ -52,7 +60,11 @@ class MarketsView(View):
 
         ttk.Label(controls, text="Data source", style="Secondary.TLabel").pack(side="left")
         names = self._market.source_names
-        self._source_var = tk.StringVar(value="ibkr" if "ibkr" in names else names[0])
+        saved_source = saved.get("source")
+        default_source = saved_source if saved_source in names else (
+            "ibkr" if "ibkr" in names else names[0]
+        )
+        self._source_var = tk.StringVar(value=default_source)
         source_box = ttk.Combobox(
             controls, textvariable=self._source_var, values=names,
             state="readonly", width=9,
@@ -109,6 +121,12 @@ class MarketsView(View):
     def on_show(self) -> None:
         if not self._refreshed_once:
             self._refresh()
+
+    def on_hide(self) -> None:
+        self._state_store.save(
+            _STATE_KEY,
+            {"symbols": self._symbols, "source": self._source_var.get()},
+        )
 
     def _on_select(self, _event: object) -> None:
         selection = self._table.selection()

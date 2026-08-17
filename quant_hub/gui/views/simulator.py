@@ -47,6 +47,7 @@ from quant_hub.gui.theme import (
     SPACE_XS,
 )
 from quant_hub.gui.views.base import View
+from quant_hub.storage.state_store import ViewStateStore
 from quant_hub.visualization.charts import (
     ChartStyle,
     create_figure,
@@ -56,6 +57,8 @@ from quant_hub.visualization.charts import (
 )
 
 _logger = logging.getLogger(__name__)
+
+_STATE_KEY = "simulator"
 
 # Map the GUI theme onto the chart's style contract once, here.
 _CHART_STYLE = ChartStyle(
@@ -111,15 +114,33 @@ class SimulatorView(View):
         parent: tk.Misc,
         tasks: TaskRunner,
         config: AppConfig,
+        state_store: ViewStateStore,
     ) -> None:
         super().__init__(parent)
         self._tasks = tasks
         self._config = config
+        self._state_store = state_store
 
         # The single dashboard state; every render reads only these three.
         self._sim: GBMSimulationResult | None = None
         self._analysis: SeriesAnalysis | None = None
         self._mc: MonteCarloSummary | None = None
+
+        # Saved field text overrides the config defaults on restart; the
+        # inputs are restored, but nothing re-runs until on_show's
+        # first-launch auto-run (or the user hits Run Simulation).
+        saved = state_store.load(_STATE_KEY)
+        c = config
+        self._initial = {
+            "s0": saved.get("s0", f"{c.default_initial_price:g}"),
+            "mu": saved.get("mu", f"{c.default_mu * 100:g}"),
+            "sigma": saved.get("sigma", f"{c.default_sigma * 100:g}"),
+            "days": saved.get("days", str(c.default_sim_days)),
+            "seed": saved.get("seed", str(c.default_seed)),
+            "paths": saved.get("paths", str(c.default_n_paths)),
+            "window": saved.get("window", str(c.default_vol_window)),
+            "returns": saved.get("returns", "log"),
+        }
 
         self.columnconfigure(0, weight=1)
         self.columnconfigure(1, weight=0, minsize=300)
@@ -161,7 +182,7 @@ class SimulatorView(View):
         return var
 
     def _build_controls(self) -> None:
-        c = self._config
+        i = self._initial
         bar = ttk.Frame(self, style="Surface.TFrame")
         bar.grid(row=1, column=0, columnspan=2, sticky="ew",
                  padx=SPACE_L, pady=(0, SPACE_S))
@@ -172,12 +193,12 @@ class SimulatorView(View):
         ttk.Label(sim, text="GBM PROCESS", style="CardHeading.TLabel").grid(
             row=0, column=0, columnspan=8, sticky="w", padx=SPACE_S, pady=(2, 4)
         )
-        self._s0_var = self._field(sim, "S₀", f"{c.default_initial_price:g}", 7, 1, 0)
-        self._mu_var = self._field(sim, "μ %/yr", f"{c.default_mu * 100:g}", 6, 1, 2)
-        self._sigma_var = self._field(sim, "σ %/yr", f"{c.default_sigma * 100:g}", 6, 1, 4)
-        self._days_var = self._field(sim, "days", str(c.default_sim_days), 6, 1, 6)
-        self._seed_var = self._field(sim, "seed", str(c.default_seed), 7, 2, 0)
-        self._paths_var = self._field(sim, "paths", str(c.default_n_paths), 6, 2, 2)
+        self._s0_var = self._field(sim, "S₀", i["s0"], 7, 1, 0)
+        self._mu_var = self._field(sim, "μ %/yr", i["mu"], 6, 1, 2)
+        self._sigma_var = self._field(sim, "σ %/yr", i["sigma"], 6, 1, 4)
+        self._days_var = self._field(sim, "days", i["days"], 6, 1, 6)
+        self._seed_var = self._field(sim, "seed", i["seed"], 7, 2, 0)
+        self._paths_var = self._field(sim, "paths", i["paths"], 6, 2, 2)
         self._run_button = ttk.Button(
             sim, text="Run Simulation", style="Accent.TButton",
             command=self._run_simulation,
@@ -195,7 +216,7 @@ class SimulatorView(View):
         ttk.Label(analysis, text="vol window", style="Field.TLabel").grid(
             row=1, column=0, sticky="w", padx=(SPACE_S, 2), pady=2
         )
-        self._window_var = tk.StringVar(value=str(c.default_vol_window))
+        self._window_var = tk.StringVar(value=i["window"])
         window_spin = ttk.Spinbox(
             analysis, textvariable=self._window_var, from_=2, to=252,
             width=5, font=FONT_MONO, command=self._reanalyze,
@@ -205,7 +226,7 @@ class SimulatorView(View):
         ttk.Label(analysis, text="histogram", style="Field.TLabel").grid(
             row=2, column=0, sticky="w", padx=(SPACE_S, 2), pady=2
         )
-        self._returns_var = tk.StringVar(value="log")
+        self._returns_var = tk.StringVar(value=i["returns"])
         returns_box = ttk.Combobox(
             analysis, textvariable=self._returns_var,
             values=["log", "simple"], state="readonly", width=7,
@@ -313,6 +334,21 @@ class SimulatorView(View):
     def on_show(self) -> None:
         if self._analysis is None:
             self._run_simulation()
+
+    def on_hide(self) -> None:
+        self._state_store.save(
+            _STATE_KEY,
+            {
+                "s0": self._s0_var.get(),
+                "mu": self._mu_var.get(),
+                "sigma": self._sigma_var.get(),
+                "days": self._days_var.get(),
+                "seed": self._seed_var.get(),
+                "paths": self._paths_var.get(),
+                "window": self._window_var.get(),
+                "returns": self._returns_var.get(),
+            },
+        )
 
     def _set_busy(self, busy: bool) -> None:
         self._run_button.configure(state="disabled" if busy else "normal")

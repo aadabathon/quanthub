@@ -116,6 +116,12 @@ class MainWindow(ttk.Frame):
         view.tkraise()
         view.on_show()
 
+    def shutdown(self) -> None:
+        """Give the active view its on_hide (it never gets one from a tab
+        switch it didn't make) so it can flush state before the app closes."""
+        if self._active_name is not None:
+            self._views[self._active_name].on_hide()
+
     def _pump(self) -> None:
         """Drain thread-crossing queues on the GUI thread, forever."""
         self._bus.dispatch_pending()
