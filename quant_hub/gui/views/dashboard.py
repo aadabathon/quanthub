@@ -25,7 +25,6 @@ from quant_hub.events import EventBus
 from quant_hub.gui.task_runner import TaskRunner
 from quant_hub.gui.theme import (
     FONT_MONO,
-    FONT_MONO_SM,
     PALETTE,
     SPACE_L,
     SPACE_M,
@@ -66,6 +65,13 @@ class DashboardView(View):
             side="right", pady=(4, 0)
         )
 
+        # -- KPI row: the headline numbers, at a glance ---------------------
+        kpi_row = ttk.Frame(self, style="Surface.TFrame")
+        kpi_row.pack(fill="x", padx=SPACE_L, pady=(0, SPACE_S))
+        self._tile_series = self._stat_tile(kpi_row, "SERIES TRACKED")
+        self._tile_bars = self._stat_tile(kpi_row, "BARS PERSISTED")
+        self._tile_synced = self._stat_tile(kpi_row, "LAST SYNCED", last=True)
+
         row = ttk.Frame(self, style="Surface.TFrame")
         row.pack(fill="both", expand=True, padx=SPACE_L, pady=(0, SPACE_L))
         row.columnconfigure(0, weight=1, uniform="cards")
@@ -105,18 +111,41 @@ class DashboardView(View):
             )
 
         # -- right column: persisted market data --------------------------
-        store_card = self._card(row, "LOCAL MARKET-DATA STORE", grid=(0, 1))
+        # sticky="new" (not "nsew"): this card sizes to its content -- a
+        # short table shouldn't be stretched to match the left column's
+        # height, which just leaves a dead band inside the border.
+        store_card = self._card(row, "LOCAL MARKET-DATA STORE", grid=(0, 1), sticky="new")
+        store_card.columnconfigure(0, weight=1)
         ttk.Label(
             store_card, text=str(config.db_path), style="Muted.TLabel"
-        ).grid(row=1, column=0, sticky="w", padx=SPACE_S)
-        self._store_text = tk.Text(
-            store_card, height=12, state="disabled", font=FONT_MONO_SM,
-            background=PALETTE.surface, foreground=PALETTE.text_secondary,
-            borderwidth=0, highlightthickness=0, padx=SPACE_S, pady=SPACE_S,
+        ).grid(row=1, column=0, sticky="w", padx=SPACE_S, pady=(0, SPACE_S))
+
+        columns = ("symbol", "bar_size", "n_bars", "range", "source")
+        self._store_table = ttk.Treeview(
+            store_card, columns=columns, show="headings", height=1
         )
-        self._store_text.grid(row=2, column=0, sticky="nsew", pady=(4, SPACE_S))
-        store_card.rowconfigure(2, weight=1)
-        store_card.columnconfigure(0, weight=1)
+        for col, title, width, anchor in (
+            ("symbol", "Symbol", 80, "w"),
+            ("bar_size", "Bar size", 70, "w"),
+            ("n_bars", "Bars", 70, "e"),
+            ("range", "Range", 190, "w"),
+            ("source", "Source", 80, "e"),
+        ):
+            self._store_table.heading(col, text=title, anchor=anchor)
+            self._store_table.column(col, width=width, anchor=anchor, stretch=False)
+        # sticky="w" (not "ew"): natural width -- a stretched column would
+        # otherwise open a wide gap before "Source" on a roomy window.
+        self._store_table.grid(row=2, column=0, sticky="w", padx=SPACE_S)
+        self._store_table.grid_remove()  # shown once _render_store has rows
+
+        self._store_empty = ttk.Label(
+            store_card,
+            text="no persisted bars yet\n\n"
+            "connect to IBKR, then use 'Sync 1Y history' on the Markets "
+            "page to populate the store",
+            style="Muted.TLabel",
+        )
+        self._store_empty.grid(row=2, column=0, sticky="w", padx=SPACE_S, pady=(0, SPACE_S))
 
         bus.subscribe(ConnectionEvent, self._on_connection_event)
 
@@ -127,16 +156,26 @@ class DashboardView(View):
         title: str,
         grid: tuple[int, int] | None = None,
         top_pad: int = 0,
+        sticky: str = "nsew",
     ) -> ttk.Frame:
         card = ttk.Frame(parent, style="Card.TFrame", padding=(0, 4, 0, 0))
         if grid is not None:
-            card.grid(row=grid[0], column=grid[1], sticky="nsew", padx=(SPACE_S, 0))
+            card.grid(row=grid[0], column=grid[1], sticky=sticky, padx=(SPACE_S, 0))
         else:
             card.pack(fill="x", pady=(top_pad, 0))
         ttk.Label(card, text=title, style="CardHeading.TLabel").grid(
             row=0, column=0, columnspan=2, sticky="w", padx=SPACE_S, pady=(2, 4)
         )
         return card
+
+    def _stat_tile(self, parent: ttk.Frame, label: str, last: bool = False) -> ttk.Label:
+        """A KPI stat tile: uppercase label + a large value, filled in later."""
+        tile = ttk.Frame(parent, style="Card.TFrame", padding=(SPACE_M, SPACE_S))
+        tile.pack(side="left", fill="both", expand=True, padx=(0, 0 if last else SPACE_S))
+        ttk.Label(tile, text=label, style="CardHeading.TLabel").pack(anchor="w")
+        value = ttk.Label(tile, text="—", style="Hero.TLabel")
+        value.pack(anchor="w", pady=(2, 0))
+        return value
 
     # ------------------------------------------------------------------ events
     def on_show(self) -> None:
@@ -148,23 +187,29 @@ class DashboardView(View):
         self._conn_detail.configure(text=event.detail)
 
     def _render_store(self, rows: list[StoredSeriesSummary]) -> None:
-        self._store_text.configure(state="normal")
-        self._store_text.delete("1.0", "end")
         if not rows:
-            self._store_text.insert(
-                "end",
-                "no persisted bars yet\n\nconnect to IBKR, then use 'Sync history'\n"
-                "on the Markets page to populate the store",
+            self._tile_series.configure(text="0")
+            self._tile_bars.configure(text="0")
+            self._tile_synced.configure(text="—")
+            self._store_table.grid_remove()
+            self._store_empty.grid()
+            return
+
+        total_bars = sum(r.n_bars for r in rows)
+        last_synced = max(r.last for r in rows)
+        self._tile_series.configure(text=str(len(rows)))
+        self._tile_bars.configure(text=f"{total_bars:,}")
+        self._tile_synced.configure(text=f"{last_synced:%Y-%m-%d}")
+
+        self._store_table.delete(*self._store_table.get_children())
+        for r in rows:
+            self._store_table.insert(
+                "", "end",
+                values=(
+                    r.symbol, r.bar_size, f"{r.n_bars:,}",
+                    f"{r.first:%Y-%m-%d} … {r.last:%Y-%m-%d}", r.source.upper(),
+                ),
             )
-        else:
-            total = sum(r.n_bars for r in rows)
-            self._store_text.insert(
-                "end", f"{len(rows)} series · {total:,} bars\n\n"
-            )
-            for r in rows:
-                self._store_text.insert(
-                    "end",
-                    f"{r.symbol:<8} {r.bar_size:<8} {r.n_bars:>6,} bars   "
-                    f"{r.first:%Y-%m-%d} … {r.last:%Y-%m-%d}   {r.source}\n",
-                )
-        self._store_text.configure(state="disabled")
+        self._store_table.configure(height=min(len(rows), 10))
+        self._store_empty.grid_remove()
+        self._store_table.grid()
