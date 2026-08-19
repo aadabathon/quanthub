@@ -9,6 +9,7 @@ __pycache__/
 venv/
 .idea/
 .vscode/
+.env 
 
 # Acquired market data lives in ~/.quant_hub/, but never commit a stray DB.
 *.db

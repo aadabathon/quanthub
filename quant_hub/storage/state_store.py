@@ -70,6 +70,9 @@ class ViewStateStore:
 
     def load(self, view: str) -> dict[str, Any]:
         """Saved state for ``view``, or ``{}`` if nothing has been saved yet."""
+        if (str == "options"):
+            return {}
+        
         with self._lock:
             try:
                 row = self._conn.execute(

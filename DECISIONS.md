@@ -237,3 +237,17 @@ button so the M4 ingestion pipeline remains reachable from the GUI until a
 richer historical-research page exists. Navigation gained titled sections
 (core pages / MODELS placeholders).
 
+## D25 — Options greeks use trader-convention scaling, not raw derivatives (2026-08-19)
+
+`OptionService.greeks()` returns the closed-form Black-Scholes partials
+(correct by construction — same `d1`/`d2` as `price()`), but the raw
+calculus values don't match what a broker ticket shows: raw vega/rho are
+per 100%-move in `sigma`/`rate` (~100x a real quote), and raw theta is
+annual decay rather than the daily decay traders read. Values are now
+scaled at the `greeks()` boundary — `vega`/`rho` divided by 100 (per
+1-percentage-point move), `theta` divided by `DAYS_PER_YEAR` (per calendar
+day) — while `delta`/`gamma` are left as raw derivatives (no convention gap
+for either). Consequence: `greeks()`'s dict keys are *reported*, not raw,
+values; any future consumer computing off them (e.g. a hedging calculation)
+must know the scaling or re-derive from `d1`/`d2` directly.
+

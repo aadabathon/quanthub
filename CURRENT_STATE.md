@@ -7,7 +7,14 @@ provenance — complete).
 ## Status
 
 v0.4 implemented and live-verified against TWS 7496. `python -m pytest -q`
-→ **223 passed** (no network needed).
+→ **248 passed** (no network needed).
+
+Options Lab (uncommitted, 2026-08-19): `services/Options/options_service.py`
+prices European options under Black-Scholes and reports greeks —
+`delta`/`gamma` as raw derivatives, `vega`/`rho` per 1-percentage-point
+move, `theta` per calendar day (D25; convention documented in the module
+docstring). `gui/views/Options_lab.py` is a manual-entry calculator (no
+options-data source wired in) under the MODELS nav section.
 
 Page architecture (D24): **Dashboard** = workstation overview (IBKR
 connection card, local-store summary card, page guide); **Markets** = real

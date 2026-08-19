@@ -59,7 +59,9 @@ owner before implementation begins.
 
 ## Later (unordered)
 
-- Options Lab: chains via IBKR, Black-Scholes pricing, greeks.
+- Options Lab: Black-Scholes pricing + greeks done (manual-entry only, see
+  CURRENT_STATE.md); chains via IBKR still open (no free chain-data source
+  wired in yet).
 - Implied-volatility estimation; smiles and surfaces (needs options data).
 - Markov regime models over returns/vol.
 - Portfolio analytics: CAGR/geometric-growth optimization, Kelly-style

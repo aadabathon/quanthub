@@ -86,3 +86,8 @@ class IBKRSource:
             source=self.name,
             mode=result.mode,
         )
+
+    class AlpacaSource:
+        def __init__(self, broker: Broker) -> None:
+            self._broker = broker
+            
