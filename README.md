@@ -15,7 +15,7 @@ synthetic data.
 
 ```bash
 pip install -e ".[dev,ibkr]"   # from this directory; drop [ibkr] to skip TWS support
-python -m quant_hub            # or: quant-hub
+python -m quant_hub            #
 pytest                         # 210 tests, no GUI or network required
 ```
 
