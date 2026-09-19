@@ -6,7 +6,7 @@ without picking one item, discussing scope, and doing it as its own
 milestone. Cross-references: [ROADMAP.md](ROADMAP.md),
 [DECISIONS.md](DECISIONS.md), [CURRENT_STATE.md](CURRENT_STATE.md).
 
-## Already tracked (don't re-propose these — just pointers)
+## Already tracked (don't re-propose these — just pointers)o
 
 - End-"now" fetch semantics (D11) — lifting this is a named ROADMAP
   near-term candidate ("pinned historical end-times").
