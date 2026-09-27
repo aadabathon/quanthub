@@ -101,6 +101,17 @@ class TestFit:
         assert np.all(fit.conditional_variances > 0)
         assert len(fit.standardized_residuals) == len(simulated.returns)
 
+    def test_recovery_when_truth_is_not_a_starting_point(self):
+        # (0.08, 0.88) is also one of the fitter's starting points, so the
+        # test above cannot tell a real search from one that barely moves.
+        # A truth away from every start can: the old degenerate simplex
+        # stalled at alpha ~ 0.08 here while reporting convergence.
+        true = GARCH11Parameters(mean=0.0, omega=0.000002, alpha=0.12, beta=0.86)
+        simulated = simulate_garch11(true, 252 * 60, seed=21)
+        got = fit_garch11(simulated.returns).parameters
+        assert got.alpha == pytest.approx(true.alpha, abs=0.02)
+        assert got.beta == pytest.approx(true.beta, abs=0.02)
+
     def test_rejects_undefined_input(self):
         with pytest.raises(ValueError):
             fit_garch11(np.zeros(MIN_OBSERVATIONS))

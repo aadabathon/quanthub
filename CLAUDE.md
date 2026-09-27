@@ -19,8 +19,9 @@ Non-negotiables, in brief:
   roadmap-jumping without discussion. Explain design/threading/math decisions
   to the owner — they maintain every line.
 
-Commands (from `tradinghub/`): `python -m pytest -q` · `python -m quant_hub` ·
-install `pip install -e ".[dev,ibkr]"`. The project directory
-(`C:\Users\adams\Projects\tradinghub`) is its own git repository; commit
+Commands (from `quanthub/`, via the 3.12 launcher — bare `python` is a 3.11
+without pytest): `py -3.12 -m pytest -q` · `py -3.12 -m quant_hub` · install
+`py -3.12 -m pip install -e ".[dev,ibkr]"`. The project directory
+(`C:\Users\adams\Projects\quanthub`) is its own git repository; commit
 only when asked. Local SQLite (stdlib `sqlite3`, D17) is the approved store
 for acquired market data — `~/.quant_hub/market_data.db`; no external DBs.

@@ -3,6 +3,7 @@
 The rules the whole design rests on:
 
 * ``data``     -- pure domain. No tkinter, no ibapi, no other quant_hub layer.
+* ``models``   -- pure quantitative models; may use ``data`` only.
 * ``services`` -- may use ``data``, ``storage``, and broker *interfaces*;
                   never GUI or ibapi.
 * ``broker``   -- the only package allowed to import ibapi; never GUI/storage.
@@ -26,7 +27,6 @@ RULES = {
              "quant_hub.services", "quant_hub.visualization", "quant_hub.storage"],
     "models": ["tkinter", "ibapi", "quant_hub.gui", "quant_hub.broker",
                "quant_hub.services", "quant_hub.visualization", "quant_hub.storage"],
-
     "services": ["tkinter", "ibapi", "quant_hub.gui", "quant_hub.visualization"],
     "broker": ["tkinter", "quant_hub.gui", "quant_hub.visualization",
                "quant_hub.storage"],

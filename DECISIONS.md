@@ -251,3 +251,39 @@ for either). Consequence: `greeks()`'s dict keys are *reported*, not raw,
 values; any future consumer computing off them (e.g. a hedging calculation)
 must know the scaling or re-derive from `d1`/`d2` directly.
 
+
+## D26 — Black-Scholes is a pure model; the options service is deleted (2026-09-27)
+
+Supersedes the *location* in D25 (its greeks scaling stands unchanged):
+`services/Options/options_service.py` → `models/black_scholes.py`, as
+module-level functions (`price`, `greeks`, `no_arbitrage_bounds`,
+`implied_volatility`). The `OptionService` class held no state and no I/O
+— it was a namespace, and pricing math is exactly what `models/` exists
+for (D6). Both upcoming labs (Options, Volatility) need the same pricer and
+IV solver, so it had to live below either of them. GUI views call pure
+models directly, as GARCH Lab already did; a service earns its place only
+when it adds sources, caching, or I/O. Consequence: the capitalized
+`services/Options/` package and `gui/views/Options_lab.py` are gone
+(renamed `options_lab.py`); every package and module name is snake_case.
+
+The IV solver is a bracketed Newton iteration (Newton step if it lands
+inside the root bracket, else bisection), derived in the module docstring:
+monotonicity in σ plus the σ→0/∞ limits make a root exist iff the price is
+strictly inside the no-arbitrage bounds, so out-of-bounds prices *raise*
+rather than being clamped to a meaningless volatility.
+
+## D27 — One shared optimizer in `models/optimize.py`; degenerate-simplex fix (2026-09-27)
+
+GARCH's private Nelder–Mead moved to `models/optimize.py`
+(`nelder_mead` → `MinimizeResult`) now that a second consumer (SVI smile
+fitting) is imminent — shaping shared code on the second concrete need,
+per D6. The move exposed a real bug: the initial simplex was built with
+`simplex[1:, range(n)] += step`, which NumPy's mixed slice/advanced
+indexing applies to the *whole* block, making all n non-start vertices the
+same point. Every Nelder–Mead move is an affine combination of vertices,
+so the search was confined to one line through the start and fits stalled
+near their starting point while reporting convergence (true α=0.12 fitted
+as 0.078). The simplex is now `start + step·I` (spans ℝⁿ). GARCH fits
+reach strictly lower negative log-likelihoods, and regression tests pin
+this: an off-diagonal quadratic in `test_optimize.py` and a GARCH truth
+that is not one of the fitter's starting points.

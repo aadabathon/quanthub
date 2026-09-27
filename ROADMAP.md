@@ -47,25 +47,52 @@ owner before implementation begins.
   simulation, Gaussian-QMLE fitting, conditional-variance diagnostics, and
   synthetic parameter-recovery tests in the new pure `models/` layer. The
   interactive Synthetic/SQLite research surface is now available as GARCH Lab.
+- **Model-layer housekeeping** (2026-09-27): Black-Scholes moved to pure
+  `models/black_scholes.py` with no-arbitrage bounds and a bracketed-Newton
+  IV solver (D26); shared `models/optimize.py` Nelder–Mead, fixing a
+  degenerate-simplex bug that confined GARCH fits to a line (D27);
+  snake_case module names; bytecode untracked; doc paths corrected. 410
+  tests.
 
+## Current phase — synthetic research workflows (set 2026-09-27)
 
-## Near-term candidates (order decided with the owner)
+Owner direction: finish the quant-research side on **synthetic processes
+first** (a known true world → estimate → compare, as GBM and GARCH already
+do), then turn to the data side. Each milestone is approved before the next.
 
-- **Kalman filtering** (local-level/trend on log prices): the next distinct
-  model candidate. Derive and validate the filter/smoother on a controlled
-  synthetic state-space world before exposing it to persisted history.
+1. **Milestone A — Options Lab.** Vectorized Black-Scholes over
+   strikes/expiries; continuous dividend yield `q` (Merton); IV input in the
+   calculator; multi-leg strategy payoff and P&L (at and before expiry);
+   greek profiles vs spot and time; Monte Carlo pricing under GBM checked
+   against the closed form. Tests: put-call parity with `q`, greeks vs
+   finite differences, MC vs closed form within standard error.
+2. **Milestone B — Volatility Lab** (replaces the placeholder). A synthetic
+   SVI (Gatheral raw) smile per expiry plus an ATM term structure as the
+   true surface → priced chain with bid/ask noise → IV inversion → SVI
+   refit through `models/optimize.py` → true-vs-fitted smile, term
+   structure, and surface views. Realized-vol panel from GBM/GARCH paths
+   (OHLC range estimators wait for real bars, D4). Candidate tie-in: the
+   GARCH variance-forecast term structure vs the ATM IV term structure.
+
+## Next phase — data side (after the synthetic workflows)
+
+- Options chains via IBKR (read-only, D12), feeding the same Options and
+  Volatility Lab pipelines the synthetic chains exercise first.
+- Real portfolio/positions (read-only) and the real-time trading dashboard.
+- **Pinned historical end-times** (lifts D11) — minimal backfill/interior-gap
+  fetches; prerequisite for deep backfills without over-fetch.
+- Corporate-action adjustment policy (see `DATA_SYSTEM_IMPROVEMENTS.md`)
+  before real multi-year histories feed models.
+
+## Model candidates after the current phase
+
+- **Kalman filtering** (local-level/trend on log prices), derived and
+  validated on a synthetic state-space world first.
 - **Synthetic-data expansion** — mean-reverting (OU), correlated assets,
-  regime-switching generators. These feed model validation before real data.
-- **Pinned historical end-times** (lifts D11) — makes backfill/interior-gap
-  fetches minimal instead of gap-to-now; prerequisite for deep backfills
-  without over-fetch.
+  regime-switching generators, to feed model validation before real data.
 
 ## Later (unordered)
 
-- Options Lab: Black-Scholes pricing + greeks done (manual-entry only, see
-  CURRENT_STATE.md); chains via IBKR still open (no free chain-data source
-  wired in yet).
-- Implied-volatility estimation; smiles and surfaces (needs options data).
 - Markov regime models over returns/vol.
 - Portfolio analytics: CAGR/geometric-growth optimization, Kelly-style
   sizing, risk metrics beyond drawdown.

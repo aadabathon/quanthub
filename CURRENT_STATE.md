@@ -1,25 +1,31 @@
 # CURRENT_STATE.md
 
 **Update this file whenever meaningful work lands.** Last updated:
-**2026-09-20** (GARCH domain foundation + interactive GARCH Lab complete;
-not yet live-verified against TWS).
+**2026-09-27** (housekeeping before the Options/Volatility lab milestones:
+pure `models/black_scholes.py` with an IV solver, shared
+`models/optimize.py` + GARCH optimizer bug fix, snake_case renames,
+bytecode untracked, doc paths fixed).
 
 ## Status
 
 v0.4 remains live-verified against TWS 7496. `py -3.12 -m pytest -q` →
-**265 passed** (no network needed).
+**410 passed** (no network needed).
 
-Options Lab (uncommitted, 2026-08-19): `services/Options/options_service.py`
-prices European options under Black-Scholes and reports greeks —
-`delta`/`gamma` as raw derivatives, `vega`/`rho` per 1-percentage-point
-move, `theta` per calendar day (D25; convention documented in the module
-docstring). `gui/views/Options_lab.py` is a manual-entry calculator (no
-options-data source wired in) under the MODELS nav section.
-GARCH model foundation (uncommitted, 2026-09-20): `models/garch.py` provides
-stationary GARCH(1,1) simulation, conditional-variance evaluation, and a
-NumPy-only Gaussian-QMLE fit with constrained parameters. It is deliberately
-pure and source-agnostic. GARCH Lab now exposes synthetic simulation and
-explicit market-history fitting through the existing SQLite-first `ibkr` cache.
+Black-Scholes (2026-09-27, D26): `models/black_scholes.py` is the pure
+home for European pricing, greeks (D25 trader scaling: `vega`/`rho` per
+1-point move, `theta` per calendar day), `no_arbitrage_bounds`, and
+`implied_volatility` (bracketed Newton; raises for prices outside the
+bounds). The old `services/Options/` package is deleted.
+`gui/views/options_lab.py` is still the manual-entry calculator (price +
+greeks; no IV input and no options-data source yet).
+
+GARCH (2026-09-20, optimizer fixed 2026-09-27, D27): `models/garch.py`
+provides stationary GARCH(1,1) simulation, conditional-variance evaluation,
+and a Gaussian-QMLE fit via the shared `models/optimize.py` Nelder–Mead.
+The pre-fix optimizer searched only a line (degenerate simplex), so any
+GARCH fits made before 2026-09-27 should be rerun. GARCH Lab exposes
+synthetic simulation and explicit market-history fitting through the
+SQLite-first `ibkr` cache.
 
 
 Page architecture (D24): **Dashboard** = workstation overview (IBKR
@@ -71,17 +77,20 @@ card lists the persisted series.
 
 ## Version control / environment
 
-Repo at `C:\Users\adams\Projects\tradinghub` (one `init` commit; M3+M4+M6
-uncommitted; owner commits; `__pycache__` still tracked by the old commit —
-untracking is the owner's call). Windows 11, Python 3.12.6, ibapi
+Repo at `C:\Users\adams\Projects\quanthub` (formerly `tradinghub`); owner
+commits. Committed through the Black-Scholes calculator (3ef7cdb) and the
+agent docs (996f6fc); GARCH and the 2026-09-27 housekeeping are staged or
+uncommitted. Bytecode is untracked as of 2026-09-27 (`.gitignore` already
+covered it). Run everything with `py -3.12`: bare `python` is a 3.11
+install without pytest. Windows 11, Python 3.12.6, ibapi
 9.81.1.post1; TWS live on 127.0.0.1:7496, Read-Only API enabled. Store:
 `~/.quant_hub/market_data.db`.
 
-## Next-step candidates (owner picks; see ROADMAP.md)
+## Next steps (agreed 2026-09-27; see ROADMAP.md)
 
-1. Kalman state-space model/lab — the second concrete model can now inform
-   any shared model conventions.
-2. Historical-research surface (chart persisted series; the deferred
-   Markets detail pane) + SettingsStore for UI preferences.
-3. Synthetic-data expansion (OU / correlated / regime-switching).
-4. Pinned historical end-times (lifts D11).
+1. **Milestone A — Options Lab** on synthetic inputs: vectorized pricing,
+   dividend yield, multi-leg payoff/P&L, greek profiles, Monte Carlo vs
+   closed-form validation.
+2. **Milestone B — Volatility Lab**: synthetic SVI surface → noisy chain →
+   IV inversion → SVI refit (true vs fitted), realized-vol panel.
+3. Then the data side: options chains and real portfolio data via IBKR.

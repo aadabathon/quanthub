@@ -24,8 +24,8 @@ arbitrary zero-volatility start.
 returns need not be conditionally normal, so this is more precisely a
 Gaussian *quasi*-maximum-likelihood estimate (QMLE): it targets the
 conditional-variance dynamics while using the normal density as a practical
-criterion.  A small deterministic multi-start Nelder--Mead implementation is
-used instead of adding SciPy solely for an optimizer.  Its transformed
+criterion.  The fit runs the shared deterministic Nelder--Mead minimizer
+(``models/optimize.py``) from several starting points.  Its transformed
 coordinates enforce ``omega > 0``, ``alpha >= 0``, ``beta >= 0``, and
 ``alpha + beta < 1`` for every likelihood evaluation.
 
@@ -45,6 +45,8 @@ import math
 from dataclasses import dataclass
 
 import numpy as np
+
+from quant_hub.models.optimize import nelder_mead
 
 
 MIN_OBSERVATIONS = 20
@@ -171,10 +173,10 @@ def fit_garch11(returns: np.ndarray, max_iterations: int = 300) -> GARCH11Fit:
     best_converged = False
     total_iterations = 0
     for start in starts:
-        x, value, converged, iterations = _nelder_mead(objective, start, max_iterations)
-        total_iterations += iterations
-        if value < best_value:
-            best_x, best_value, best_converged = x, value, converged
+        result = nelder_mead(objective, start, max_iterations)
+        total_iterations += result.iterations
+        if result.value < best_value:
+            best_x, best_value, best_converged = result.x, result.value, result.converged
 
     assert best_x is not None  # starts is fixed and non-empty.
     parameters = _decode_parameters(best_x, scale)
@@ -257,44 +259,6 @@ def _starting_points(values: np.ndarray, scale: float) -> tuple[np.ndarray, ...]
         )
         starts.append(_encode_parameters(params, scale))
     return tuple(starts)
-
-
-def _nelder_mead(objective, start: np.ndarray, max_iterations: int):
-    """Small deterministic Nelder--Mead optimizer for four parameters."""
-    dimension = len(start)
-    simplex = np.empty((dimension + 1, dimension), dtype=float)
-    simplex[0] = start
-    simplex[1:] = start
-    simplex[1:, range(dimension)] += 0.35
-    values = np.array([objective(point) for point in simplex])
-    for iteration in range(1, max_iterations + 1):
-        order = np.argsort(values)
-        simplex, values = simplex[order], values[order]
-        if np.max(np.abs(simplex[1:] - simplex[0])) < 1e-6 and np.ptp(values) < 1e-8:
-            return simplex[0], float(values[0]), True, iteration
-        centroid = simplex[:-1].mean(axis=0)
-        reflected = centroid + (centroid - simplex[-1])
-        reflected_value = objective(reflected)
-        if values[0] <= reflected_value < values[-2]:
-            simplex[-1], values[-1] = reflected, reflected_value
-            continue
-        if reflected_value < values[0]:
-            expanded = centroid + 2.0 * (reflected - centroid)
-            expanded_value = objective(expanded)
-            simplex[-1], values[-1] = (
-                (expanded, expanded_value) if expanded_value < reflected_value
-                else (reflected, reflected_value)
-            )
-            continue
-        contracted = centroid + 0.5 * (simplex[-1] - centroid)
-        contracted_value = objective(contracted)
-        if contracted_value < values[-1]:
-            simplex[-1], values[-1] = contracted, contracted_value
-            continue
-        simplex[1:] = simplex[0] + 0.5 * (simplex[1:] - simplex[0])
-        values[1:] = [objective(point) for point in simplex[1:]]
-    order = np.argsort(values)
-    return simplex[order[0]], float(values[order[0]]), False, max_iterations
 
 
 def _sigmoid(x: float) -> float:

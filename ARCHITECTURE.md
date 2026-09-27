@@ -54,7 +54,9 @@ quant_hub/
 │   ├── views/simulator.py     the GBM/Monte Carlo laboratory (synthetic only)
 │   ├── views/markets.py       watchlist: page-owned source, provenance
 │   │                          columns, per-row unavailable reasons, history sync
-│   ├── views/placeholder.py   ONE class for all 7 future modules
+│   ├── views/options_lab.py   manual-entry Black-Scholes price + greeks
+│   ├── views/garch.py         GARCH Lab: synthetic or source-history fits
+│   ├── views/placeholder.py   ONE class for the remaining future modules
 │   └── widgets/               log_panel.py (collapsible), status_bar.py
 ├── broker/
 │   ├── base.py                Broker protocol, ConnectionState, ConnectionEvent
@@ -78,9 +80,12 @@ quant_hub/
 │                              drawdown/moments, GBM estimation (μ̂, σ̂),
 │                              ReturnStats + SeriesAnalysis bundles
 ├── models/
+│   ├── optimize.py            shared NumPy-only Nelder–Mead minimizer
+│   │                          (MinimizeResult); callers reparameterize
 │   ├── garch.py               stationary GARCH(1,1): simulation, Gaussian
-│                              QMLE fit, conditional variance diagnostics
-
+│   │                          QMLE fit, conditional variance diagnostics
+│   └── black_scholes.py       European price, greeks (D25 scaling),
+│                              no-arbitrage bounds, bracketed-Newton IV
 ├── services/
 │   ├── market_service.py      source registry + get_history/get_quote facade
 │   ├── sync.py                SyncStatus/SyncPlan: FULL_HIT/PARTIAL_HIT/MISS
@@ -90,7 +95,8 @@ quant_hub/
 └── visualization/charts.py    ChartStyle + figure-level compositions:
                                plot_price_history, plot_lab_overview (price/
                                drawdown/distribution/rolling vol),
-                               plot_monte_carlo (fan + terminal dist)
+                               plot_monte_carlo (fan + terminal dist),
+                               plot_garch_overview
 ```
 
 ## Concurrency model

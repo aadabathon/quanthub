@@ -13,7 +13,7 @@ from tkinter import ttk
 
 from quant_hub.gui.theme import FONT_MONO, FONT_MONO_LG, PALETTE, SPACE_L, SPACE_S, SPACE_XS
 from quant_hub.gui.views.base import View
-from quant_hub.services.Options.options_service import BlackScholesInputs, OptionService
+from quant_hub.models.black_scholes import BlackScholesInputs, greeks, price
 from quant_hub.storage.state_store import ViewStateStore
 
 _STATE_KEY = "options_lab"
@@ -23,11 +23,9 @@ class OptionsLabView(View):
     def __init__(
         self,
         parent: tk.Misc,
-        option_service: OptionService,
         state_store: ViewStateStore,
     ) -> None:
         super().__init__(parent)
-        self._service = option_service
         self._state_store = state_store
 
         saved = state_store.load(_STATE_KEY)
@@ -40,7 +38,6 @@ class OptionsLabView(View):
             "option_type": saved.get("option_type", "call"),
         }
 
-        greeks = {}
         self._greek_vars = {
             "Delta": tk.StringVar(value="—"),
             "Gamma": tk.StringVar(value="—"),
@@ -138,16 +135,15 @@ class OptionsLabView(View):
             self._show_error(str(exc))
             return
         
-        greeks = self._service.greeks(inputs)
-        price = self._service.price(inputs)
-        self._result_label.configure(text=f"{price:,.4f}")
+        result = greeks(inputs)
+        self._result_label.configure(text=f"{price(inputs):,.4f}")
         self._error_label.configure(text="")
 
-        self._greek_vars["Delta"].set(f"{greeks['delta']:.4f}")
-        self._greek_vars["Gamma"].set(f"{greeks['gamma']:.6f}")
-        self._greek_vars["Theta"].set(f"{greeks['theta']:.4f}")
-        self._greek_vars["Vega"].set(f"{greeks['vega']:.4f}")
-        self._greek_vars["Rho"].set(f"{greeks['rho']:.4f}")
+        self._greek_vars["Delta"].set(f"{result['delta']:.4f}")
+        self._greek_vars["Gamma"].set(f"{result['gamma']:.6f}")
+        self._greek_vars["Theta"].set(f"{result['theta']:.4f}")
+        self._greek_vars["Vega"].set(f"{result['vega']:.4f}")
+        self._greek_vars["Rho"].set(f"{result['rho']:.4f}")
 
     def _show_error(self, message: str) -> None:
         self._result_label.configure(text="—")

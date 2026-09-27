@@ -17,7 +17,6 @@ from quant_hub.broker.market_source import IBKRSource
 from quant_hub.config import AppConfig
 from quant_hub.data.sources import SyntheticSource
 from quant_hub.events import EventBus, EventBusLogHandler
-from quant_hub.services.Options.options_service import OptionService
 from quant_hub.services.cached_source import CachedSource
 from quant_hub.storage.bar_store import BarStore
 from quant_hub.storage.state_store import ViewStateStore
@@ -27,7 +26,7 @@ from quant_hub.gui.theme import apply_theme
 from quant_hub.gui.views.dashboard import DashboardView
 from quant_hub.gui.views.garch import GARCHLabView
 from quant_hub.gui.views.markets import MarketsView
-from quant_hub.gui.views.Options_lab import OptionsLabView
+from quant_hub.gui.views.options_lab import OptionsLabView
 from quant_hub.gui.views.placeholder import PlaceholderView
 from quant_hub.gui.views.simulator import SimulatorView
 from quant_hub.services.market_service import MarketService
@@ -91,7 +90,6 @@ def create_app(config: AppConfig | None = None) -> tuple[tk.Tk, MainWindow]:
     market_service = MarketService(
         sources=[SyntheticSource(), CachedSource(IBKRSource(broker), store)],
     )
-    option_service = OptionService()
     tasks = TaskRunner()
 
     root = tk.Tk()
@@ -120,7 +118,7 @@ def create_app(config: AppConfig | None = None) -> tuple[tk.Tk, MainWindow]:
                 ),
                 (
                     "Options Lab",
-                    lambda parent: OptionsLabView(parent, option_service, state_store),
+                    lambda parent: OptionsLabView(parent, state_store),
                 ),
             ],
         ),
