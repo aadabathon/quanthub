@@ -338,3 +338,56 @@ def plot_message(fig: Figure, message: str, style: ChartStyle | None = None) -> 
         ha="center", va="center",
         color=style.muted, fontsize=10, fontfamily=style.font_family,
     )
+
+def plot_garch_overview(
+    fig: Figure,
+    returns,
+    fit,
+    style: ChartStyle | None = None,
+    periods_per_year: int = 252,
+) -> None:
+    """Draw observed returns, fitted annualized volatility, and residuals.
+
+    ``returns`` and ``fit`` are computed by the model layer before rendering.
+    The only arithmetic here is volatility's presentation conversion from
+    per-period variance to annualized standard deviation.
+    """
+    style = style or ChartStyle()
+    fig.clear()
+    grid = fig.add_gridspec(3, 1, height_ratios=[2, 3, 2])
+    ax_returns = fig.add_subplot(grid[0])
+    ax_vol = fig.add_subplot(grid[1], sharex=ax_returns)
+    ax_residuals = fig.add_subplot(grid[2])
+
+    _style_axes(ax_returns, style, right_ticks=True)
+    ax_returns.plot(returns.index, returns.to_numpy(), color=style.line, linewidth=0.7)
+    ax_returns.axhline(0.0, color=style.baseline, linewidth=0.8)
+    ax_returns.yaxis.set_major_formatter(PercentFormatter(xmax=1.0, decimals=1))
+    _title(ax_returns, "log returns", style)
+    ax_returns.tick_params(labelbottom=False)
+
+    _style_axes(ax_vol, style, right_ticks=True)
+    annualized = np.sqrt(fit.conditional_variances * periods_per_year)
+    ax_vol.plot(returns.index, annualized, color=style.line, linewidth=1.3)
+    long_run = math.sqrt(fit.parameters.unconditional_variance * periods_per_year)
+    ax_vol.axhline(long_run, color=style.text_secondary, linewidth=1.0, linestyle="--")
+    ax_vol.yaxis.set_major_formatter(PercentFormatter(xmax=1.0, decimals=0))
+    _date_axis(ax_vol, style)
+    _title(ax_vol, "conditional volatility · solid: fitted · dashed: long-run", style)
+    ax_vol.margins(x=0.01)
+
+    _style_axes(ax_residuals, style)
+    ax_residuals.hist(
+        fit.standardized_residuals,
+        bins=min(60, max(10, len(fit.standardized_residuals) // 8)),
+        density=True,
+        color=style.line,
+        alpha=0.75,
+        edgecolor=style.surface,
+        linewidth=0.4,
+    )
+    x = np.linspace(-4.0, 4.0, 200)
+    ax_residuals.plot(x, np.exp(-0.5 * x**2) / math.sqrt(2.0 * math.pi), color=style.text_secondary, linewidth=1.1, linestyle="--")
+    ax_residuals.set_yticks([])
+    ax_residuals.grid(False)
+    _title(ax_residuals, "standardized residuals · dashed: N(0, 1)", style)

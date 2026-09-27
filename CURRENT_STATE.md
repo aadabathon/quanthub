@@ -1,13 +1,13 @@
 # CURRENT_STATE.md
 
 **Update this file whenever meaningful work lands.** Last updated:
-**2026-08-14** (v0.4 — Milestone 6 (reduced): product architecture + quote
-provenance — complete).
+**2026-09-20** (GARCH domain foundation + interactive GARCH Lab complete;
+not yet live-verified against TWS).
 
 ## Status
 
-v0.4 implemented and live-verified against TWS 7496. `python -m pytest -q`
-→ **248 passed** (no network needed).
+v0.4 remains live-verified against TWS 7496. `py -3.12 -m pytest -q` →
+**265 passed** (no network needed).
 
 Options Lab (uncommitted, 2026-08-19): `services/Options/options_service.py`
 prices European options under Black-Scholes and reports greeks —
@@ -15,6 +15,12 @@ prices European options under Black-Scholes and reports greeks —
 move, `theta` per calendar day (D25; convention documented in the module
 docstring). `gui/views/Options_lab.py` is a manual-entry calculator (no
 options-data source wired in) under the MODELS nav section.
+GARCH model foundation (uncommitted, 2026-09-20): `models/garch.py` provides
+stationary GARCH(1,1) simulation, conditional-variance evaluation, and a
+NumPy-only Gaussian-QMLE fit with constrained parameters. It is deliberately
+pure and source-agnostic. GARCH Lab now exposes synthetic simulation and
+explicit market-history fitting through the existing SQLite-first `ibkr` cache.
+
 
 Page architecture (D24): **Dashboard** = workstation overview (IBKR
 connection card, local-store summary card, page guide); **Markets** = real
@@ -22,9 +28,11 @@ observations with a page-owned source selector, columns
 Symbol/Last/Mode/As-of/Source, per-row UNAVAILABLE states with the TWS
 reason shown in the detail line, and a persist-only "Sync 1Y history"
 button; **Simulator** = the GBM/Monte Carlo laboratory, synthetic-only,
-math/analytics/tests untouched; MODELS nav section holds the 7
-placeholders. Log panel is collapsible (header strip shows the latest
-message).
+math/analytics/tests untouched; **GARCH Lab** is the first real MODELS page,
+with five remaining placeholders. It fits synthetic GARCH paths or explicit
+market-history log returns through a selected source (the `ibkr` source reads
+SQLite coverage first). Log panel is collapsible (header strip shows the
+latest message).
 
 Quote provenance (D22/D23): `Quote.mode: MarketDataMode`; IBKR quotes
 stream briefly (self-cancelled), normalize live+delayed ticks and the
@@ -53,6 +61,13 @@ card lists the persisted series.
   persists only; richer historical research is a later milestone.
 - Prior M4 limits unchanged (end-"now" fetches, daily bars only, STK/USD
   only, no retry/backoff).
+- GARCH uses a Gaussian QMLE and deterministic NumPy-only multi-start
+  Nelder–Mead search. It enforces stationary GARCH(1,1), requires at least
+  20 finite returns, and has no robust/heavy-tailed innovation option,
+  confidence intervals, rolling refit, or out-of-sample forecast evaluation.
+- GARCH Lab's annualized-volatility display assumes 252 daily periods/year.
+  Synthetic and GUI construction paths are tested; a real cached/IBKR history
+  fit has not yet been manually live-verified.
 
 ## Version control / environment
 
@@ -64,8 +79,8 @@ untracking is the owner's call). Windows 11, Python 3.12.6, ibapi
 
 ## Next-step candidates (owner picks; see ROADMAP.md)
 
-1. First model module (GARCH(1,1) or Kalman) — the platform is now shaped
-   for it (creates `models/`, D6).
+1. Kalman state-space model/lab — the second concrete model can now inform
+   any shared model conventions.
 2. Historical-research surface (chart persisted series; the deferred
    Markets detail pane) + SettingsStore for UI preferences.
 3. Synthetic-data expansion (OU / correlated / regime-switching).

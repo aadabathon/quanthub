@@ -43,14 +43,17 @@ owner before implementation begins.
   reason shown per row (D22); nav sections, collapsible log. 223 tests.
   Deferred consciously: dashboard widget framework/persistence,
   SettingsStore, watchlist persistence, Markets historical detail pane.
+- **GARCH domain foundation** (2026-09-20): stationary GARCH(1,1)
+  simulation, Gaussian-QMLE fitting, conditional-variance diagnostics, and
+  synthetic parameter-recovery tests in the new pure `models/` layer. The
+  interactive Synthetic/SQLite research surface is now available as GARCH Lab.
+
 
 ## Near-term candidates (order decided with the owner)
 
-- **First real model module** (creates `models/`, per D6): likely **GARCH(1,1)**
-  (fits the synthetic-validation story: simulate → fit → recover parameters)
-  or **Kalman filtering** (local-level/trend on prices). Full math derivation
-  first, following the GBM exemplar conventions. Can now validate on both
-  synthetic worlds and real persisted SPY history.
+- **Kalman filtering** (local-level/trend on log prices): the next distinct
+  model candidate. Derive and validate the filter/smoother on a controlled
+  synthetic state-space world before exposing it to persisted history.
 - **Synthetic-data expansion** — mean-reverting (OU), correlated assets,
   regime-switching generators. These feed model validation before real data.
 - **Pinned historical end-times** (lifts D11) — makes backfill/interior-gap

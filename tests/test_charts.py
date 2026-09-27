@@ -10,9 +10,11 @@ import pytest
 
 from quant_hub.data.simulation import monte_carlo_summary, run_gbm_simulation
 from quant_hub.data.stats import analyze_history
+from quant_hub.models.garch import GARCH11Parameters, fit_garch11, simulate_garch11
 from quant_hub.visualization.charts import (
     ChartStyle,
     create_figure,
+    plot_garch_overview,
     plot_lab_overview,
     plot_message,
     plot_monte_carlo,
@@ -98,3 +100,18 @@ def test_plot_redraws_in_place(sim, analysis):
     assert len(fig.axes) == 2
     plot_message(fig, "no simulation yet")
     assert len(fig.axes) == 0
+
+def test_plot_garch_overview():
+    simulation = simulate_garch11(
+        GARCH11Parameters(mean=0.0002, omega=0.000004, alpha=0.08, beta=0.88),
+        600,
+        seed=8,
+    )
+    import pandas as pd
+    returns = pd.Series(
+        simulation.returns, index=pd.bdate_range("2024-01-02", periods=600)
+    )
+    fig = create_figure()
+    plot_garch_overview(fig, returns, fit_garch11(simulation.returns))
+    assert len(fig.axes) == 3
+    fig.canvas.draw()

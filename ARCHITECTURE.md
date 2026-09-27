@@ -16,6 +16,9 @@ services/       Application facade + caching. May import data/, storage/, and
 data/           Pure domain: types, generators, statistics, validation,
                 interval math. NumPy/pandas only. Imports nothing from any
                 other quant_hub package.
+models/         Pure quantitative models. May consume data/ contracts; never
+                GUI, services, broker, or storage.
+
 broker/         Infrastructure. The ONLY package allowed to import ibapi.
                 Never storage.
 storage/        SQLite persistence (stdlib sqlite3). Knows data/ only —
@@ -74,6 +77,10 @@ quant_hub/
 │   └── stats.py               full analytics layer: returns/CAGR/rolling vol/
 │                              drawdown/moments, GBM estimation (μ̂, σ̂),
 │                              ReturnStats + SeriesAnalysis bundles
+├── models/
+│   ├── garch.py               stationary GARCH(1,1): simulation, Gaussian
+│                              QMLE fit, conditional variance diagnostics
+
 ├── services/
 │   ├── market_service.py      source registry + get_history/get_quote facade
 │   ├── sync.py                SyncStatus/SyncPlan: FULL_HIT/PARTIAL_HIT/MISS
@@ -116,13 +123,17 @@ ibapi is thread-based. Threads + queues is the smallest correct model.
 Dashboard  = workstation overview (connection card, persisted-store summary)
 Markets    = real market observations: explicit source, provenance columns
 Simulator  = controlled stochastic experiments (the GBM/Monte Carlo lab)
-MODELS…    = placeholders for future specialized workflows
+GARCH Lab  = conditional-volatility fit: synthetic GARCH or explicit source history
+MODELS…    = GARCH Lab plus placeholders for future specialized workflows
 ```
 
 **No global source state.** ``MarketService.get_history/get_quote`` take a
 required ``source`` argument; each page owns and displays its choice
-(Markets' selector; Simulator is synthetic by construction). The Simulator
-keeps the D15 invariant: one TaskRunner job → one immutable
+(Markets' selector; Simulator is synthetic by construction). GARCH Lab names
+its market source per fit; `ibkr` therefore traverses the existing
+SQLite-first `CachedSource` path. Every fit runs as one TaskRunner job, so
+both the fitted parameters and every chart panel describe the same returns.
+The Simulator keeps the D15 invariant: one TaskRunner job → one immutable
 ``(sim, analysis, mc)`` triple → every chart/stat renders from it.
 
 **Quotes carry provenance** (``Quote.mode: MarketDataMode`` — live/frozen/

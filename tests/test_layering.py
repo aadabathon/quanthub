@@ -24,6 +24,9 @@ PACKAGE_ROOT = Path(quant_hub.__file__).parent
 RULES = {
     "data": ["tkinter", "ibapi", "quant_hub.gui", "quant_hub.broker",
              "quant_hub.services", "quant_hub.visualization", "quant_hub.storage"],
+    "models": ["tkinter", "ibapi", "quant_hub.gui", "quant_hub.broker",
+               "quant_hub.services", "quant_hub.visualization", "quant_hub.storage"],
+
     "services": ["tkinter", "ibapi", "quant_hub.gui", "quant_hub.visualization"],
     "broker": ["tkinter", "quant_hub.gui", "quant_hub.visualization",
                "quant_hub.storage"],

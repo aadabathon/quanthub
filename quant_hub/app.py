@@ -25,6 +25,7 @@ from quant_hub.gui.main_window import MainWindow
 from quant_hub.gui.task_runner import TaskRunner
 from quant_hub.gui.theme import apply_theme
 from quant_hub.gui.views.dashboard import DashboardView
+from quant_hub.gui.views.garch import GARCHLabView
 from quant_hub.gui.views.markets import MarketsView
 from quant_hub.gui.views.Options_lab import OptionsLabView
 from quant_hub.gui.views.placeholder import PlaceholderView
@@ -36,7 +37,6 @@ _logger = logging.getLogger(__name__)
 _PLACEHOLDERS: list[tuple[str, str]] = [
     ("Volatility", "Implied-volatility estimation, smiles, and surfaces."),
     ("Kalman", "State-space models and Kalman-filtered estimates."),
-    ("GARCH", "Conditional-volatility modeling and forecasts."),
     ("Markov", "Regime detection with Markov-switching models."),
     ("Portfolio", "Portfolio analytics, Kelly sizing, and growth optimization."),
     ("Research", "Strategy research and backtesting."),
@@ -127,8 +127,11 @@ def create_app(config: AppConfig | None = None) -> tuple[tk.Tk, MainWindow]:
         (
             "MODELS",
             [
-                (title, lambda parent, t=title, d=desc: PlaceholderView(parent, t, d))
-                for title, desc in _PLACEHOLDERS
+                ("GARCH Lab", lambda parent: GARCHLabView(parent, market_service, tasks, state_store)),
+                *[
+                    (title, lambda parent, t=title, d=desc: PlaceholderView(parent, t, d))
+                    for title, desc in _PLACEHOLDERS
+                ],
             ],
         ),
     ]
