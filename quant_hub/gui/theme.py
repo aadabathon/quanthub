@@ -172,6 +172,19 @@ def apply_theme(root: tk.Tk) -> None:
             fieldbackground=[("readonly", p.surface_alt)],
             foreground=[("disabled", p.muted)],
         )
+    style.configure(
+        "TCheckbutton",
+        background=p.surface,
+        foreground=p.text_secondary,
+        indicatorbackground=p.surface_alt,
+        indicatorforeground=p.text,
+        font=FONT_SMALL,
+    )
+    style.map(
+        "TCheckbutton",
+        background=[("active", p.surface)],
+        indicatorbackground=[("selected", p.accent), ("active", p.border)],
+    )
     # Combobox dropdown list (plain tk, styled via the option database).
     root.option_add("*TCombobox*Listbox.background", p.surface_alt)
     root.option_add("*TCombobox*Listbox.foreground", p.text)

@@ -32,6 +32,7 @@ from matplotlib.ticker import PercentFormatter
 from quant_hub.data.simulation import GBMSimulationResult, MonteCarloSummary
 from quant_hub.data.stats import SeriesAnalysis
 from quant_hub.data.types import PriceHistory
+from quant_hub.models.option_monte_carlo import MonteCarloPricing
 
 
 @dataclass(frozen=True)
@@ -46,6 +47,10 @@ class ChartStyle:
     grid: str = "#2c2c2a"
     baseline: str = "#383835"
     line: str = "#3987e5"
+    # Ordinal ramp of the series hue for ordered curves (e.g. time to expiry):
+    # slot 0 is the primary series, later slots step lighter. One hue with
+    # monotone lightness, validated on the dark surface (--ordinal).
+    ramp: tuple[str, ...] = ("#3987e5", "#6da7ec", "#9ec5f4", "#cde2fb")
     font_family: str = "Segoe UI"
     mono_family: str = "Consolas"
 
@@ -391,3 +396,128 @@ def plot_garch_overview(
     ax_residuals.set_yticks([])
     ax_residuals.grid(False)
     _title(ax_residuals, "standardized residuals · dashed: N(0, 1)", style)
+
+
+# --------------------------------------------------------------------------
+# Options Lab
+# --------------------------------------------------------------------------
+
+def _legend(ax: Axes, style: ChartStyle) -> None:
+    legend = ax.legend(loc="upper left", frameon=False, fontsize=8)
+    for text in legend.get_texts():
+        text.set_color(style.text_secondary)
+        text.set_fontfamily(style.font_family)
+
+
+def _reference_line(ax: Axes, x: float, label: str, style: ChartStyle, tier: int = 0) -> None:
+    """Dotted vertical marker labelled at the top; ``tier`` stacks labels of
+    nearby markers (spot and strike are often a few pixels apart)."""
+    ax.axvline(x, color=style.muted, linewidth=0.8, linestyle=":")
+    ax.annotate(
+        label, xy=(x, 1.0), xycoords=("data", "axes fraction"), xytext=(3, -10 - 11 * tier),
+        textcoords="offset points", color=style.muted, fontsize=8,
+        fontfamily=style.font_family,
+    )
+
+
+def plot_option_profile(
+    fig: Figure,
+    spots: np.ndarray,
+    curves: list[tuple[str, np.ndarray]],
+    metric: str,
+    spot: float,
+    strike: float,
+    style: ChartStyle | None = None,
+) -> None:
+    """One option metric vs spot, one curve per time-to-expiry.
+
+    ``curves`` is ordered from the contract's own expiry toward expiry day;
+    colors step along the ordinal ramp in that order (time is ordered, so
+    one hue light→dark, not categorical hues).
+    """
+    style = style or ChartStyle()
+    fig.clear()
+    ax = fig.add_subplot()
+    _style_axes(ax, style, right_ticks=True)
+    for i, (label, values) in enumerate(curves):
+        color = style.ramp[min(i, len(style.ramp) - 1)]
+        ax.plot(spots, values, color=color, linewidth=2.0 if i == 0 else 1.4, label=label)
+    ax.axhline(0.0, color=style.baseline, linewidth=0.8)
+    _reference_line(ax, spot, "spot", style)
+    _reference_line(ax, strike, "strike", style, tier=1)
+    ax.margins(x=0.02)
+    _title(ax, f"{metric} vs spot · by days to expiry", style)
+    _legend(ax, style)
+
+
+def plot_strategy_pnl(
+    fig: Figure,
+    spots: np.ndarray,
+    expiry_pnl: np.ndarray,
+    expiry_label: str,
+    spot: float,
+    breakevens: tuple[float, ...],
+    horizon_pnl: np.ndarray | None = None,
+    horizon_label: str = "",
+    style: ChartStyle | None = None,
+) -> None:
+    """Strategy P&L vs scenario spot: at expiry, and optionally at a horizon."""
+    style = style or ChartStyle()
+    fig.clear()
+    ax = fig.add_subplot()
+    _style_axes(ax, style, right_ticks=True)
+    ax.axhline(0.0, color=style.baseline, linewidth=1.0)
+    ax.fill_between(spots, expiry_pnl, 0.0, color=style.ramp[0], alpha=0.12, linewidth=0)
+    ax.plot(spots, expiry_pnl, color=style.ramp[0], linewidth=2.0, label=expiry_label)
+    if horizon_pnl is not None:
+        ax.plot(spots, horizon_pnl, color=style.ramp[2], linewidth=1.4, label=horizon_label)
+    for level in breakevens:
+        if spots[0] <= level <= spots[-1]:
+            ax.plot([level], [0.0], marker="o", markersize=5, color=style.text,
+                    markeredgecolor=style.surface, markeredgewidth=2)
+            ax.annotate(
+                f"{level:,.2f}", xy=(level, 0.0), xytext=(0, -14), textcoords="offset points",
+                ha="center", color=style.text_secondary, fontsize=8,
+                fontfamily=style.mono_family,
+            )
+    _reference_line(ax, spot, "spot", style)
+    ax.yaxis.set_major_formatter(lambda value, _pos: f"${value:,.0f}")
+    ax.margins(x=0.02)
+    _title(ax, "P&L vs underlying price · dots: breakevens", style)
+    _legend(ax, style)
+
+
+def plot_monte_carlo_pricing(
+    fig: Figure, result: MonteCarloPricing, style: ChartStyle | None = None
+) -> None:
+    """Convergence of the MC estimate to the closed form, plus the terminal law."""
+    style = style or ChartStyle()
+    fig.clear()
+    grid = fig.add_gridspec(1, 2, width_ratios=[3, 2])
+    ax_conv = fig.add_subplot(grid[0])
+    ax_dist = fig.add_subplot(grid[1])
+
+    _style_axes(ax_conv, style, right_ticks=True)
+    n = result.checkpoints
+    band = 1.96 * result.running_standard_error
+    ax_conv.fill_between(
+        n, result.running_estimate - band, result.running_estimate + band,
+        color=style.line, alpha=0.18, linewidth=0, label="95% interval",
+    )
+    ax_conv.plot(n, result.running_estimate, color=style.line, linewidth=1.6, label="MC estimate")
+    ax_conv.axhline(result.closed_form, color=style.text_secondary, linewidth=1.0,
+                    linestyle="--", label="closed form")
+    ax_conv.set_xscale("log")
+    ax_conv.xaxis.set_major_formatter(lambda value, _pos: f"{value:,.0f}")
+    ax_conv.set_xlabel("paths", color=style.muted, fontsize=8)
+    _title(ax_conv, "estimate vs paths · band narrows like 1/√n", style)
+    _legend(ax_conv, style)
+
+    _style_axes(ax_dist, style)
+    terminal = result.terminal_prices[:200_000]
+    ax_dist.hist(terminal, bins=80, density=True, color=style.line, alpha=0.75,
+                 edgecolor=style.surface, linewidth=0.4)
+    _reference_line(ax_dist, result.inputs.strike, "strike", style)
+    ax_dist.set_yticks([])
+    ax_dist.grid(False)
+    _title(ax_dist, "risk-neutral terminal price", style)

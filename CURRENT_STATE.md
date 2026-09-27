@@ -1,23 +1,39 @@
 # CURRENT_STATE.md
 
 **Update this file whenever meaningful work lands.** Last updated:
-**2026-09-27** (housekeeping before the Options/Volatility lab milestones:
-pure `models/black_scholes.py` with an IV solver, shared
-`models/optimize.py` + GARCH optimizer bug fix, snake_case renames,
-bytecode untracked, doc paths fixed).
+**2026-09-27** (Milestone A — Options Lab — complete on synthetic and
+source-backed inputs; IBKR load path not yet live-verified).
 
 ## Status
 
 v0.4 remains live-verified against TWS 7496. `py -3.12 -m pytest -q` →
-**410 passed** (no network needed).
+**480 passed** (no network needed).
 
-Black-Scholes (2026-09-27, D26): `models/black_scholes.py` is the pure
-home for European pricing, greeks (D25 trader scaling: `vega`/`rho` per
-1-point move, `theta` per calendar day), `no_arbitrage_bounds`, and
-`implied_volatility` (bracketed Newton; raises for prices outside the
-bounds). The old `services/Options/` package is deleted.
-`gui/views/options_lab.py` is still the manual-entry calculator (price +
-greeks; no IV input and no options-data source yet).
+Options Lab (Milestone A, 2026-09-27, D26/D28/D29):
+- `models/black_scholes.py`: Black-Scholes-Merton with dividend yield,
+  vectorized `price_array`/`greeks_array`, a typed `Greeks` (D25 trader
+  scaling), `MarketInputs`, no-arbitrage bounds, and the bracketed-Newton IV
+  solver (~11 price evaluations, ~0.2 ms per solve).
+- `models/strategy.py`: multi-leg positions (signed contracts plus stock,
+  recorded or fair entry premiums), P&L/greeks at any horizon, exact
+  piecewise-linear expiry profile for single-expiry positions (grid
+  fallback, marked "≈", for calendars), 11 templates.
+- `models/option_monte_carlo.py`: risk-neutral MC with antithetic variates,
+  running estimate ± SE, and a z-score vs the closed form.
+- `services/underlying.py`: any source → spot plus realized vol, with
+  provenance.
+
+GUI (`gui/views/options_lab/`): an UNDERLYING strip (manual / synthetic /
+ibkr, Load on the TaskRunner, provenance line, EDITED flag) over three tabs:
+- **Pricer**: price ↔ IV, greeks, and a greek-vs-spot profile across four
+  times to expiry.
+- **Strategy**: templates or hand-added legs, P&L at expiry and T+h,
+  breakevens, and position greeks.
+- **Monte Carlo**: convergence chart plus a terminal distribution.
+
+Loading a new symbol re-centres strikes. The old calculator's saved inputs
+migrate. Verified by driving the real app on the synthetic source with
+screenshots at 1280×800.
 
 GARCH (2026-09-20, optimizer fixed 2026-09-27, D27): `models/garch.py`
 provides stationary GARCH(1,1) simulation, conditional-variance evaluation,
@@ -55,6 +71,14 @@ card lists the persisted series.
 
 ## Untested / known limits
 
+- Options Lab `ibkr` load has not been exercised against live TWS. It uses
+  the same `CachedSource`/quote paths the Markets page verified, but the
+  quote → last-close fallback has only been tested with a fake source.
+- Options are European with a continuous dividend yield: no American early
+  exercise, discrete dividends, chains, skew, or live positions. Strategy
+  scenarios hold σ/r/q fixed over the horizon (no vol dynamics).
+- Rate and dividend yield are manual inputs (no source yet).
+
 - Quote refresh is serial (one TaskRunner worker, D9): each entitled symbol
   ~1s; an unavailable symbol costs the full `quote_timeout_s` (5s).
 - FROZEN/DELAYED_FROZEN modes are normalized but not yet observed live
@@ -88,9 +112,7 @@ install without pytest. Windows 11, Python 3.12.6, ibapi
 
 ## Next steps (agreed 2026-09-27; see ROADMAP.md)
 
-1. **Milestone A — Options Lab** on synthetic inputs: vectorized pricing,
-   dividend yield, multi-leg payoff/P&L, greek profiles, Monte Carlo vs
-   closed-form validation.
+1. ~~Milestone A — Options Lab~~ (done 2026-09-27).
 2. **Milestone B — Volatility Lab**: synthetic SVI surface → noisy chain →
    IV inversion → SVI refit (true vs fitted), realized-vol panel.
 3. Then the data side: options chains and real portfolio data via IBKR.

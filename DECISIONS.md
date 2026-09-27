@@ -287,3 +287,44 @@ as 0.078). The simplex is now `start + step·I` (spans ℝⁿ). GARCH fits
 reach strictly lower negative log-likelihoods, and regression tests pin
 this: an off-diagonal quadratic in `test_optimize.py` and a GARCH truth
 that is not one of the fitter's starting points.
+
+## D28 — Options workflows run on `MarketInputs` + plain position data (2026-09-27)
+
+Milestone A (Options Lab) is built so a synthetic run and a live run differ
+only in *who fills two value objects*:
+
+- **`MarketInputs(spot, rate, sigma, dividend_yield)`** is the only market
+  state any options model consumes. The lab's UNDERLYING strip fills it by
+  hand or through `services/underlying.load_underlying(market, symbol,
+  source)`. That service gets spot from the source's quote, falling back to
+  the last daily close with the basis recorded (D22/D23), and σ from
+  realized daily-log-return vol over a lookback. Realized vol is the
+  historical stand-in for Black-Scholes' forward-looking σ, and implied vol
+  from chains replaces it in the data phase. Rate and dividend yield stay
+  manual until a source exists.
+- **`Strategy` / `OptionLeg` are plain data**: signed contract counts, a
+  signed stock position, and an optional *recorded* entry premium (None =
+  model fair value at entry). A future IBKR positions adapter only has to
+  emit `OptionLeg`s with fill prices. The P&L, exact expiry profile, and
+  greeks code does not change.
+- **Strikes re-centre only when the loaded symbol changes** from the one
+  they were built around. Reloading the same symbol never moves them, and
+  neither does editing by hand.
+
+Chains, the vol surface, American exercise, and live positions are
+deliberately out of scope here (Milestone B / data phase).
+
+## D29 — Greeks are a typed, vectorized `Greeks`; Φ via `np.vectorize(math.erf)` (2026-09-27)
+
+Supersedes the dict return in D25; the D25 *scaling* is unchanged. `greeks()` returns a frozen
+`Greeks(delta, gamma, vega, theta, rho)` (floats for scalar inputs), and
+`price_array`/`greeks_array` broadcast NumPy inputs so one call prices a
+strike × expiry × spot grid. A typed result catches misspelled keys and
+lets strategy greeks be summed field-wise. NumPy has no `erf` and SciPy is
+not a dependency. So Φ uses stdlib `math.erf` through `np.vectorize`: it is
+exact to double precision (a rational approximation, e.g. A&S 7.1.26 at
+~1e-7, would break the 1e-10 IV round trips), at the cost of a Python-level
+loop. That costs ~1 ms for a 4×241 profile grid and ~0.2 ms per IV solve,
+which is fine for the labs. Revisit only if chain-wide IV inversion in
+Milestone B needs more; a vectorized bracketed Newton over the chain is the
+natural next step there.

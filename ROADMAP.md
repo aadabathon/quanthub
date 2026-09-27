@@ -53,6 +53,12 @@ owner before implementation begins.
   degenerate-simplex bug that confined GARCH fits to a line (D27);
   snake_case module names; bytecode untracked; doc paths corrected. 410
   tests.
+- **Milestone A — Options Lab** (2026-09-27): Black-Scholes-Merton with
+  dividend yield (vectorized, typed `Greeks`), IV input, multi-leg
+  strategies with exact expiry analysis, greek profiles, and antithetic
+  Monte Carlo vs the closed form. Built on a source-agnostic `MarketInputs`
+  that is filled manually, synthetically, or from IBKR/SQLite via
+  `services/underlying.py` (D28/D29). 480 tests.
 
 ## Current phase — synthetic research workflows (set 2026-09-27)
 
@@ -60,7 +66,7 @@ Owner direction: finish the quant-research side on **synthetic processes
 first** (a known true world → estimate → compare, as GBM and GARCH already
 do), then turn to the data side. Each milestone is approved before the next.
 
-1. **Milestone A — Options Lab.** Vectorized Black-Scholes over
+1. ~~**Milestone A — Options Lab.**~~ Done (see above). Vectorized Black-Scholes over
    strikes/expiries; continuous dividend yield `q` (Merton); IV input in the
    calculator; multi-leg strategy payoff and P&L (at and before expiry);
    greek profiles vs spot and time; Monte Carlo pricing under GBM checked

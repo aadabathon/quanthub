@@ -54,7 +54,10 @@ quant_hub/
 │   ├── views/simulator.py     the GBM/Monte Carlo laboratory (synthetic only)
 │   ├── views/markets.py       watchlist: page-owned source, provenance
 │   │                          columns, per-row unavailable reasons, history sync
-│   ├── views/options_lab.py   manual-entry Black-Scholes price + greeks
+│   ├── views/options_lab/     Options Lab package: view.py (shell + state),
+│   │                          market_bar.py (UNDERLYING strip: manual/
+│   │                          synthetic/ibkr), pricer_tab.py, strategy_tab.py,
+│   │                          monte_carlo_tab.py, common.py (widget helpers)
 │   ├── views/garch.py         GARCH Lab: synthetic or source-history fits
 │   ├── views/placeholder.py   ONE class for the remaining future modules
 │   └── widgets/               log_panel.py (collapsible), status_bar.py
@@ -84,10 +87,17 @@ quant_hub/
 │   │                          (MinimizeResult); callers reparameterize
 │   ├── garch.py               stationary GARCH(1,1): simulation, Gaussian
 │   │                          QMLE fit, conditional variance diagnostics
-│   └── black_scholes.py       European price, greeks (D25 scaling),
-│                              no-arbitrage bounds, bracketed-Newton IV
+│   ├── black_scholes.py       Black-Scholes-Merton (dividend yield q):
+│   │                          MarketInputs, vectorized price/Greeks (D25
+│   │                          scaling), no-arbitrage bounds, bracketed-Newton IV
+│   ├── strategy.py            OptionLeg/Strategy, value/P&L/greeks at a
+│   │                          horizon, exact expiry profile, templates
+│   └── option_monte_carlo.py  risk-neutral MC pricing (antithetic), running
+│                              estimate + SE vs the closed form
 ├── services/
 │   ├── market_service.py      source registry + get_history/get_quote facade
+│   ├── underlying.py          any source → spot (quote, else last close) +
+│   │                          realized vol, with provenance (D28)
 │   ├── sync.py                SyncStatus/SyncPlan: FULL_HIT/PARTIAL_HIT/MISS
 │   └── cached_source.py       CachedSource: BarSource + BarStore → DataSource
 ├── storage/bar_store.py       SQLite schema (instruments/bars/coverage),
@@ -96,7 +106,8 @@ quant_hub/
                                plot_price_history, plot_lab_overview (price/
                                drawdown/distribution/rolling vol),
                                plot_monte_carlo (fan + terminal dist),
-                               plot_garch_overview
+                               plot_garch_overview, plot_option_profile,
+                               plot_strategy_pnl, plot_monte_carlo_pricing
 ```
 
 ## Concurrency model
@@ -129,6 +140,7 @@ ibapi is thread-based. Threads + queues is the smallest correct model.
 Dashboard  = workstation overview (connection card, persisted-store summary)
 Markets    = real market observations: explicit source, provenance columns
 Simulator  = controlled stochastic experiments (the GBM/Monte Carlo lab)
+Options Lab= pricing/IV, multi-leg strategies, MC check over one MarketInputs
 GARCH Lab  = conditional-volatility fit: synthetic GARCH or explicit source history
 MODELS…    = GARCH Lab plus placeholders for future specialized workflows
 ```
@@ -139,7 +151,12 @@ required ``source`` argument; each page owns and displays its choice
 its market source per fit; `ibkr` therefore traverses the existing
 SQLite-first `CachedSource` path. Every fit runs as one TaskRunner job, so
 both the fitted parameters and every chart panel describe the same returns.
-The Simulator keeps the D15 invariant: one TaskRunner job → one immutable
+The Options Lab (D28) owns a source selector in its UNDERLYING strip:
+`manual` inputs, or `services/underlying.load_underlying` on a named source
+(one TaskRunner job: history → realized vol, quote → spot, falling back to
+the last close when the quote is unavailable). Every tab then prices off the
+single resulting ``MarketInputs``. The models never know the source. The
+Simulator keeps the D15 invariant: one TaskRunner job → one immutable
 ``(sim, analysis, mc)`` triple → every chart/stat renders from it.
 
 **Quotes carry provenance** (``Quote.mode: MarketDataMode`` — live/frozen/

@@ -118,7 +118,7 @@ def create_app(config: AppConfig | None = None) -> tuple[tk.Tk, MainWindow]:
                 ),
                 (
                     "Options Lab",
-                    lambda parent: OptionsLabView(parent, state_store),
+                    lambda parent: OptionsLabView(parent, market_service, tasks, state_store),
                 ),
             ],
         ),

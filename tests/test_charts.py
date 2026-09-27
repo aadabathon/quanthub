@@ -115,3 +115,46 @@ def test_plot_garch_overview():
     plot_garch_overview(fig, returns, fit_garch11(simulation.returns))
     assert len(fig.axes) == 3
     fig.canvas.draw()
+
+
+def test_plot_option_profile():
+    import numpy as np
+
+    from quant_hub.models.black_scholes import price_array
+    from quant_hub.visualization.charts import plot_option_profile
+
+    spots = np.linspace(70.0, 130.0, 121)
+    curves = [(f"{d}d", price_array(spots, 100.0, d, 0.05, 0.2, "call")) for d in (30, 15, 7, 1)]
+    fig = create_figure()
+    plot_option_profile(fig, spots, curves, "price", 100.0, 100.0)
+    assert len(fig.axes) == 1 and len(fig.axes[0].get_legend().get_texts()) == 4
+    fig.canvas.draw()
+
+
+def test_plot_strategy_pnl_with_and_without_horizon():
+    from quant_hub.models.black_scholes import MarketInputs
+    from quant_hub.models.strategy import STRATEGY_TEMPLATES, expiry_profile, spot_grid, strategy_pnl
+    from quant_hub.visualization.charts import plot_strategy_pnl
+
+    market = MarketInputs(100.0, 0.05, 0.25)
+    strategy = STRATEGY_TEMPLATES["Iron condor"](100.0, 30.0, 0.05)
+    spots = spot_grid(strategy, market)
+    expiry = strategy_pnl(strategy, market, spots, 30.0)
+    fig = create_figure()
+    plot_strategy_pnl(fig, spots, expiry, "at expiry", 100.0, expiry_profile(strategy, market).breakevens,
+                      strategy_pnl(strategy, market, spots, 0.0), "T+0d")
+    fig.canvas.draw()
+    plot_strategy_pnl(fig, spots, expiry, "at expiry", 100.0, ())
+    assert len(fig.axes) == 1
+
+
+def test_plot_monte_carlo_pricing():
+    from quant_hub.models.black_scholes import BlackScholesInputs
+    from quant_hub.models.option_monte_carlo import monte_carlo_price
+    from quant_hub.visualization.charts import plot_monte_carlo_pricing
+
+    result = monte_carlo_price(BlackScholesInputs(100.0, 100.0, 30.0, 0.05, 0.2, "put"), 2000, seed=1)
+    fig = create_figure()
+    plot_monte_carlo_pricing(fig, result)
+    assert len(fig.axes) == 2
+    fig.canvas.draw()

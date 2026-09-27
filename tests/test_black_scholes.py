@@ -7,13 +7,18 @@ import math
 
 import pytest
 
+import numpy as np
+
 from quant_hub.models.black_scholes import (
     IV_MAX_SIGMA,
     BlackScholesInputs,
+    MarketInputs,
     greeks,
+    greeks_array,
     implied_volatility,
     no_arbitrage_bounds,
     price,
+    price_array,
 )
 
 
@@ -86,29 +91,29 @@ class TestGreeks:
         inputs = make_inputs(spot=87.0, strike=95.0, dte=120.0, rate=0.03, sigma=0.35)
         call = greeks(inputs)
         put = greeks(BlackScholesInputs(**{**vars(inputs), "option_type": "put"}))
-        assert call["delta"] - put["delta"] == pytest.approx(1.0)
+        assert call.delta - put.delta == pytest.approx(1.0)
 
     def test_gamma_and_vega_identical_for_call_and_put(self):
         # Gamma and vega don't depend on option_type -- same underlying, same T.
         inputs = make_inputs(spot=87.0, strike=95.0, dte=120.0, rate=0.03, sigma=0.35)
         call = greeks(inputs)
         put = greeks(BlackScholesInputs(**{**vars(inputs), "option_type": "put"}))
-        assert call["gamma"] == pytest.approx(put["gamma"])
-        assert call["vega"] == pytest.approx(put["vega"])
+        assert call.gamma == pytest.approx(put.gamma)
+        assert call.vega == pytest.approx(put.vega)
 
     def test_vega_is_per_one_percent_vol_move(self):
         inputs = make_inputs(spot=100.0, strike=100.0, dte=365.0, rate=0.05, sigma=0.20)
         d1, _ = _d1_d2(inputs)
         t = inputs.dte / 365.0
         raw_vega = inputs.spot * _norm_pdf(d1) * math.sqrt(t)
-        assert greeks(inputs)["vega"] == pytest.approx(raw_vega / 100.0)
+        assert greeks(inputs).vega == pytest.approx(raw_vega / 100.0)
 
     def test_rho_is_per_one_percent_rate_move(self):
         inputs = make_inputs(spot=100.0, strike=100.0, dte=365.0, rate=0.05, sigma=0.20, option_type="put")
         d1, d2 = _d1_d2(inputs)
         t = inputs.dte / 365.0
         raw_rho = -inputs.strike * t * math.exp(-inputs.rate * t) * _norm_cdf(-d2)
-        assert greeks(inputs)["rho"] == pytest.approx(raw_rho / 100.0)
+        assert greeks(inputs).rho == pytest.approx(raw_rho / 100.0)
 
     def test_theta_is_per_calendar_day(self):
         inputs = make_inputs(spot=100.0, strike=100.0, dte=365.0, rate=0.05, sigma=0.20)
@@ -117,7 +122,7 @@ class TestGreeks:
         raw_theta = -inputs.spot * _norm_pdf(d1) * inputs.sigma / (2 * math.sqrt(t)) - inputs.rate * inputs.strike * math.exp(
             -inputs.rate * t
         ) * _norm_cdf(d2)
-        assert greeks(inputs)["theta"] == pytest.approx(raw_theta / 365.0)
+        assert greeks(inputs).theta == pytest.approx(raw_theta / 365.0)
 
 
 class TestNoArbitrageBounds:
@@ -171,7 +176,7 @@ class TestImpliedVolatility:
         # The price is always reproduced; sigma is recovered to a precision
         # set by how much the price moves per unit sigma (raw vega).
         assert price(BlackScholesInputs(**{**vars(inputs), "sigma": iv})) == pytest.approx(target, abs=1e-10)
-        raw_vega = greeks(inputs)["vega"] * 100.0
+        raw_vega = greeks(inputs).vega * 100.0
         assert iv == pytest.approx(inputs.sigma, abs=max(1e-8, 1e-10 / raw_vega))
 
     def test_call_and_put_at_parity_share_one_volatility(self):
@@ -199,3 +204,93 @@ class TestImpliedVolatility:
         contract.update(bad)
         with pytest.raises(ValueError):
             implied_volatility(3.0, **contract)
+
+
+class TestDividendYield:
+    def test_put_call_parity_with_dividends(self):
+        # C - P = S e^{-qT} - K e^{-rT}
+        base = dict(spot=87.0, strike=95.0, dte=120.0, rate=0.03, sigma=0.35, dividend_yield=0.02)
+        call = price(BlackScholesInputs(option_type="call", **base))
+        put = price(BlackScholesInputs(option_type="put", **base))
+        t = 120.0 / 365.0
+        assert call - put == pytest.approx(87.0 * math.exp(-0.02 * t) - 95.0 * math.exp(-0.03 * t))
+
+    def test_dividends_lower_calls_and_raise_puts(self):
+        for option_type, direction in (("call", -1), ("put", 1)):
+            plain = price(make_inputs(option_type=option_type))
+            paying = price(make_inputs(option_type=option_type, dividend_yield=0.04))
+            assert (paying - plain) * direction > 0
+
+    def test_equivalent_to_discounted_spot_without_dividends(self):
+        # Merton's observation: a q-paying stock prices like a non-paying one
+        # with spot S e^{-qT}.
+        q, t = 0.03, 200.0 / 365.0
+        paying = price(make_inputs(dte=200.0, dividend_yield=q))
+        shifted = price(make_inputs(dte=200.0, spot=100.0 * math.exp(-q * t)))
+        assert paying == pytest.approx(shifted)
+
+    def test_iv_round_trip_with_dividends(self):
+        inputs = make_inputs(strike=110.0, dte=90.0, sigma=0.3, dividend_yield=0.025, option_type="put")
+        iv = implied_volatility(price(inputs), 100.0, 110.0, 90.0, 0.05, "put", 0.025)
+        assert iv == pytest.approx(0.3, abs=1e-9)
+
+    def test_market_inputs_validation(self):
+        MarketInputs(spot=100.0, rate=-0.01, sigma=0.2, dividend_yield=0.0)
+        for bad in ({"spot": 0.0}, {"sigma": 0.0}, {"rate": math.nan}, {"dividend_yield": math.inf}):
+            with pytest.raises(ValueError):
+                MarketInputs(**{"spot": 100.0, "rate": 0.05, "sigma": 0.2, **bad})
+
+
+_FD_CASES = [
+    dict(spot=100.0, strike=100.0, dte=30.0, rate=0.05, sigma=0.2, dividend_yield=0.0),
+    dict(spot=87.0, strike=95.0, dte=120.0, rate=0.03, sigma=0.35, dividend_yield=0.02),
+    dict(spot=120.0, strike=100.0, dte=400.0, rate=0.01, sigma=0.5, dividend_yield=0.04),
+]
+
+
+class TestGreeksAgainstFiniteDifferences:
+    """Every analytic greek must match a central difference of the price.
+
+    Central differences have O(h^2) truncation error; the step sizes keep
+    that and floating-point cancellation both well below the tolerances.
+    """
+
+    @pytest.mark.parametrize("case", _FD_CASES)
+    @pytest.mark.parametrize("option_type", ["call", "put"])
+    def test_matches(self, case, option_type):
+        def v(**bump):
+            return price(BlackScholesInputs(option_type=option_type, **{**case, **bump}))
+
+        g = greeks(BlackScholesInputs(option_type=option_type, **case))
+        s, sig, r, d = case["spot"], case["sigma"], case["rate"], case["dte"]
+        hs, hv, hr, hd = 1e-4 * s, 1e-4, 1e-5, 1e-3
+
+        assert g.delta == pytest.approx((v(spot=s + hs) - v(spot=s - hs)) / (2 * hs), abs=1e-7)
+        assert g.gamma == pytest.approx(
+            (v(spot=s + hs) - 2 * v() + v(spot=s - hs)) / hs**2, rel=1e-4, abs=1e-7
+        )
+        # Trader scaling: vega/rho per 1 point (x 1/100), theta per calendar
+        # day = -dV/d(dte) with dte already in days.
+        assert g.vega == pytest.approx((v(sigma=sig + hv) - v(sigma=sig - hv)) / (2 * hv) / 100, rel=1e-6)
+        assert g.rho == pytest.approx((v(rate=r + hr) - v(rate=r - hr)) / (2 * hr) / 100, rel=1e-5)
+        assert g.theta == pytest.approx(-(v(dte=d + hd) - v(dte=d - hd)) / (2 * hd), rel=1e-5)
+
+
+class TestVectorized:
+    def test_array_matches_scalar_elementwise(self):
+        strikes = np.array([80.0, 95.0, 100.0, 105.0, 130.0])
+        dtes = np.array([[7.0], [60.0], [365.0]])
+        prices = price_array(100.0, strikes, dtes, 0.04, 0.25, "put", 0.01)
+        g = greeks_array(100.0, strikes, dtes, 0.04, 0.25, "put", 0.01)
+        assert prices.shape == (3, 5) and g.delta.shape == (3, 5)
+        for i, dte in enumerate(dtes[:, 0]):
+            for j, strike in enumerate(strikes):
+                inputs = BlackScholesInputs(100.0, strike, dte, 0.04, 0.25, "put", 0.01)
+                assert prices[i, j] == pytest.approx(price(inputs), abs=1e-12)
+                assert g.gamma[i, j] == pytest.approx(greeks(inputs).gamma, abs=1e-15)
+
+    def test_array_rejects_any_invalid_element(self):
+        with pytest.raises(ValueError):
+            price_array(np.array([100.0, -1.0]), 100.0, 30.0, 0.05, 0.2, "call")
+        with pytest.raises(ValueError):
+            price_array(100.0, 100.0, np.array([30.0, 0.0]), 0.05, 0.2, "call")
