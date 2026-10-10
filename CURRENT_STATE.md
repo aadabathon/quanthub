@@ -1,13 +1,173 @@
 # CURRENT_STATE.md
 
 **Update this file whenever meaningful work lands.** Last updated:
-**2026-09-27** (Milestone A — Options Lab — complete on synthetic and
-source-backed inputs; IBKR load path not yet live-verified).
+**2026-10-10** (Qt migration: Q1–Q5 done. Every working page now runs in
+the Qt UI. Q6, retiring the Tk code, is next.)
 
 ## Status
 
 v0.4 remains live-verified against TWS 7496. `py -3.12 -m pytest -q` →
-**480 passed** (no network needed).
+**573 passed** (no network or display needed; the Qt smoke tests run
+offscreen; the suite now takes about 100 s, most of it Qt smoke tests).
+
+Qt UI, milestone Q5 (2026-10-10, D31) — Volatility Lab (saved state shared
+with the Tk page):
+- **Experiment card:** chain row (spot, rate, div, expiries, strikes,
+  spread, noise, seed) and true-SSVI row (ATM vol, long-run, κ, ρ, η), plus
+  Generate & fit. A malformed expiry list is flagged on the field.
+- **Surface fit card:** a Smiles / Term structure / Surface switch.
+  - Smiles: 2×3 small multiples (bid–ask bars, mids, true dashed, SVI fit),
+    each panel on its own scale; hover reads fit / true / nearest quote.
+  - Term structure: ATM IV (SVI) with markers vs the true curve; "Compare
+    with history" adds the GARCH expected-vol curve and realized-vol
+    diamonds from any source.
+  - Surface: heatmap in k/√θ on the validated sequential ramp, with a
+    percent colour bar and cell hover.
+- **Right panel:** fit-by-expiry table (SVI vs true ATM, χ²/pt) and checks
+  (butterfly/calendar with good/critical tone, quote exclusions).
+- **Tests:** smoke tests cover the fit, all views, heatmap hover, bad
+  expiries, the history overlay, and a heavy-noise (40% spread, 2× noise)
+  run.
+
+Qt UI, milestone Q4 (2026-10-10, D31) — Options Lab
+(`gui_qt/pages/options_lab/`, saved state shared with the Tk page):
+- **Underlying card:**
+  - source / symbol / lookback / Load, then spot, vol, rate, div yield
+  - the provenance line as its subtitle, plus a MANUAL / LOADED / EDITED
+    badge
+  - loading a new symbol re-centres strikes
+- **Pricer:**
+  - Call/Put, strike, days, and "Price from σ" vs "σ from price" (IV
+    inversion)
+  - recalculates as you type (150 ms debounce)
+  - profile chart: price or one greek vs spot at four expiries (ordinal
+    ramp), hover reads all four
+  - greek tiles underneath
+  - impossible quotes show an explanation card instead of empty axes
+- **Strategy:**
+  - P&L at expiry with green/red profit/loss shading and breakeven dots
+  - a days-forward slider redraws the T+h curve live
+  - tiles: net entry / max profit / max loss / breakevens
+  - legs table with an add-leg editor (Delete removes a leg)
+  - template panel and position greeks
+- **Monte Carlo:**
+  - 10K/100K/1M paths, seed, antithetic
+  - log-x convergence chart with the 95% band funnelling onto the closed
+    form
+  - CONSISTENT / OUTSIDE 95% / INVESTIGATE / STALE verdict badge
+  - terminal-price histogram with a strike marker
+- **Shell-wide fixes:**
+  - `ScrollPage` now fills the viewport and scrolls only below the content
+    minimum (word-wrapped labels had made pages size to their preferred
+    height)
+  - `PageStack` sizes tabs to the visible page
+  - the default window opens at 88% of the screen, capped at 1920×1240
+    (1920×1224 here)
+- **Checked against the closed forms:** an ATM call, then inverting its own
+  price recovers σ = 20.00% exactly (smoke test).
+
+Qt UI, milestone Q3 (2026-10-10, D31) — Simulator:
+- **Path card:** a "Sample path | Monte Carlo" toggle.
+  - Sample path: close, drawdown (shaded) and rolling vol stacked under
+    one crosshair, with a true-σ reference line. The vol window is an
+    inline field in the card header; changing it re-analyses the same draw.
+  - Monte Carlo: up to 160 faint paths plus 50% and 90% bands from the new
+    `data.simulation.path_percentiles` (tested against the lognormal
+    quantile closed form), the median, the E[Sₜ] = S₀·exp(μt) curve, and
+    path 1 (the sample path) in orange.
+- **Distributions:**
+  - daily returns (log/simple toggle, normal overlay from the sample
+    moments)
+  - terminal S(T), with median / mean / E[S(T)] / p5 / p95 markers
+    labelled in the readout legend
+- **Estimates:** TRUE | ESTIMATE for μ, σ, μ − σ²/2, then sample-path
+  statistics with signed values colored green/red.
+- **D15 holds:** one TaskRunner job produces (sim, analysis, MC summary,
+  bands); a smoke test asserts the analysis is of the simulated path.
+- **Speed:** 500 paths × 252 days render in ~75 ms end to end, 5,000 paths
+  in ~110 ms.
+- **Layout:** fits 1720×1040 without scrolling; below 1300 px the two
+  distribution cards stack.
+
+Qt UI, milestone Q2 (2026-10-10, D31):
+- **Markets:**
+  - watchlist table: Symbol / Last / Mode badge / As of / Source / stored
+    1Y sparkline, with balanced columns
+  - page-owned source; add symbol (fetches just that quote); Delete or the
+    inspector button removes a row
+  - right-hand inspector: price and badge, the TWS reason in a red note when
+    unavailable, stored-history sparkline and coverage, "Sync 1Y history",
+    "Open in market explorer"
+  - watchlist and source share the Tk page's saved state
+- **GARCH Lab:**
+  - inputs panel switches between synthetic and market history, showing
+    only the active group
+  - charts: stacked returns + annualized conditional vol with one crosshair
+    (true σₜ under the fitted one in synthetic mode); residual histogram
+    with N(0, 1) and hoverable bins
+  - stats table gains a TRUE column for synthetic fits
+  - invalid inputs are flagged red with the message in the status line
+- **Shared components:** size tokens (control height, field widths,
+  inspector width) now used on every Qt page, the Dashboard included.
+- **Verified:** screenshots at 1280×800 and 1720×1040 (on a copy of the
+  store) and 6 new smoke tests covering fits, error paths, add/remove,
+  unavailable reasons and chart hover.
+- **Not yet done:** Markets/GARCH against live TWS. With IBKR disconnected,
+  GARCH market mode on `ibkr` fails for any window reaching today
+  (CachedSource must fetch the uncached tail); the page shows the error and
+  keeps the previous chart labeled.
+
+Qt UI, milestone Q1 (2026-10-10, D31). It is the default: `py -3.12 -m quant_hub` and the `quant-hub` launcher
+(the desktop shortcut) open it; `--classic` / `quant-hub-classic` open Tk.
+- `core.py` now holds the non-GUI wiring for both front ends; the classic
+  Tk UI is unchanged (`py -3.12 -m quant_hub`).
+- `gui_qt/`:
+  - navy design system: `theme.py` tokens + generated stylesheet, palette
+    re-validated for CVD and contrast
+  - components layer
+  - pyqtgraph charts with a snapped crosshair readout
+  - shell: icon sidebar, breadcrumb, Ctrl+K search over pages and stored
+    symbols, IBKR connect, status bar with a log drawer that starts closed
+- The new Dashboard (`services/workstation.py`), reading only the local
+  store:
+  - KPI tiles
+  - market explorer: price + volume, 1M–ALL windows anchored at the last
+    stored bar
+  - sparkline watchlist with 1-day change
+  - store table
+  - GBM forecast fan fitted to the explorer's symbol, labeled illustrative
+  - research shortcuts
+- Every other nav entry shows a placeholder: "moving to the new interface,
+  use the classic UI", or "planned".
+- Measured on this machine: symbol switch 34–74 ms to fully painted
+  (SQLite reads, 1,000-path simulation, both charts); window change ~30 ms;
+  hover ~1 ms per mouse move including repaint. Tk took ~120 ms per chart
+  redraw and ~450 ms per resize step.
+- Verified by screenshots at 1280×800, 1480×920 and 1720×1040, plus
+  synthetic hover events.
+- Not yet done by hand: clicking through the live app, Connect against
+  live TWS from the Qt top bar, and the Ctrl+K popup styling (covered only
+  by tests).
+
+Volatility Lab (Milestone B, 2026-09-27, D30):
+- `data/options.py` defines the `OptionChain` contract.
+- `models/svi.py` holds raw SVI (derivatives, density/`g(k)`, Lee bound),
+  the SSVI surface, and a spread-weighted fit on the shared Nelder–Mead.
+- `models/vol_surface.py` quotes synthetic OTM chains (spread, mid noise,
+  no-bid wings), inverts IVs, fits per expiry, and runs the butterfly and
+  calendar checks.
+- `models/garch.py` gains `next_variance` and `average_variance_forecast`.
+- `services/vol_context.py` provides realized vols plus the GARCH forecast
+  from any source.
+
+GUI (`gui/views/volatility_lab.py`, replacing the placeholder): a
+SYNTHETIC CHAIN card, then tabs for Smiles (small multiples: bid–ask IV,
+mids, true, fit), Term structure (ATM IV fit vs true, with "compare with
+history" GARCH/realized overlay), and Surface (heatmap in k/√θ). A
+diagnostics panel shows per-expiry ATM fit vs true with χ²/pt, the
+arbitrage checks, and quote exclusions. The whole pipeline runs ~0.25 s on
+the TaskRunner. It was driven in the real app with screenshots, including
+a heavy-noise stress case.
 
 Options Lab (Milestone A, 2026-09-27, D26/D28/D29):
 - `models/black_scholes.py`: Black-Scholes-Merton with dividend yield,
@@ -71,6 +231,12 @@ card lists the persisted series.
 
 ## Untested / known limits
 
+- Volatility Lab chains are synthetic only (no IBKR chain adapter yet).
+  Per-expiry SVI fits are independent, so they overfit very noisy chains:
+  at 40% spreads and 2× noise, ATM errors reach several vol points. A
+  joint SSVI fit is the planned remedy. "Compare with history" with
+  `ibkr` is untested against live TWS.
+
 - Options Lab `ibkr` load has not been exercised against live TWS. It uses
   the same `CachedSource`/quote paths the Markets page verified, but the
   quote → last-close fallback has only been tested with a fake source.
@@ -110,9 +276,18 @@ install without pytest. Windows 11, Python 3.12.6, ibapi
 9.81.1.post1; TWS live on 127.0.0.1:7496, Read-Only API enabled. Store:
 `~/.quant_hub/market_data.db`.
 
-## Next steps (agreed 2026-09-27; see ROADMAP.md)
+## Next steps (updated 2026-10-10; see ROADMAP.md)
+
+0. Qt migration (D31), one page per milestone with owner review:
+   - ~~Q2: Markets + GARCH Lab~~ (done 2026-10-10)
+   - ~~Q3: Simulator~~ (done 2026-10-10)
+   - ~~Q4: Options Lab~~ (done 2026-10-10)
+   - ~~Q5: Volatility Lab~~ (done 2026-10-10)
+   - Q6: delete `gui/` and `app.py`, make Qt the default
+
 
 1. ~~Milestone A — Options Lab~~ (done 2026-09-27).
-2. **Milestone B — Volatility Lab**: synthetic SVI surface → noisy chain →
-   IV inversion → SVI refit (true vs fitted), realized-vol panel.
-3. Then the data side: options chains and real portfolio data via IBKR.
+2. ~~Milestone B — Volatility Lab~~ (done 2026-09-27).
+3. Next phase: the data side. Live-verify both labs' `ibkr` loads, then an
+   IBKR option-chain adapter emitting `OptionChain`, real positions as
+   `OptionLeg`s, and the trading dashboard.

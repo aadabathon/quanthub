@@ -1,4 +1,4 @@
-"""Small widget helpers shared by the Options Lab tabs (presentation only)."""
+"""Small widget helpers shared by the lab pages (Options, Volatility): presentation only."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ CHART_STYLE = ChartStyle(
 )
 
 Reporter = Callable[[str, bool], None]
-"""``report(message, is_error)``: the lab's single status line."""
+"""``report(message, is_error)``: a lab page's single status line."""
 
 
 def entry(

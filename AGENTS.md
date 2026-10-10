@@ -20,10 +20,11 @@ codebase themselves — the standing constraint is:
   with owner approval between milestones. No large refactors without an
   explained justification first.
 - No new dependencies without an explanation of why. Currently allowed:
-  numpy, pandas, matplotlib, ibapi (optional), pytest. Local SQLite
-  persistence via the standard-library `sqlite3` is allowed and is the
-  preferred persistence mechanism for historical market data (D17).
-  Explicitly banned for now: React/Electron/Qt, Flask/FastAPI, external
+  numpy, pandas, matplotlib, PySide6, pyqtgraph, qtawesome (the Qt GUI,
+  D31 — the owner accepts a heavy desktop app), ibapi (optional), pytest.
+  Local SQLite persistence via the standard-library `sqlite3` is allowed
+  and is the preferred persistence mechanism for historical market data
+  (D17). Explicitly banned for now: React/Electron, Flask/FastAPI, external
   database infrastructure (PostgreSQL/MySQL/Redis/Dockerized/cloud DBs),
   Docker, cloud infra, ML frameworks, DI frameworks.
 
@@ -32,14 +33,15 @@ codebase themselves — the standing constraint is:
 1. **Read-only with respect to brokerage activity.** No order-placement code
    anywhere, under any flag. This is a deliberate safety posture, not an
    unfinished feature. Do not add reconnect-automatically behavior either.
-2. **Layering is enforced by `tests/test_layering.py`** — `data/` imports
+2. **Layering is enforced by `tests/test_layering.py`** — Qt libraries
+   appear only in `gui_qt/` and `app_qt.py`; `data/` imports
    nothing from other layers and never tkinter/ibapi; only `broker/` may
    import ibapi; `models/` knows only `data/`; `storage/` knows only `data/`
    and sqlite3; `visualization/` and `services/` never import tkinter. GUI
    views may call pure `models/` functions directly (no service wrapper
    needed, D26). If your change fights the layering
    test, your design is wrong, not the test.
-3. **Only the GUI thread touches Tkinter.** Background → GUI crossings go
+3. **Only the GUI thread touches widgets (Tk or Qt).** Background → GUI crossings go
    through `events.py` (EventBus) or `gui/task_runner.py`. Never call a
    blocking service/broker method directly from a widget callback — submit it
    to the TaskRunner.
@@ -56,13 +58,34 @@ codebase themselves — the standing constraint is:
 # from quanthub/  (Windows; the project runs on Python 3.12)
 py -3.12 -m pip install -e ".[dev,ibkr]"   # once; [ibkr] optional
 py -3.12 -m pytest -q                      # full suite, no GUI/network needed
-py -3.12 -m quant_hub                      # launch the app
+py -3.12 -m quant_hub                      # launch the app (Qt UI, D31)
+py -3.12 -m quant_hub --classic            # classic Tk UI, until retired
 ```
 
 Use the `py -3.12` launcher: bare `python` on this machine resolves to a
 3.11 install that has neither pytest nor the project's dependencies.
 
-Smoke-testing GUI changes: build via `quant_hub.app.create_app()` (returns
+**The GUI is migrating from Tk (`gui/`) to Qt (`gui_qt/`), page by page
+(D31).** New UI work goes in `gui_qt/` only: build pages from
+`gui_qt/components.py`, style through `role`/`variant` properties resolved
+in `gui_qt/theme.py` (no colors or font sizes in pages), and render charts
+with the pyqtgraph widgets in `gui_qt/charts.py`. Qt smoke tests run
+headless (`QT_QPA_PLATFORM=offscreen`, see `tests/test_qt_smoke.py`). For
+screenshots, build with `quant_hub.app_qt.create_qt_app()`, `show()`, pump
+`app.processEvents()`, then `window.grab().save(path)`. That captures the
+window itself, whatever is in front of it. pyqtgraph hover only fires with
+`mouseRateLimit=0` (set in the theme) and on real mouse-move events sent to
+the canvas viewport (`QTest.mouseMove` doesn't reach an inactive window).
+In pyqtgraph 0.14, enable `setClipToView`/`setDownsampling` on a curve only
+*after* adding it to a plot: an item created with `clipToView=True` crashes
+during `addItem` (the scene sees it before its ViewBox does). Screenshot and
+driver scripts should point `AppConfig(db_path=...)` at a copy of the store:
+pages save UI state on hide. More pyqtgraph traps: `PlotCurveItem` ignores a
+plot's log mode (transform x yourself; `PlotDataItem` handles it), and an
+`AxisItem.tickStrings` override must route `self.logMode` to
+`logTickStrings` itself.
+
+Smoke-testing Tk GUI changes: build via `quant_hub.app.create_app()` (returns
 `(root, main_window)` without entering the mainloop), drive
 `main_window.show_view(name)` with `root.after`, then `root.destroy()`.
 Two gotchas: scripts outside the project dir need

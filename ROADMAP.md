@@ -59,8 +59,55 @@ owner before implementation begins.
   Monte Carlo vs the closed form. Built on a source-agnostic `MarketInputs`
   that is filled manually, synthetically, or from IBKR/SQLite via
   `services/underlying.py` (D28/D29). 480 tests.
+- **Milestone B — Volatility Lab** (2026-09-27): `OptionChain` contract;
+  synthetic arbitrage-free SSVI world → noisy OTM chain → IV inversion →
+  spread-weighted raw-SVI fit per expiry → butterfly/calendar diagnostics;
+  smiles, term structure, and surface views; GARCH-forecast and
+  realized-vol overlay from any source (D30). 529 tests.
 
-## Current phase — synthetic research workflows (set 2026-09-27)
+## Current phase — Qt UI migration (set 2026-10-10, D31)
+
+Owner direction: a modern, fast, appealing workstation UI (a target mockup
+was provided); heavy dependencies accepted. Tk and Qt run side by side
+(Qt is the default; `--classic` opens Tk) until parity. Each milestone is approved before the next.
+
+1. ~~**Q1 — Foundation + Dashboard.**~~ Done 2026-10-10. Delivered:
+   - `core.py` split
+   - `gui_qt/` design system, components and pyqtgraph charts
+   - shell: sidebar, Ctrl+K search, status bar, log drawer
+   - Dashboard rebuilt on `services/workstation.py`
+2. ~~**Q2 — Markets + GARCH Lab.**~~ Done 2026-10-10. Both pages ported,
+   with shared form, stats, badge, stacked-chart and histogram components.
+   Markets gains a selection inspector (reason, stored-history sparkline,
+   sync, open in explorer). GARCH synthetic mode overlays the true σₜ and
+   adds a TRUE column.
+3. ~~**Q3 — Simulator.**~~ Done 2026-10-10:
+   - path / drawdown / rolling-vol stack and a Monte Carlo fan with bands
+     (`data.simulation.path_percentiles`), the E[Sₜ] curve and the sample
+     path highlighted
+   - return and terminal-price histograms; the terminal one marks median,
+     mean, E[S(T)], p5 and p95
+   - TRUE | ESTIMATE table
+   - one job → one state (D15)
+4. ~~**Q4 — Options Lab.**~~ Done 2026-10-10:
+   - underlying card with a provenance badge
+   - Pricer (live recalculation, greek tiles, profiles across expiries)
+   - Strategy (P&L with signed shading and breakevens, days-forward slider,
+     legs editor, templates)
+   - Monte Carlo (log-x convergence funnel, verdict badge, terminal
+     histogram)
+5. ~~**Q5 — Volatility Lab.**~~ Done 2026-10-10:
+   - experiment card
+   - smile small multiples, term structure with the GARCH/realized overlay,
+     and a surface heatmap
+   - fit-by-expiry table and checks panel
+
+   A GPU 3-D surface (pyqtgraph.opengl or Plotly in a QWebEngineView)
+   remains a separate, later step.
+6. **Q6 — Retire Tk.** Delete `gui/` (keeping `task_runner`) and `app.py`;
+   make Qt the default; collapse the layering rules.
+
+## Previous phase — synthetic research workflows (set 2026-09-27, done)
 
 Owner direction: finish the quant-research side on **synthetic processes
 first** (a known true world → estimate → compare, as GBM and GARCH already
@@ -72,7 +119,7 @@ do), then turn to the data side. Each milestone is approved before the next.
    greek profiles vs spot and time; Monte Carlo pricing under GBM checked
    against the closed form. Tests: put-call parity with `q`, greeks vs
    finite differences, MC vs closed form within standard error.
-2. **Milestone B — Volatility Lab** (replaces the placeholder). A synthetic
+2. ~~**Milestone B — Volatility Lab**~~ Done (see above). (Replaced the placeholder.) A synthetic
    SVI (Gatheral raw) smile per expiry plus an ATM term structure as the
    true surface → priced chain with bid/ask noise → IV inversion → SVI
    refit through `models/optimize.py` → true-vs-fitted smile, term
@@ -82,8 +129,11 @@ do), then turn to the data side. Each milestone is approved before the next.
 
 ## Next phase — data side (after the synthetic workflows)
 
-- Options chains via IBKR (read-only, D12), feeding the same Options and
-  Volatility Lab pipelines the synthetic chains exercise first.
+- Live-verify the Options Lab and Volatility Lab `ibkr` loads against TWS.
+- Options chains via IBKR (read-only, D12): a `broker/` adapter emitting
+  `data/options.OptionChain`, feeding the unchanged Volatility Lab
+  pipeline. Then a joint SSVI (whole-surface) fit, to regularize noisy real
+  chains (D30).
 - Real portfolio/positions (read-only) and the real-time trading dashboard.
 - **Pinned historical end-times** (lifts D11) — minimal backfill/interior-gap
   fetches; prerequisite for deep backfills without over-fetch.

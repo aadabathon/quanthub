@@ -37,6 +37,29 @@ observations.  The fitted parameters are per observation period; annualizing
 a conditional volatility for daily data is a presentation concern:
 ``sqrt(h_t * 252)``.  GARCH captures volatility clustering, but not leverage
 asymmetry, jumps, heavy-tailed innovations, or changing parameters.
+
+Forecasting
+-----------
+Write :math:`V_L = \omega/(1-p)` with :math:`p = \alpha + \beta`. Taking
+expectations of the recursion, and using
+:math:`\mathbb{E}_t[\varepsilon_{t+j}^2] = \mathbb{E}_t[h_{t+j}]`, gives
+:math:`\mathbb{E}_t[h_{t+j+1}] - V_L = p\,(\mathbb{E}_t[h_{t+j}] - V_L)`, so
+
+.. math::  \mathbb{E}_t[h_{t+j}] = V_L + p^{\,j-1}(h_{t+1} - V_L), \qquad j \ge 1,
+
+where :math:`h_{t+1} = \omega + \alpha\varepsilon_t^2 + \beta h_t` is known at
+:math:`t`. The expected *average* variance over the next :math:`n` periods
+is a geometric sum:
+
+.. math::  \bar h_n = \frac{1}{n}\sum_{j=1}^{n}\mathbb{E}_t[h_{t+j}]
+           = V_L + (h_{t+1} - V_L)\,\frac{1 - p^{\,n}}{n(1-p)}.
+
+:math:`\sqrt{252\,\bar h_n}` is the model's forecast of annualized volatility
+over a horizon of :math:`n` trading days. That is the quantity an
+at-the-money implied vol of the same maturity prices, so plotting the two
+together shows the variance risk premium. It matches the continuous form
+used by the synthetic surface (``models/svi.py``) with
+:math:`\kappa = -252\ln p`.
 """
 
 from __future__ import annotations
@@ -150,6 +173,31 @@ def conditional_variances(
             + parameters.beta * variances[t - 1]
         )
     return variances
+
+
+def next_variance(parameters: GARCH11Parameters, last_return: float, last_variance: float) -> float:
+    """One-step-ahead variance :math:`h_{t+1}` from the last return and its variance."""
+    if not (math.isfinite(last_return) and math.isfinite(last_variance)) or last_variance <= 0:
+        raise ValueError("last return must be finite and last variance positive")
+    innovation = last_return - parameters.mean
+    return parameters.omega + parameters.alpha * innovation**2 + parameters.beta * last_variance
+
+
+def average_variance_forecast(
+    parameters: GARCH11Parameters, next_var: float, horizons: np.ndarray
+) -> np.ndarray:
+    """Expected average per-period variance over each horizon (module docstring).
+
+    ``horizons`` are period counts (> 0, may be fractional for plotting).
+    """
+    n = np.asarray(horizons, dtype=float)
+    if not np.isfinite(n).all() or np.any(n <= 0):
+        raise ValueError("horizons must be positive")
+    if not math.isfinite(next_var) or next_var <= 0:
+        raise ValueError("next variance must be positive")
+    p = parameters.persistence
+    long_run = parameters.unconditional_variance
+    return long_run + (next_var - long_run) * (1 - p**n) / (n * (1 - p))
 
 
 def fit_garch11(returns: np.ndarray, max_iterations: int = 300) -> GARCH11Fit:

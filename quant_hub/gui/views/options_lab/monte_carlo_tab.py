@@ -16,7 +16,7 @@ from tkinter import ttk
 
 from quant_hub.gui.task_runner import TaskRunner
 from quant_hub.gui.theme import SPACE_S, SPACE_XS
-from quant_hub.gui.views.options_lab.common import (
+from quant_hub.gui.views.lab_widgets import (
     CHART_STYLE, Reporter, combo, embed_figure, entry, heading, stat_rows,
 )
 from quant_hub.models.black_scholes import BlackScholesInputs

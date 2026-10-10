@@ -180,3 +180,27 @@ def monte_carlo_summary(result: GBMSimulationResult) -> MonteCarloSummary:
         expected=result.expected_terminal_price(),
         theoretical_median=result.median_terminal_price(),
     )
+
+
+def path_percentiles(
+    result: GBMSimulationResult, levels: tuple[int, ...] = TERMINAL_PERCENTILES
+) -> dict[int, np.ndarray]:
+    r"""Cross-sectional percentiles of the paths at every step: the Monte
+    Carlo fan's bands.
+
+    At step :math:`k` (:math:`t_k = k\,dt`) the :math:`q`-quantile of
+    :math:`S_{t_k}` has the lognormal closed form
+
+    .. math:: S_0 \exp\!\big((\mu - \tfrac12\sigma^2)\,t_k + z_q\,\sigma\sqrt{t_k}\big)
+
+    with :math:`z_q = \Phi^{-1}(q)`; the sample bands converge to it as
+    ``n_paths`` grows (the 50th is the median curve, below the mean curve
+    :math:`S_0 e^{\mu t}` by the Ito correction). Each value has shape
+    ``(n_days + 1,)``; step 0 is :math:`S_0` for every level.
+    """
+    if result.n_paths < 2:
+        raise ValueError("path_percentiles needs at least 2 paths")
+    if not all(0 <= q <= 100 for q in levels):
+        raise ValueError(f"percentile levels must lie in [0, 100], got {levels}")
+    values = np.percentile(result.paths, levels, axis=0)
+    return dict(zip(levels, values, strict=True))

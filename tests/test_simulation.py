@@ -9,6 +9,7 @@ from quant_hub.data.simulation import (
     MAX_PATHS,
     TERMINAL_PERCENTILES,
     monte_carlo_summary,
+    path_percentiles,
     run_gbm_simulation,
 )
 
@@ -112,3 +113,37 @@ class TestMonteCarloSummary:
         summary = monte_carlo_summary(run(n_paths=1))
         assert summary.mean == summary.median
         assert math.isnan(summary.std)
+
+
+class TestPathPercentiles:
+    def test_shape_and_start(self):
+        result = run(n_paths=50, n_days=30)
+        bands = path_percentiles(result)
+        assert set(bands) == set(TERMINAL_PERCENTILES)
+        for values in bands.values():
+            assert values.shape == (31,)
+            assert values[0] == pytest.approx(100.0)
+
+    def test_bands_are_ordered_at_every_step(self):
+        bands = path_percentiles(run(n_paths=400))
+        stacked = np.vstack([bands[q] for q in TERMINAL_PERCENTILES])
+        assert np.all(np.diff(stacked, axis=0) >= 0)
+
+    def test_terminal_bands_match_lognormal_quantiles(self):
+        """q-quantile of S_T = S0 exp((mu - sigma^2/2)T + z_q sigma sqrt(T)).
+        The sample-quantile s.e. in log space is about
+        sqrt(q(1-q)) / (phi(z_q) sqrt(n)) * sigma sqrt(T), at most 0.3% here
+        (the 5%/95% tails), so 1.5% is about 5 s.e."""
+        result = run(n_paths=20_000, seed=3)
+        bands = path_percentiles(result, levels=(5, 50, 95))
+        drift = (0.08 - 0.5 * 0.20**2) * result.horizon_years
+        spread = 0.20 * math.sqrt(result.horizon_years)
+        for q, z in ((5, -1.6448536), (50, 0.0), (95, 1.6448536)):
+            closed = 100.0 * math.exp(drift + z * spread)
+            assert bands[q][-1] == pytest.approx(closed, rel=0.015)
+
+    def test_rejects_single_path_and_bad_levels(self):
+        with pytest.raises(ValueError, match="at least 2 paths"):
+            path_percentiles(run(n_paths=1))
+        with pytest.raises(ValueError, match="levels"):
+            path_percentiles(run(n_paths=5), levels=(5, 101))

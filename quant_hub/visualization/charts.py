@@ -25,6 +25,7 @@ from dataclasses import dataclass
 
 import numpy as np
 from matplotlib.axes import Axes
+from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.dates import AutoDateLocator, ConciseDateFormatter
 from matplotlib.figure import Figure
 from matplotlib.ticker import PercentFormatter
@@ -33,6 +34,7 @@ from quant_hub.data.simulation import GBMSimulationResult, MonteCarloSummary
 from quant_hub.data.stats import SeriesAnalysis
 from quant_hub.data.types import PriceHistory
 from quant_hub.models.option_monte_carlo import MonteCarloPricing
+from quant_hub.models.vol_surface import SmileCurves
 
 
 @dataclass(frozen=True)
@@ -51,6 +53,9 @@ class ChartStyle:
     # slot 0 is the primary series, later slots step lighter. One hue with
     # monotone lightness, validated on the dark surface (--ordinal).
     ramp: tuple[str, ...] = ("#3987e5", "#6da7ec", "#9ec5f4", "#cde2fb")
+    # Sequential ramp for magnitude (heatmaps), dark→light on the dark
+    # surface so low values recede; one hue, validated (--ordinal).
+    sequential: tuple[str, ...] = ("#184f95", "#256abf", "#3987e5", "#6da7ec", "#9ec5f4", "#cde2fb")
     font_family: str = "Segoe UI"
     mono_family: str = "Consolas"
 
@@ -402,8 +407,8 @@ def plot_garch_overview(
 # Options Lab
 # --------------------------------------------------------------------------
 
-def _legend(ax: Axes, style: ChartStyle) -> None:
-    legend = ax.legend(loc="upper left", frameon=False, fontsize=8)
+def _legend(ax: Axes, style: ChartStyle, loc: str = "upper left") -> None:
+    legend = ax.legend(loc=loc, frameon=False, fontsize=8)
     for text in legend.get_texts():
         text.set_color(style.text_secondary)
         text.set_fontfamily(style.font_family)
@@ -521,3 +526,110 @@ def plot_monte_carlo_pricing(
     ax_dist.set_yticks([])
     ax_dist.grid(False)
     _title(ax_dist, "risk-neutral terminal price", style)
+
+
+# --------------------------------------------------------------------------
+# Volatility Lab
+# --------------------------------------------------------------------------
+
+def plot_smiles(
+    fig: Figure, curves: list[SmileCurves], style: ChartStyle | None = None, max_panels: int = 6
+) -> None:
+    """Small multiples: one smile per expiry (implied vol vs log-moneyness).
+
+    Per panel: bid–ask IV range (muted bars), mid IVs (dots), fitted SVI
+    (series line), and the true smile when known (dashed). Each panel owns
+    its y-scale: short expiries sit far higher, and a shared scale would
+    flatten them.
+    """
+    style = style or ChartStyle()
+    fig.clear()
+    shown = curves[:max_panels]
+    if not shown:
+        plot_message(fig, "no usable quotes", style)
+        return
+    cols = min(3, len(shown))
+    rows = math.ceil(len(shown) / cols)
+    for i, curve in enumerate(shown):
+        ax = fig.add_subplot(rows, cols, i + 1)
+        _style_axes(ax, style)
+        low = np.where(np.isnan(curve.quote_iv_bid), curve.quote_iv, curve.quote_iv_bid)
+        high = np.where(np.isnan(curve.quote_iv_ask), curve.quote_iv, curve.quote_iv_ask)
+        ax.vlines(curve.quote_k, low, high, color=style.muted, linewidth=1.0,
+                  label="bid–ask IV" if i == 0 else None)
+        ax.plot(curve.quote_k, curve.quote_iv, "o", markersize=3.5, color=style.text,
+                markeredgewidth=0, label="mid IV" if i == 0 else None)
+        if curve.true_iv is not None:
+            ax.plot(curve.k_grid, curve.true_iv, color=style.text_secondary, linewidth=1.0,
+                    linestyle="--", label="true" if i == 0 else None)
+        if curve.fitted_iv is not None:
+            ax.plot(curve.k_grid, curve.fitted_iv, color=style.line, linewidth=1.8,
+                    label="SVI fit" if i == 0 else None)
+        ax.yaxis.set_major_formatter(PercentFormatter(xmax=1.0, decimals=0))
+        ax.axvline(0.0, color=style.baseline, linewidth=0.8)
+        _title(ax, f"{curve.dte:g}d", style)
+        if i == 0:
+            # Equity skew leaves the upper right (OTM calls) emptiest.
+            _legend(ax, style, loc="upper right")
+    fig.supxlabel("log-moneyness  ln(K/F)", color=style.muted, fontsize=8,
+                  fontfamily=style.font_family)
+
+
+def plot_vol_term_structure(
+    fig: Figure,
+    fitted_days: np.ndarray,
+    fitted_atm: np.ndarray,
+    curve_days: np.ndarray | None = None,
+    true_atm: np.ndarray | None = None,
+    garch_vol: np.ndarray | None = None,
+    garch_label: str = "",
+    realized: list[tuple[float, float]] | None = None,
+    style: ChartStyle | None = None,
+) -> None:
+    """ATM implied vol by expiry, against the true curve and model forecasts.
+
+    ``curve_days`` is the shared x-grid for ``true_atm``/``garch_vol``;
+    ``realized`` is ``[(calendar days, vol)]`` trailing realized vols.
+    """
+    style = style or ChartStyle()
+    fig.clear()
+    ax = fig.add_subplot()
+    _style_axes(ax, style, right_ticks=True)
+    if curve_days is not None and true_atm is not None:
+        ax.plot(curve_days, true_atm, color=style.text_secondary, linewidth=1.0, linestyle="--",
+                label="true ATM vol")
+    if curve_days is not None and garch_vol is not None:
+        ax.plot(curve_days, garch_vol, color=style.ramp[2], linewidth=1.6, label=garch_label)
+    if realized:
+        days, vols = zip(*realized)
+        ax.plot(days, vols, linestyle="none", marker="D", markersize=7, color=style.ramp[3],
+                markeredgecolor=style.surface, markeredgewidth=1.5, label="realized (trailing)",
+                zorder=4)
+    ax.plot(fitted_days, fitted_atm, color=style.line, linewidth=1.8, marker="o", markersize=6,
+            markeredgecolor=style.surface, markeredgewidth=1.5, label="ATM IV (SVI fit)")
+    ax.yaxis.set_major_formatter(PercentFormatter(xmax=1.0, decimals=0))
+    ax.set_xlabel("days to expiry", color=style.muted, fontsize=8)
+    _title(ax, "at-the-money volatility term structure", style)
+    _legend(ax, style, loc="best")
+
+
+def plot_vol_heatmap(
+    fig: Figure, z: np.ndarray, dte: np.ndarray, iv: np.ndarray, style: ChartStyle | None = None
+) -> None:
+    """Fitted implied vol over (standardized moneyness, expiry)."""
+    style = style or ChartStyle()
+    fig.clear()
+    ax = fig.add_subplot()
+    _style_axes(ax, style)
+    ax.grid(False)
+    cmap = LinearSegmentedColormap.from_list("iv", list(style.sequential))
+    # Rows are expiries as ordered categories (equal height), columns z.
+    mesh = ax.pcolormesh(z, np.arange(len(dte)), iv, cmap=cmap, shading="nearest")
+    ax.set_yticks(np.arange(len(dte)))
+    ax.set_yticklabels([f"{d:g}d" for d in dte])
+    ax.axvline(0.0, color=style.surface, linewidth=1.0)
+    ax.set_xlabel("moneyness in ATM standard deviations  k/√θ", color=style.muted, fontsize=8)
+    bar = fig.colorbar(mesh, ax=ax, format=PercentFormatter(xmax=1.0, decimals=0), pad=0.02)
+    bar.outline.set_visible(False)
+    bar.ax.tick_params(colors=style.muted, labelsize=8, length=0)
+    _title(ax, "fitted implied volatility surface", style)

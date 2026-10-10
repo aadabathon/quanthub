@@ -11,8 +11,10 @@ Non-negotiables, in brief:
 - **Layering is enforced** by `tests/test_layering.py` — if a change fights
   it, the change is wrong. Only `broker/` imports ibapi; `data/` imports no
   other layer.
-- **Only the GUI thread touches Tkinter**; blocking calls go through
+- **Only the GUI thread touches widgets**; blocking calls go through
   `gui/task_runner.py`, pushes through `events.py`.
+- **The GUI is moving to Qt (D31)**: new UI work goes in `gui_qt/`, built
+  from `gui_qt/components.py` and styled only via `gui_qt/theme.py`.
 - New quant modules follow the `data/synthetic.py` exemplar: math in the
   docstring, validated inputs, statistical tests. Derive math before coding it.
 - Small increments, milestone approval between phases, no new dependencies or
@@ -20,7 +22,8 @@ Non-negotiables, in brief:
   to the owner — they maintain every line.
 
 Commands (from `quanthub/`, via the 3.12 launcher — bare `python` is a 3.11
-without pytest): `py -3.12 -m pytest -q` · `py -3.12 -m quant_hub` · install
+without pytest): `py -3.12 -m pytest -q` · `py -3.12 -m quant_hub` (Qt UI; `--classic`
+for the old Tk UI) · install
 `py -3.12 -m pip install -e ".[dev,ibkr]"`. The project directory
 (`C:\Users\adams\Projects\quanthub`) is its own git repository; commit
 only when asked. Local SQLite (stdlib `sqlite3`, D17) is the approved store

@@ -22,7 +22,7 @@ from tkinter import ttk
 import numpy as np
 
 from quant_hub.gui.theme import SPACE_S, SPACE_XS
-from quant_hub.gui.views.options_lab.common import (
+from quant_hub.gui.views.lab_widgets import (
     CHART_STYLE, Reporter, combo, days_label, embed_figure, entry, heading, parse_float, stat_rows,
 )
 from quant_hub.models.black_scholes import MarketInputs

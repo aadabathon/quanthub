@@ -158,3 +158,32 @@ def test_plot_monte_carlo_pricing():
     plot_monte_carlo_pricing(fig, result)
     assert len(fig.axes) == 2
     fig.canvas.draw()
+
+
+def test_volatility_lab_charts():
+    import numpy as np
+
+    from quant_hub.models.svi import SSVISurface
+    from quant_hub.models.vol_surface import (
+        SyntheticChainSpec, fit_surface, smile_curves, surface_grid, synthetic_chain,
+    )
+    from quant_hub.visualization.charts import plot_smiles, plot_vol_heatmap, plot_vol_term_structure
+
+    truth = SSVISurface(v0=0.0625, v_inf=0.04, kappa=2.0, rho=-0.6, eta=1.2)
+    fit = fit_surface(synthetic_chain(truth, SyntheticChainSpec(seed=3)))
+    fig = create_figure()
+    plot_smiles(fig, smile_curves(fit, truth))
+    assert len(fig.axes) == 6
+    fig.canvas.draw()
+
+    days = np.array([s.dte for s in fit.slices])
+    grid = np.linspace(1, 365, 50)
+    plot_vol_term_structure(fig, days, np.array([s.atm_vol for s in fit.slices]), grid,
+                            np.array([truth.atm_vol(d / 365) for d in grid]), grid * 0 + 0.2,
+                            "GARCH", [(30.0, 0.21), (365.0, 0.19)])
+    fig.canvas.draw()
+    plot_vol_term_structure(fig, days, np.array([s.atm_vol for s in fit.slices]))
+
+    plot_vol_heatmap(fig, *surface_grid(fit))
+    assert len(fig.axes) == 2  # heatmap + colorbar
+    fig.canvas.draw()

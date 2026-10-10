@@ -328,3 +328,78 @@ loop. That costs ~1 ms for a 4×241 profile grid and ~0.2 ms per IV solve,
 which is fine for the labs. Revisit only if chain-wide IV inversion in
 Milestone B needs more; a vectorized bracketed Newton over the chain is the
 natural next step there.
+
+## D30 — Volatility Lab: chain contract in `data/`, SSVI truth, independent SVI slices (2026-09-27)
+
+- **`OptionChain`/`OptionQuote` live in `data/options.py`.** A chain is an
+  acquired observation like `PriceHistory`, so the domain defines its shape
+  and a future IBKR adapter in `broker/` fills it (D5). The whole pipeline
+  (`models/vol_surface.fit_surface`) consumes only this type: the
+  synthetic generator today, real chains later, with no code changes.
+- **The synthetic truth is SSVI with a mean-reverting ATM term structure**
+  (Gatheral–Jacquier power law, γ = 1/2). It is free of static arbitrage
+  when η(1+|ρ|) ≤ 2, and its slices are *exactly* raw SVI with
+  closed-form parameters, so per-expiry fits have a known answer. The
+  no-arbitrage claims are verified numerically on grids in the tests, not
+  taken on citation. The `density ⇔ g(k)` formula is checked against
+  Breeden–Litzenberger.
+- **Slices are fitted independently** (raw SVI; validity and Lee's wing
+  bound enforced by the reparameterization). Weights come from each quote's
+  half-spread propagated into total variance by the delta method, so χ²/pt
+  is interpretable (≈ noise² for synthetic quotes). Independence is
+  deliberate: the butterfly/calendar checks then *test* the fitted surface
+  instead of holding by construction. Under heavy noise the slices overfit
+  and the ATM errors grow. A joint SSVI (whole-surface) fit is the natural
+  next step when real chains arrive.
+- **The heatmap uses standardized moneyness `k/√θ(T)`**: raw `k` ranges
+  scale like √T, so a raw-`k` intersection would shrink to the 7-day window.
+- **The model side already runs on real data.** `services/vol_context.py`
+  loads any source's history and overlays trailing realized vols plus the
+  GARCH average-variance forecast (derived in `models/garch.py`; the same
+  functional form as the synthetic θ(T) with κ = −252 ln p) on the ATM IV
+  term structure. With real chains, that overlay shows the variance risk
+  premium.
+
+## D31 — The GUI moves to Qt (PySide6 + pyqtgraph); Tk stays until parity (2026-10-10)
+
+Supersedes D1's *toolkit* choice (its threads-and-queues model stands) and
+D13's *palette surface* (its validation method stands). Owner direction:
+a modern, fast workstation UI, explicitly accepting heavy dependencies.
+
+- **Why Qt.** Profiling the Tk app found ~100–130 ms per matplotlib redraw
+  (≈60% of it the constrained-layout solve) and every hidden view
+  redrawing on resize. Fixable, but Tk's ceiling stays: no antialiased
+  shapes, no animation, no GPU surface. Qt gives styled, antialiased
+  widgets; pyqtgraph redraws a chart in milliseconds, so crosshair hover is
+  ~1 ms per mouse move. Qt also hosts OpenGL and web views, which is the
+  path to GPU 3-D surfaces later (explicitly deferred).
+- **Dependencies:** PySide6, pyqtgraph, qtawesome (Phosphor/MDI icons).
+  matplotlib stays for `visualization/` (tests and research figures).
+- **Threading is unchanged.** `TaskRunner` and `EventBus` were already
+  toolkit-free. A `QTimer` pump at 16 ms (one 60 Hz frame) replaces
+  `root.after(50)`.
+- **Composition root split.** `core.py` wires everything below the GUI
+  once. `app.py` (Tk) and `app_qt.py` (Qt) each build their widgets on
+  that core, so both UIs run the same services during the migration.
+- **Migration is page by page, side by side.** The Qt UI is the default
+  (`python -m quant_hub`, and the `quant-hub` launcher a desktop shortcut
+  targets, so the shortcut always opens the current UI). The Tk UI stays
+  reachable via `--classic` / `quant-hub-classic`. Unported pages show a
+  placeholder pointing to it. When every page is ported, `gui/` (except the shared
+  `task_runner`) and `app.py` are deleted. Tk and Qt cannot share a
+  process, so a hybrid window is not possible.
+- **Design system.** All tokens and the generated stylesheet live in
+  `gui_qt/theme.py`. Widgets set a `role`/`variant` property, never colors
+  or sizes. Pages are assembled from `gui_qt/components.py`. The navy
+  surface was re-validated: series blue, orange and aqua clear all-pairs
+  CVD ΔE ≥ 9.4 and contrast ≥ 3:1. Text and status inks were chosen by
+  WCAG contrast (≥ 4.5:1).
+- **Dashboard rebuilt around the local store** (`services/workstation.py`):
+  KPIs, a market explorer, a sparkline watchlist, the store table, and a
+  GBM forecast fan fitted to the explorer's symbol. The fan is labeled
+  "illustrative" because one year of data gives μ̂ a standard error about
+  as large as σ̂. Windows are anchored at the last stored bar, not today.
+- **Layering:** `gui_qt` never imports tkinter, ibapi, the Tk views, the
+  concrete broker, or the bar store. Qt libraries appear only in
+  `gui_qt/` and `app_qt.py`. Both rules are enforced by
+  `tests/test_layering.py`.

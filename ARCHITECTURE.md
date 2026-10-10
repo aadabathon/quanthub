@@ -8,8 +8,11 @@ Imports point strictly downward. `tests/test_layering.py` scans source files
 and fails the build on violations.
 
 ```
-gui/            Tkinter/ttk presentation. Renders state, forwards user intent.
-                No math, no data munging, no broker calls beyond interfaces.
+gui_qt/         Qt (PySide6 + pyqtgraph) presentation — the replacement for
+                gui/, ported page by page (D31). Same contract as gui/.
+gui/            Tkinter/ttk presentation (classic UI, retired at parity).
+                Renders state, forwards user intent. No math, no data
+                munging, no broker calls beyond interfaces.
 services/       Application facade + caching. May import data/, storage/, and
                 broker interfaces (broker/base.py, broker/types.py). Never
                 tkinter, never ibapi.
@@ -31,17 +34,49 @@ Cross-cutting modules:
 - `config.py` — one frozen `AppConfig` dataclass (IBKR host/port, timeouts,
   defaults). No config files yet, deliberately.
 - `events.py` — `EventBus` + `LogEvent` + `EventBusLogHandler`.
-- `app.py` — the composition root: the only module that knows all layers.
-  Every class takes dependencies as constructor arguments; `app.py` is the
-  single place that wires them. That is the entire DI story.
-  `create_app()` builds everything without entering the mainloop (used by
-  smoke tests); `main()` calls it and runs `mainloop()`.
+- `core.py` — the toolkit-independent half of the composition root:
+  `build_core()` wires bus, logging, broker, stores, services and the task
+  runner once into a `Core`; `Core.shutdown()` tears them down.
+- `app.py` (Tk) / `app_qt.py` (Qt) — the GUI composition roots: each calls
+  `build_core()` and builds only its widgets. Every class takes
+  dependencies as constructor arguments; these are the only places that
+  wire them. That is the entire DI story. `create_app()` /
+  `create_qt_app()` build everything without entering the event loop
+  (smoke tests, screenshots). Launch: `python -m quant_hub` (Qt; `--classic` for Tk) or the
+  `quant-hub` / `quant-hub-classic` launchers.
 
 ## File map
 
 ```
 quant_hub/
-├── app.py                     composition root, logging setup, view registry
+├── core.py                    build_core(): non-GUI wiring + logging; Core
+├── app.py                     Tk composition root, view registry
+├── app_qt.py                  Qt composition root, page registry (D31)
+├── gui_qt/
+│   ├── theme.py               design tokens (navy palette, fonts, spacing),
+│   │                          generated stylesheet, icon(), pyqtgraph config
+│   ├── components.py          Card, KpiTile, MetricTile, PageHeader (+ status
+│   │                          line), SegmentedControl, Select, Field (inline
+│   │                          or captioned)/SelectField + form_grid, StatTable
+│   │                          (TRUE | FIT, signed tones), Badge, Note,
+│   │                          DataTable (balanced columns), PageStack (sizes
+│   │                          to the visible page), NavRow, EmptyState
+│   ├── charts.py              pyqtgraph, render only: PriceVolumeChart,
+│   │                          Sparkline, FanChart (optional history and
+│   │                          overlays), StackedTimeSeries (Panel/Series, one
+│   │                          crosshair, optional fill), Histogram (markers),
+│   │                          CurveChart (y vs numeric/log x: profiles, P&L
+│   │                          with signed shading, MC convergence + band,
+│   │                          markers / point-only series), SmileGrid (small
+│   │                          multiples), Heatmap (sequential ramp + color bar)
+│   ├── main_window.py         shell + THE PUMP (QTimer, 16 ms)
+│   ├── sidebar.py / top_bar.py / status_bar.py   shell pieces (nav, Ctrl+K
+│   │                          search + IBKR control, status + log drawer)
+│   └── pages/                 base.py (Page, ScrollPage, Shell, debounce),
+│                              dashboard.py, markets.py, garch_lab.py,
+│                              simulator.py, options_lab/ (page, underlying,
+│                              pricer, strategy, monte_carlo), volatility_lab.py,
+│                              placeholder.py (planned modules only)
 ├── config.py                  AppConfig
 ├── events.py                  EventBus (thread-safe), LogEvent, log handler
 ├── gui/
@@ -57,7 +92,10 @@ quant_hub/
 │   ├── views/options_lab/     Options Lab package: view.py (shell + state),
 │   │                          market_bar.py (UNDERLYING strip: manual/
 │   │                          synthetic/ibkr), pricer_tab.py, strategy_tab.py,
-│   │                          monte_carlo_tab.py, common.py (widget helpers)
+│   │                          monte_carlo_tab.py
+│   ├── views/volatility_lab.py Volatility Lab: synthetic chain → SVI surface,
+│   │                          smiles/term structure/heatmap, arb diagnostics
+│   ├── views/lab_widgets.py   form/stat/figure helpers shared by the labs
 │   ├── views/garch.py         GARCH Lab: synthetic or source-history fits
 │   ├── views/placeholder.py   ONE class for the remaining future modules
 │   └── widgets/               log_panel.py (collapsible), status_bar.py
@@ -74,11 +112,14 @@ quant_hub/
 │   ├── sources.py             DataSource + BarSource protocols, SyntheticSource
 │   ├── bars.py                canonical OHLCV validation for ACQUIRED data
 │   │                          (structural raise vs row-drop + report)
+│   ├── options.py             OptionQuote/OptionChain: the chain contract
+│   │                          (synthetic today, IBKR adapter later)
 │   ├── ranges.py              DateRange (closed session-date intervals),
 │   │                          merge/subtract — coverage arithmetic
 │   ├── synthetic.py           GBM generator (the quant-module exemplar)
 │   ├── simulation.py          GBMSimulationResult, run_gbm_simulation,
-│   │                          monte_carlo_summary (closed forms documented)
+│   │                          monte_carlo_summary, path_percentiles (fan
+│   │                          bands; closed forms documented)
 │   └── stats.py               full analytics layer: returns/CAGR/rolling vol/
 │                              drawdown/moments, GBM estimation (μ̂, σ̂),
 │                              ReturnStats + SeriesAnalysis bundles
@@ -92,12 +133,20 @@ quant_hub/
 │   │                          scaling), no-arbitrage bounds, bracketed-Newton IV
 │   ├── strategy.py            OptionLeg/Strategy, value/P&L/greeks at a
 │   │                          horizon, exact expiry profile, templates
-│   └── option_monte_carlo.py  risk-neutral MC pricing (antithetic), running
-│                              estimate + SE vs the closed form
+│   ├── option_monte_carlo.py  risk-neutral MC pricing (antithetic), running
+│   │                          estimate + SE vs the closed form
+│   ├── svi.py                 raw SVI (derivatives, density g(k)), SSVI
+│   │                          surface, spread-weighted SVI fit
+│   └── vol_surface.py         chain → IVs + weights → per-expiry SVI →
+│                              butterfly/calendar checks; synthetic chains
 ├── services/
 │   ├── market_service.py      source registry + get_history/get_quote facade
 │   ├── underlying.py          any source → spot (quote, else last close) +
 │   │                          realized vol, with provenance (D28)
+│   ├── vol_context.py         any source → trailing realized vols + GARCH
+│   │                          expected-vol term structure (D30)
+│   ├── workstation.py         local-store overview, windowed history, GBM
+│   │                          forecast fan (the Qt Dashboard's data, D31)
 │   ├── sync.py                SyncStatus/SyncPlan: FULL_HIT/PARTIAL_HIT/MISS
 │   └── cached_source.py       CachedSource: BarSource + BarStore → DataSource
 ├── storage/bar_store.py       SQLite schema (instruments/bars/coverage),
@@ -107,12 +156,16 @@ quant_hub/
                                drawdown/distribution/rolling vol),
                                plot_monte_carlo (fan + terminal dist),
                                plot_garch_overview, plot_option_profile,
-                               plot_strategy_pnl, plot_monte_carlo_pricing
+                               plot_strategy_pnl, plot_monte_carlo_pricing,
+                               plot_smiles, plot_vol_term_structure,
+                               plot_vol_heatmap
 ```
 
 ## Concurrency model
 
-Threads that exist: **GUI/main** (Tkinter mainloop), **task-worker** (one,
+Identical for both front ends (D31): only the pump's timer differs —
+`root.after(50)` in Tk, a 16 ms `QTimer` in Qt. Threads that exist:
+**GUI/main** (Tk mainloop or Qt event loop), **task-worker** (one,
 in `TaskRunner`), **ibkr-network** (created per connect, runs `EClient.run()`).
 
 Two seams confine all threading:
@@ -142,6 +195,7 @@ Markets    = real market observations: explicit source, provenance columns
 Simulator  = controlled stochastic experiments (the GBM/Monte Carlo lab)
 Options Lab= pricing/IV, multi-leg strategies, MC check over one MarketInputs
 GARCH Lab  = conditional-volatility fit: synthetic GARCH or explicit source history
+Vol Lab    = implied-vol surface from an OptionChain; GARCH/realized overlay
 MODELS…    = GARCH Lab plus placeholders for future specialized workflows
 ```
 
@@ -221,7 +275,50 @@ Key properties (decisions D17–D21):
   the adapter slices. A leading/interior coverage gap therefore fetches
   from the gap to now; harmless, because inserts upsert and coverage merges.
 
-## GUI conventions
+## GUI conventions — Qt (`gui_qt/`, D31)
+
+- **Design system.** `theme.py` holds every token (navy surfaces, ink,
+  accent, validated series and status colors, fonts, spacing, radii) and
+  generates the one application stylesheet. Widgets declare *what* they
+  are via `role`/`variant` dynamic properties (`card`, `pageTitle`,
+  `primary`, `segment`, …); the stylesheet decides how that looks. No hex
+  constants, font sizes, or `setStyleSheet` calls in pages (a `StatusDot`
+  coloring itself from a palette token is the one documented exception).
+- **Pages are assembled from `components.py`**, never from raw styled
+  widgets; a new visual pattern becomes a component first. Long text that
+  could widen a card uses `ElidedLabel`. Pages that can outgrow the window
+  subclass `ScrollPage` (scroll, never clip) and reflow on resize.
+- **Charts** are pyqtgraph widgets in `charts.py`: render-only, precomputed
+  inputs, view-only ranges driven by page controls, and a snapped
+  crosshair + readout as the hover layer. Matplotlib is not used in the Qt
+  pages (a future research figure may embed it via the QtAgg backend).
+- **Lifecycle.** Pages are created lazily and stay alive; `on_show`
+  refreshes, `on_hide` persists via `ViewStateStore`. Pages reach the shell
+  only through `Shell` (`navigate`, `publish_commands` for Ctrl+K).
+- **Async results carry a token** when the user can supersede a request
+  (e.g. switching symbols); stale results are dropped, not painted.
+- **Consistent sizing.** Every control is `CONTROL_HEIGHT` tall; fields use
+  `FIELD_S/M/L`; every page's right-hand inspector is `SIDE_PANEL_WIDTH`
+  (inputs + stats on labs, selection details on Markets). Forms put the
+  caption above the input; `Field.number()` parses, flags the field red and
+  raises a message the page shows in its header status line.
+- **Header status vs. card subtitle.** The `PageHeader` status line is for
+  transient messages and errors; what a chart *shows* (source, sample,
+  seed) lives in its card subtitle, so an error never leaves a chart
+  unlabeled.
+- **Replacing widgets.** Hide a widget before replacing it (`DataTable`
+  does this for cell widgets): Qt deletes replaced widgets only on the next
+  event-loop pass, and until then they paint over their replacement.
+- **Live recalculation.** Closed-form pages recompute as you type through
+  `pages.base.debounce` (150 ms after the last keystroke); Enter commits at
+  once. Anything that blocks or simulates stays on the TaskRunner and is
+  only *marked stale* by input edits, never re-run automatically.
+- **Sizing rules.** `ScrollPage` fills the viewport and scrolls only below
+  the content's minimum (its body layout opts out of height-for-width,
+  which would otherwise size pages to their *preferred* height). Tabbed
+  content uses `PageStack`, which sizes to the visible page, not the tallest.
+
+## GUI conventions — Tk (`gui/`, classic; frozen except for fixes)
 
 - All styling lives in `gui/theme.py` (single committed dark palette,
   validated for CVD-safety/contrast on the dark surface). No hex constants in

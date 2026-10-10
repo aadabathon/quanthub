@@ -21,7 +21,7 @@ from tkinter import ttk
 
 from quant_hub.gui.task_runner import TaskRunner
 from quant_hub.gui.theme import SPACE_S, SPACE_XS
-from quant_hub.gui.views.options_lab.common import Reporter, combo, entry, parse_float
+from quant_hub.gui.views.lab_widgets import Reporter, combo, entry, parse_float
 from quant_hub.models.black_scholes import MarketInputs
 from quant_hub.services.market_service import MarketService
 from quant_hub.services.underlying import UnderlyingSnapshot, load_underlying
