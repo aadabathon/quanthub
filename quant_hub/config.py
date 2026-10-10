@@ -42,9 +42,8 @@ class AppConfig:
     db_path: Path = field(default_factory=_default_db_path)
 
     default_symbol: str = "SPY"
-    default_range: str = "1Y"
 
-    # Dashboard simulation defaults (annualized decimals; 252 steps = 1 year).
+    # Simulator defaults (annualized decimals; 252 steps = 1 year).
     default_initial_price: float = 100.0
     default_mu: float = 0.08
     default_sigma: float = 0.20
@@ -52,6 +51,3 @@ class AppConfig:
     default_seed: int = 42
     default_n_paths: int = 500
     default_vol_window: int = 21
-
-    # How often the GUI drains the event bus and task-result queue.
-    pump_interval_ms: int = 50

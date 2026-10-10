@@ -360,7 +360,7 @@ natural next step there.
   term structure. With real chains, that overlay shows the variance risk
   premium.
 
-## D31 — The GUI moves to Qt (PySide6 + pyqtgraph); Tk stays until parity (2026-10-10)
+## D31 — The GUI moves to Qt (PySide6 + pyqtgraph); Tk retired at parity (2026-10-10)
 
 Supersedes D1's *toolkit* choice (its threads-and-queues model stands) and
 D13's *palette surface* (its validation method stands). Owner direction:
@@ -399,7 +399,17 @@ a modern, fast workstation UI, explicitly accepting heavy dependencies.
   GBM forecast fan fitted to the explorer's symbol. The fan is labeled
   "illustrative" because one year of data gives μ̂ a standard error about
   as large as σ̂. Windows are anchored at the last stored bar, not today.
-- **Layering:** `gui_qt` never imports tkinter, ibapi, the Tk views, the
-  concrete broker, or the bar store. Qt libraries appear only in
-  `gui_qt/` and `app_qt.py`. Both rules are enforced by
-  `tests/test_layering.py`.
+- **Layering:** the GUI never imports ibapi, the concrete broker, or the
+  bar store. Qt libraries appear only in the GUI package and its
+  composition root. Both rules are enforced by `tests/test_layering.py`.
+- **Completed the same day (Q6).** Every page reached parity, so the Tk
+  front end was deleted:
+  - `gui_qt/` became `gui/`, and `app_qt.py` became `app.py`
+  - the toolkit-free `TaskRunner` moved to `tasks.py`
+  - `--classic` and `quant-hub-classic` are gone
+  - the layering test now forbids tkinter everywhere
+
+  `visualization/` (matplotlib) stays, for scripts, notebooks and tests;
+  the app itself draws only with pyqtgraph. The Tk version remains in git
+  history (`f7e4d33`). The bullets above use the names from during the
+  migration.

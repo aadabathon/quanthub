@@ -1,10 +1,10 @@
-"""Tests for the GUI task bridge (which is deliberately tkinter-free)."""
+"""Tests for the GUI task bridge (deliberately toolkit-free)."""
 
 import time
 
 import pytest
 
-from quant_hub.gui.task_runner import TaskRunner
+from quant_hub.tasks import TaskRunner
 
 
 def drain(runner, predicate, timeout=5.0):

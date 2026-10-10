@@ -1,10 +1,9 @@
-"""The toolkit-independent half of the composition root.
+"""The GUI-independent half of the composition root.
 
 ``build_core`` constructs and wires everything below the GUI — event bus,
-logging, broker, stores, market service, task runner — exactly once. The two
-GUI composition roots (``app.py`` for Tkinter, ``app_qt.py`` for Qt) each
-call it and then build only their own widgets on top, so both front ends run
-on an identical core during the Qt migration (D31).
+logging, broker, stores, market service, task runner. ``app.py`` calls it
+and builds the window on top; a script or notebook can call it alone to get
+the same fully wired services without any widgets.
 """
 
 from __future__ import annotations
@@ -18,7 +17,7 @@ from quant_hub.broker.market_source import IBKRSource
 from quant_hub.config import AppConfig
 from quant_hub.data.sources import SyntheticSource
 from quant_hub.events import EventBus, EventBusLogHandler
-from quant_hub.gui.task_runner import TaskRunner
+from quant_hub.tasks import TaskRunner
 from quant_hub.services.cached_source import CachedSource
 from quant_hub.services.market_service import MarketService
 from quant_hub.services.workstation import WorkstationService
@@ -57,6 +56,11 @@ class Core:
 def setup_logging(bus: EventBus) -> None:
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.INFO)
+    # Idempotent: building the app again in one process (smoke tests,
+    # scripts) replaces our handlers instead of stacking duplicates, which
+    # would print every record N times and keep dead buses alive.
+    for handler in [h for h in root_logger.handlers if getattr(h, "quant_hub", False)]:
+        root_logger.removeHandler(handler)
 
     # Windowed launches (the gui-scripts entry point, i.e. double-clicking
     # the app) have no console: sys.stderr is None, so a StreamHandler here
@@ -68,10 +72,12 @@ def setup_logging(bus: EventBus) -> None:
         console.setFormatter(
             logging.Formatter("%(asctime)s %(levelname)-8s %(name)s: %(message)s")
         )
+        console.quant_hub = True
         root_logger.addHandler(console)
 
     bus_handler = EventBusLogHandler(bus)
     bus_handler.setFormatter(logging.Formatter("%(message)s"))
+    bus_handler.quant_hub = True
     root_logger.addHandler(bus_handler)
 
     # ibapi's own loggers narrate every request/response at INFO; that

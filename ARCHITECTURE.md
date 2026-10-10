@@ -8,14 +8,12 @@ Imports point strictly downward. `tests/test_layering.py` scans source files
 and fails the build on violations.
 
 ```
-gui_qt/         Qt (PySide6 + pyqtgraph) presentation — the replacement for
-                gui/, ported page by page (D31). Same contract as gui/.
-gui/            Tkinter/ttk presentation (classic UI, retired at parity).
-                Renders state, forwards user intent. No math, no data
-                munging, no broker calls beyond interfaces.
+gui/            Qt (PySide6 + pyqtgraph) presentation (D31). Renders state,
+                forwards user intent. No math, no data munging, no broker
+                calls beyond interfaces. May call pure models/ directly (D26).
 services/       Application facade + caching. May import data/, storage/, and
                 broker interfaces (broker/base.py, broker/types.py). Never
-                tkinter, never ibapi.
+                the GUI toolkit, never ibapi.
 data/           Pure domain: types, generators, statistics, validation,
                 interval math. NumPy/pandas only. Imports nothing from any
                 other quant_hub package.
@@ -26,7 +24,7 @@ broker/         Infrastructure. The ONLY package allowed to import ibapi.
                 Never storage.
 storage/        SQLite persistence (stdlib sqlite3). Knows data/ only —
                 no broker, no GUI, no services.
-visualization/  Matplotlib figure construction. No tkinter (GUI embeds).
+visualization/  Matplotlib figures for scripts and notebooks. Never GUI.
 ```
 
 Cross-cutting modules:
@@ -34,25 +32,28 @@ Cross-cutting modules:
 - `config.py` — one frozen `AppConfig` dataclass (IBKR host/port, timeouts,
   defaults). No config files yet, deliberately.
 - `events.py` — `EventBus` + `LogEvent` + `EventBusLogHandler`.
-- `core.py` — the toolkit-independent half of the composition root:
+- `tasks.py` — `TaskRunner`: one worker thread + a result queue drained on
+  the GUI thread. Toolkit-free, so it lives outside `gui/`.
+- `core.py` — the GUI-independent half of the composition root:
   `build_core()` wires bus, logging, broker, stores, services and the task
-  runner once into a `Core`; `Core.shutdown()` tears them down.
-- `app.py` (Tk) / `app_qt.py` (Qt) — the GUI composition roots: each calls
-  `build_core()` and builds only its widgets. Every class takes
-  dependencies as constructor arguments; these are the only places that
-  wire them. That is the entire DI story. `create_app()` /
-  `create_qt_app()` build everything without entering the event loop
-  (smoke tests, screenshots). Launch: `python -m quant_hub` (Qt; `--classic` for Tk) or the
-  `quant-hub` / `quant-hub-classic` launchers.
+  runner into a `Core`; `Core.shutdown()` tears them down. A script can call
+  it alone to get the wired services without any widgets.
+- `app.py` — the composition root proper: `build_core()` plus the window and
+  its page registry. Every class takes dependencies as constructor
+  arguments; `core.py` and `app.py` are the only places that wire them.
+  That is the entire DI story. `create_app()` builds everything without
+  entering the event loop (smoke tests, screenshots); `main()` runs it.
+  Launch: `python -m quant_hub` or the `quant-hub` launcher (the desktop
+  shortcut's target).
 
 ## File map
 
 ```
 quant_hub/
 ├── core.py                    build_core(): non-GUI wiring + logging; Core
-├── app.py                     Tk composition root, view registry
-├── app_qt.py                  Qt composition root, page registry (D31)
-├── gui_qt/
+├── app.py                     composition root: window + page registry, main()
+├── tasks.py                   TaskRunner: worker thread + result queue
+├── gui/
 │   ├── theme.py               design tokens (navy palette, fonts, spacing),
 │   │                          generated stylesheet, icon(), pyqtgraph config
 │   ├── components.py          Card, KpiTile, MetricTile, PageHeader (+ status
@@ -79,26 +80,6 @@ quant_hub/
 │                              placeholder.py (planned modules only)
 ├── config.py                  AppConfig
 ├── events.py                  EventBus (thread-safe), LogEvent, log handler
-├── gui/
-│   ├── main_window.py         shell: header/nav (titled sections)/container/
-│   │                          log + THE PUMP
-│   ├── theme.py               all colors, fonts, ttk styles (dark terminal)
-│   ├── task_runner.py         worker thread + result queue (tkinter-free)
-│   ├── views/base.py          View base class (on_show/on_hide lifecycle)
-│   ├── views/dashboard.py     workstation overview: connection + store cards
-│   ├── views/simulator.py     the GBM/Monte Carlo laboratory (synthetic only)
-│   ├── views/markets.py       watchlist: page-owned source, provenance
-│   │                          columns, per-row unavailable reasons, history sync
-│   ├── views/options_lab/     Options Lab package: view.py (shell + state),
-│   │                          market_bar.py (UNDERLYING strip: manual/
-│   │                          synthetic/ibkr), pricer_tab.py, strategy_tab.py,
-│   │                          monte_carlo_tab.py
-│   ├── views/volatility_lab.py Volatility Lab: synthetic chain → SVI surface,
-│   │                          smiles/term structure/heatmap, arb diagnostics
-│   ├── views/lab_widgets.py   form/stat/figure helpers shared by the labs
-│   ├── views/garch.py         GARCH Lab: synthetic or source-history fits
-│   ├── views/placeholder.py   ONE class for the remaining future modules
-│   └── widgets/               log_panel.py (collapsible), status_bar.py
 ├── broker/
 │   ├── base.py                Broker protocol, ConnectionState, ConnectionEvent
 │   ├── types.py               ContractSpec, HistoricalBar, BrokerError tree
@@ -146,12 +127,13 @@ quant_hub/
 │   ├── vol_context.py         any source → trailing realized vols + GARCH
 │   │                          expected-vol term structure (D30)
 │   ├── workstation.py         local-store overview, windowed history, GBM
-│   │                          forecast fan (the Qt Dashboard's data, D31)
+│   │                          forecast fan (the Dashboard's data, D31)
 │   ├── sync.py                SyncStatus/SyncPlan: FULL_HIT/PARTIAL_HIT/MISS
 │   └── cached_source.py       CachedSource: BarSource + BarStore → DataSource
 ├── storage/bar_store.py       SQLite schema (instruments/bars/coverage),
 │                              upsert with counts, range queries, coverage
-└── visualization/charts.py    ChartStyle + figure-level compositions:
+└── visualization/charts.py    matplotlib, for scripts/notebooks (the app
+                               uses gui/charts.py): ChartStyle + compositions:
                                plot_price_history, plot_lab_overview (price/
                                drawdown/distribution/rolling vol),
                                plot_monte_carlo (fan + terminal dist),
@@ -163,10 +145,9 @@ quant_hub/
 
 ## Concurrency model
 
-Identical for both front ends (D31): only the pump's timer differs —
-`root.after(50)` in Tk, a 16 ms `QTimer` in Qt. Threads that exist:
-**GUI/main** (Tk mainloop or Qt event loop), **task-worker** (one,
-in `TaskRunner`), **ibkr-network** (created per connect, runs `EClient.run()`).
+Threads that exist: **GUI/main** (the Qt event loop), **task-worker** (one,
+in `TaskRunner`), **ibkr-network** (created per connect, runs
+`EClient.run()`).
 
 Two seams confine all threading:
 
@@ -176,27 +157,29 @@ Two seams confine all threading:
    callbacks fill the buffer and set the event. Callers therefore see plain
    blocking methods that raise `BrokerError` subclasses. Nothing
    callback-shaped escapes this file.
-2. **`gui/task_runner.py` + the pump** — the GUI never calls blocking methods
+2. **`tasks.py` + the pump** — the GUI never calls blocking methods
    directly; it calls `tasks.submit(fn, on_done, on_error)`. The worker runs
-   `fn`, queues the result, and `MainWindow._pump` (a `root.after` loop, ~50ms)
-   invokes the callback **on the GUI thread**. The same pump drains the
+   `fn`, queues the result, and `MainWindow._pump` (a 16 ms `QTimer`, one
+   60 Hz frame) invokes the callback **on the GUI thread**. The same pump drains the
    EventBus, which is how broker state changes (`ConnectionEvent`) and log
    records (`LogEvent`) reach widgets. Push events = bus; request/response =
    TaskRunner.
 
-Why not asyncio: Tkinter has no native asyncio integration and the official
-ibapi is thread-based. Threads + queues is the smallest correct model.
+Why not asyncio (D1): the official ibapi is thread-based, and threads +
+queues is the smallest correct model. It carried over unchanged from the
+original Tk front end to Qt (D31).
 
 ## Page responsibilities and data flow (M6, D23/D24)
 
 ```
-Dashboard  = workstation overview (connection card, persisted-store summary)
+Dashboard  = workstation overview: store KPIs, market explorer, watchlist,
+             GBM forecast sandbox, store table, research shortcuts
 Markets    = real market observations: explicit source, provenance columns
 Simulator  = controlled stochastic experiments (the GBM/Monte Carlo lab)
 Options Lab= pricing/IV, multi-leg strategies, MC check over one MarketInputs
 GARCH Lab  = conditional-volatility fit: synthetic GARCH or explicit source history
 Vol Lab    = implied-vol surface from an OptionChain; GARCH/realized overlay
-MODELS…    = GARCH Lab plus placeholders for future specialized workflows
+RESEARCH…  = GARCH Lab, Vol Lab, plus placeholders for planned modules
 ```
 
 **No global source state.** ``MarketService.get_history/get_quote`` take a
@@ -205,7 +188,7 @@ required ``source`` argument; each page owns and displays its choice
 its market source per fit; `ibkr` therefore traverses the existing
 SQLite-first `CachedSource` path. Every fit runs as one TaskRunner job, so
 both the fitted parameters and every chart panel describe the same returns.
-The Options Lab (D28) owns a source selector in its UNDERLYING strip:
+The Options Lab (D28) owns a source selector in its underlying card:
 `manual` inputs, or `services/underlying.load_underlying` on a named source
 (one TaskRunner job: history → realized vol, quote → spot, falling back to
 the last close when the quote is unavailable). Every tab then prices off the
@@ -221,12 +204,13 @@ stream briefly and self-cancel; live+delayed tick ids and the
 (10167/10089) never fail the request or touch connection state; no usable
 price within ``quote_timeout_s`` raises ``NoMarketDataError`` with the
 advisory as the reason, which Markets renders as an UNAVAILABLE row with
-the reason in its detail line. Connection health and per-instrument
+the reason in its inspector. Connection health and per-instrument
 entitlement are therefore fully independent states.
 
-Historical series still flow ``MarketService → CachedSource → SeriesAnalysis
-→ charts`` (Markets' "Sync 1Y history" persists without charting; a richer
-historical-research surface is a later milestone).
+Historical series flow ``MarketService → CachedSource`` into the store;
+the Dashboard's market explorer and watchlist read it back through
+``services/workstation.py`` (Markets' "Sync 1Y history" fills it). A richer
+historical-research surface is a later milestone.
 
 `PriceHistory` (sorted unique DatetimeIndex; `close` required, finite, > 0;
 OHLCV passed through when present) is the contract that makes every consumer
@@ -275,7 +259,7 @@ Key properties (decisions D17–D21):
   the adapter slices. A leading/interior coverage gap therefore fetches
   from the gap to now; harmless, because inserts upsert and coverage merges.
 
-## GUI conventions — Qt (`gui_qt/`, D31)
+## GUI conventions (`gui/`, D31)
 
 - **Design system.** `theme.py` holds every token (navy surfaces, ink,
   accent, validated series and status colors, fonts, spacing, radii) and
@@ -290,8 +274,11 @@ Key properties (decisions D17–D21):
   subclass `ScrollPage` (scroll, never clip) and reflow on resize.
 - **Charts** are pyqtgraph widgets in `charts.py`: render-only, precomputed
   inputs, view-only ranges driven by page controls, and a snapped
-  crosshair + readout as the hover layer. Matplotlib is not used in the Qt
-  pages (a future research figure may embed it via the QtAgg backend).
+  crosshair + readout as the hover layer. Matplotlib is not used in pages
+  (a future research figure may embed it via the QtAgg backend).
+- **Status colors** (good/warning/critical) mean *state* — connection
+  health, signed values, check results — and are never chart series
+  colors. State is always color + text (or sign), never color alone.
 - **Lifecycle.** Pages are created lazily and stay alive; `on_show`
   refreshes, `on_hide` persists via `ViewStateStore`. Pages reach the shell
   only through `Shell` (`navigate`, `publish_commands` for Ctrl+K).
@@ -317,27 +304,6 @@ Key properties (decisions D17–D21):
   the content's minimum (its body layout opts out of height-for-width,
   which would otherwise size pages to their *preferred* height). Tabbed
   content uses `PageStack`, which sizes to the visible page, not the tallest.
-
-## GUI conventions — Tk (`gui/`, classic; frozen except for fixes)
-
-- All styling lives in `gui/theme.py` (single committed dark palette,
-  validated for CVD-safety/contrast on the dark surface). No hex constants in
-  views. Charts get colors via `ChartStyle`, mapped from the theme once in
-  `dashboard.py`.
-- Status colors (good/warning/serious/critical) mean *state* — connection
-  health, signed values — and are never used as chart series colors. State is
-  always shown as color + text, never color alone.
-- Views subclass `gui/views/base.View`, are created lazily on first
-  navigation, and stay alive (state survives switching). Register new views
-  in `app.py`'s `view_specs`.
-- Long-lived matplotlib: one Figure per embedded canvas for the life of the
-  view (the dashboard has two — Path Analysis and Monte Carlo tabs). All
-  redraws go through `visualization.charts.plot_*(fig, ...)` functions that
-  clear and repopulate in place — never create a new Figure/canvas per
-  refresh. Chart functions render only; every plotted quantity arrives
-  precomputed from `data/`.
-- Spacing uses the `SPACE_*` scale from `theme.py`; control groups sit in
-  `Card.TFrame` panels with `CardHeading.TLabel` captions.
 
 ## Quant-module conventions (follow the GBM exemplar)
 

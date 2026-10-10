@@ -1,129 +1,125 @@
-"""The application shell: header, navigation rail, view container, log panel.
+"""The application shell: sidebar, top bar, page stack, log drawer,
+status bar — and THE PUMP.
 
-Also owns the GUI pump -- a single ``root.after`` loop that drains the event
-bus and the task-result queue on the GUI thread. That pump is the only place
-background work re-enters Tkinter.
+Threading (D1/D9): one task-worker thread, one event bus, and a single
+GUI-thread ``QTimer`` that drains both every 16 ms (one 60 Hz frame), so
+background results land within a frame. Draining empty queues costs
+microseconds, so the short interval is free.
 """
 
 from __future__ import annotations
 
-import tkinter as tk
 from collections.abc import Callable
-from tkinter import ttk
 
-from quant_hub.broker.base import Broker
-from quant_hub.events import EventBus
-from quant_hub.gui.task_runner import TaskRunner
-from quant_hub.gui.views.base import View
-from quant_hub.gui.widgets.log_panel import LogPanel
-from quant_hub.gui.widgets.status_bar import ConnectionBar
+from PySide6.QtCore import QTimer
+from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtWidgets import QHBoxLayout, QMainWindow, QStackedWidget, QVBoxLayout, QWidget
 
-ViewFactory = Callable[[tk.Misc], View]
-# Navigation is grouped into titled sections (None = untitled): core pages
-# first, then the planned model modules behind a separator.
-ViewSections = list[tuple[str | None, list[tuple[str, ViewFactory]]]]
+from quant_hub.core import Core
+from quant_hub.gui.pages.base import Commands, Page, Shell
+from quant_hub.gui.sidebar import Sidebar
+from quant_hub.gui.status_bar import LogDrawer, StatusBar
+from quant_hub.gui.top_bar import TopBar
+
+PUMP_INTERVAL_MS = 16
+
+PageFactory = Callable[[Shell], Page]
+PageSections = list[tuple[str | None, list[tuple[str, str, PageFactory]]]]
+"""[(section title or None, [(page name, icon name, factory), ...]), ...]"""
 
 
-class MainWindow(ttk.Frame):
-    def __init__(
-        self,
-        root: tk.Tk,
-        view_sections: ViewSections,
-        broker: Broker,
-        tasks: TaskRunner,
-        bus: EventBus,
-        pump_interval_ms: int,
-    ) -> None:
-        super().__init__(root, style="Page.TFrame")
-        self._root = root
-        self._bus = bus
-        self._tasks = tasks
-        self._pump_interval_ms = pump_interval_ms
+class MainWindow(QMainWindow):
+    def __init__(self, core: Core, sections: PageSections) -> None:
+        super().__init__()
+        self._core = core
+        self.setWindowTitle("Quant Hub")
+        self._factories = {name: factory for _, items in sections for name, _, factory in items}
+        self._pages: dict[str, Page] = {}
+        self._active: str | None = None
+        self._commands: dict[str, Commands] = {}
+        self._shell = Shell(navigate=self.show_page, publish_commands=self._publish_commands)
 
-        self._factories = {
-            name: factory for _, specs in view_sections for name, factory in specs
-        }
-        self._views: dict[str, View] = {}       # created lazily
-        self._nav_buttons: dict[str, ttk.Button] = {}
-        self._active_name: str | None = None
+        root = QWidget()
+        root.setObjectName("appRoot")
+        self.setCentralWidget(root)
+        outer = QVBoxLayout(root)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        main = QHBoxLayout()
+        main.setSpacing(0)
+        outer.addLayout(main, 1)
 
-        self.pack(fill="both", expand=True)
-        self.columnconfigure(1, weight=1)
-        self.rowconfigure(1, weight=1)
+        self._sidebar = Sidebar([(title, [(n, i) for n, i, _ in items]) for title, items in sections])
+        self._sidebar.navigate.connect(self.show_page)
+        main.addWidget(self._sidebar)
 
-        # -- header ------------------------------------------------------
-        header = ttk.Frame(self, style="Page.TFrame")
-        header.grid(row=0, column=0, columnspan=2, sticky="ew")
-        header.columnconfigure(1, weight=1)
-        ttk.Label(header, text="QUANT HUB", style="Title.TLabel").grid(
-            row=0, column=0, sticky="w", padx=18, pady=10
-        )
-        ConnectionBar(header, broker, tasks, bus).grid(
-            row=0, column=2, sticky="e", padx=18
-        )
+        column = QVBoxLayout()
+        column.setSpacing(0)
+        main.addLayout(column, 1)
+        self._top = TopBar(core.broker, core.tasks, core.bus)
+        column.addWidget(self._top)
+        self._stack = QStackedWidget()
+        column.addWidget(self._stack, 1)
+        self._drawer = LogDrawer(core.bus)
+        self._drawer.setVisible(False)
+        column.addWidget(self._drawer)
 
-        # -- navigation rail ----------------------------------------------
-        nav = ttk.Frame(self, style="Nav.TFrame", width=170)
-        nav.grid(row=1, column=0, sticky="ns")
-        nav.grid_propagate(False)
-        for index, (section_title, specs) in enumerate(view_sections):
-            if index > 0:
-                ttk.Separator(nav).pack(fill="x", padx=12, pady=(10, 4))
-            if section_title:
-                ttk.Label(nav, text=section_title, style="NavSection.TLabel").pack(
-                    fill="x", padx=16, pady=(2, 2)
-                )
-            for name, _factory in specs:
-                button = ttk.Button(
-                    nav,
-                    text=name,
-                    style="Nav.TButton",
-                    command=lambda n=name: self.show_view(n),
-                )
-                button.pack(fill="x")
-                self._nav_buttons[name] = button
+        self.status = StatusBar(core.bus, core.broker.state)
+        self.status.toggle_logs.connect(self._toggle_logs)
+        outer.addWidget(self.status)
 
-        # -- view container -----------------------------------------------
-        self._container = ttk.Frame(self, style="Surface.TFrame")
-        self._container.grid(row=1, column=1, sticky="nsew", padx=(1, 0))
-        self._container.columnconfigure(0, weight=1)
-        self._container.rowconfigure(0, weight=1)
+        shortcut = QShortcut(QKeySequence("Ctrl+K"), self)
+        shortcut.activated.connect(self._focus_search)
+        self._publish_commands("pages", {
+            f"Go to {name}": (lambda n=name: self.show_page(n)) for name in self._factories
+        })
 
-        # -- log panel ----------------------------------------------------
-        log = LogPanel(self, bus)
-        log.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(1, 0))
+        self._pump_timer = QTimer(self)
+        self._pump_timer.timeout.connect(self._pump)
+        self._pump_timer.start(PUMP_INTERVAL_MS)
+        self.show_page(next(iter(self._factories)))
 
-        first_view = next(iter(self._factories))
-        self.show_view(first_view)
-        self._pump()
-
-    def show_view(self, name: str) -> None:
-        """Raise (lazily creating) the named view and update the nav rail."""
-        if name == self._active_name:
-            return
-        if name not in self._views:
-            view = self._factories[name](self._container)
-            view.grid(row=0, column=0, sticky="nsew")
-            self._views[name] = view
-
-        if self._active_name is not None:
-            self._views[self._active_name].on_hide()
-            self._nav_buttons[self._active_name].configure(style="Nav.TButton")
-
-        self._active_name = name
-        self._nav_buttons[name].configure(style="NavActive.TButton")
-        view = self._views[name]
-        view.tkraise()
-        view.on_show()
+    # -- navigation -----------------------------------------------------
+    def show_page(self, name: str) -> Page:
+        """Raise (lazily creating) the named page; returns it."""
+        if name not in self._pages:
+            page = self._factories[name](self._shell)
+            self._stack.addWidget(page)
+            self._pages[name] = page
+        page = self._pages[name]
+        if name != self._active:
+            if self._active is not None:
+                self._pages[self._active].on_hide()
+            self._active = name
+            self._stack.setCurrentWidget(page)
+            self._sidebar.set_active(name)
+            self._top.set_page(name)
+            page.on_show()
+        return page
 
     def shutdown(self) -> None:
-        """Give the active view its on_hide (it never gets one from a tab
-        switch it didn't make) so it can flush state before the app closes."""
-        if self._active_name is not None:
-            self._views[self._active_name].on_hide()
+        """Give the active page its on_hide so it can persist state."""
+        self._pump_timer.stop()
+        if self._active is not None:
+            self._pages[self._active].on_hide()
+
+    # -- shell services -------------------------------------------------
+    def _publish_commands(self, owner: str, commands: Commands) -> None:
+        self._commands[owner] = commands
+        merged: Commands = {}
+        for group in self._commands.values():
+            merged |= group
+        self._top.search.set_commands(merged)
+
+    def _focus_search(self) -> None:
+        self._top.search.setFocus()
+        self._top.search.selectAll()
+
+    def _toggle_logs(self) -> None:
+        is_open = not self._drawer.isVisible()
+        self._drawer.setVisible(is_open)
+        self.status.set_logs_open(is_open)
 
     def _pump(self) -> None:
-        """Drain thread-crossing queues on the GUI thread, forever."""
-        self._bus.dispatch_pending()
-        self._tasks.process_results()
-        self._root.after(self._pump_interval_ms, self._pump)
+        self._core.bus.dispatch_pending()
+        self._core.tasks.process_results()

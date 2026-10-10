@@ -65,11 +65,12 @@ owner before implementation begins.
   smiles, term structure, and surface views; GARCH-forecast and
   realized-vol overlay from any source (D30). 529 tests.
 
-## Current phase — Qt UI migration (set 2026-10-10, D31)
+## Done — Qt UI migration (2026-10-10, D31)
 
-Owner direction: a modern, fast, appealing workstation UI (a target mockup
-was provided); heavy dependencies accepted. Tk and Qt run side by side
-(Qt is the default; `--classic` opens Tk) until parity. Each milestone is approved before the next.
+Released as **v0.5**. Owner direction: a modern, fast, appealing
+workstation UI (a target mockup was provided); heavy dependencies accepted.
+Tk and Qt ran side by side until parity, then Tk was retired. Each
+milestone was approved before the next.
 
 1. ~~**Q1 — Foundation + Dashboard.**~~ Done 2026-10-10. Delivered:
    - `core.py` split
@@ -104,10 +105,15 @@ was provided); heavy dependencies accepted. Tk and Qt run side by side
 
    A GPU 3-D surface (pyqtgraph.opengl or Plotly in a QWebEngineView)
    remains a separate, later step.
-6. **Q6 — Retire Tk.** Delete `gui/` (keeping `task_runner`) and `app.py`;
-   make Qt the default; collapse the layering rules.
+6. ~~**Q6 — Retire Tk.**~~ Done 2026-10-10:
+   - Tk `gui/` and `app.py` deleted
+   - `gui_qt/` → `gui/`, `app_qt.py` → `app.py`, `TaskRunner` →
+     `tasks.py`
+   - layering rules collapsed, and tkinter forbidden
+   - GUI smoke tests 5× faster: logging and theming are now idempotent, and
+     test windows are really destroyed
 
-## Previous phase — synthetic research workflows (set 2026-09-27, done)
+## Done — synthetic research workflows (set 2026-09-27)
 
 Owner direction: finish the quant-research side on **synthetic processes
 first** (a known true world → estimate → compare, as GBM and GARCH already
@@ -127,9 +133,10 @@ do), then turn to the data side. Each milestone is approved before the next.
    (OHLC range estimators wait for real bars, D4). Candidate tie-in: the
    GARCH variance-forecast term structure vs the ATM IV term structure.
 
-## Next phase — data side (after the synthetic workflows)
+## Current phase — data side
 
-- Live-verify the Options Lab and Volatility Lab `ibkr` loads against TWS.
+- Live-verify the Qt UI (top-bar Connect, Markets quotes and Sync) and the
+  Options Lab, GARCH Lab and Volatility Lab `ibkr` loads against TWS.
 - Options chains via IBKR (read-only, D12): a `broker/` adapter emitting
   `data/options.OptionChain`, feeding the unchanged Volatility Lab
   pipeline. Then a joint SSVI (whole-surface) fit, to regularize noisy real

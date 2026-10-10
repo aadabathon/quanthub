@@ -1,3 +1,0 @@
-[gui_scripts]
-quant-hub = quant_hub.app_qt:main_qt
-quant-hub-classic = quant_hub.app:main

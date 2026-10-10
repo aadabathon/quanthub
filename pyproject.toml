@@ -4,14 +4,18 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "quant-hub"
-version = "0.4.0"
+# Single source of truth: quant_hub/__init__.py's __version__ (read statically,
+# without importing the package).
+dynamic = ["version"]
 description = "A modular quantitative finance research and trading workstation."
 requires-python = ">=3.11"
 dependencies = [
     "numpy>=1.26",
     "pandas>=2.0",
+    # Figures for scripts and notebooks (visualization/); the app itself
+    # draws with pyqtgraph.
     "matplotlib>=3.8",
-    # The Qt GUI (D31): widgets, fast interactive charts, icon fonts.
+    # The GUI (D31): Qt widgets, fast interactive charts, icon fonts.
     "PySide6>=6.7",
     "pyqtgraph>=0.13.7",
     "qtawesome>=1.3",
@@ -29,15 +33,14 @@ dev = ["pytest>=8"]
 # gui-scripts (not scripts) so the generated launcher is a windowed exe --
 # no console window, so it can be double-clicked or pinned like a normal
 # Windows app. `python -m quant_hub` still gives console/log output for
-# debugging.
-# `quant-hub` always launches the *current* UI, so a desktop shortcut to it
-# never goes stale (D31). The classic Tk UI stays reachable until it is
-# retired.
-quant-hub = "quant_hub.app_qt:main_qt"
-quant-hub-classic = "quant_hub.app:main"
+# debugging. A desktop shortcut should target this launcher.
+quant-hub = "quant_hub.app:main"
 
 [tool.setuptools.packages.find]
 include = ["quant_hub*"]
+
+[tool.setuptools.dynamic]
+version = {attr = "quant_hub.__version__"}
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

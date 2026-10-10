@@ -1,6 +1,6 @@
 """The Options Lab migrates the old single-card calculator's saved state."""
 
-from quant_hub.gui.views.options_lab.view import _migrate
+from quant_hub.gui.pages.options_lab.page import _migrate
 
 
 def test_flat_calculator_state_maps_onto_sections():

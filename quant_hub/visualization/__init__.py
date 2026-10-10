@@ -1,5 +1,5 @@
 """Chart construction: functions that draw onto matplotlib Figures.
 
-No tkinter here -- the GUI embeds the Figures via FigureCanvasTkAgg, and the
-same functions work in scripts and notebooks.
+For scripts and notebooks (and research figures): toolkit-free, no Qt. The
+app's interactive charts are pyqtgraph widgets in ``gui/charts.py``.
 """

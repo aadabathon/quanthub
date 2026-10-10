@@ -1,22 +1,29 @@
 # Quant Hub
 
-A modular quantitative finance research and trading workstation. v0.1 built
-the foundation (application shell, synthetic market data, read-only IBKR
-connectivity); v0.2 turned the dashboard into an interactive GBM laboratory:
-simulation controls, return/volatility/drawdown analytics with
-TRUE-vs-ESTIMATE diagnostics, and a Monte Carlo view comparing sampled
-terminal prices against the lognormal closed forms. v0.3 made real market
-data first-class: IBKR historical bars are validated, persisted to local
-SQLite, and served through a coverage-aware incremental cache, so repeat
-requests need no network and flow through the same analytics/charts as
-synthetic data.
+A personal quantitative research and trading workstation: a desktop app with
+a fast, modern Qt interface over a layered Python core.
+
+- **Market data:** IBKR quotes with provenance; daily history validated and
+  persisted to local SQLite through a coverage-aware incremental cache.
+- **Research labs:**
+  - Simulator: GBM and Monte Carlo against the closed forms
+  - GARCH Lab: conditional volatility, synthetic or real history
+  - Options Lab: Black–Scholes–Merton, implied vol, multi-leg strategies,
+    a Monte Carlo check
+  - Volatility Lab: SVI/SSVI implied-vol surfaces with arbitrage checks
+- **Dashboard:** what the local store holds, a market explorer, and a model
+  sandbox.
+
+Synthetic labs know the true process, so they show TRUE vs ESTIMATE
+side by side. Brokerage access is read-only by design: there is no order
+code anywhere.
 
 ## Running
 
 ```bash
 pip install -e ".[dev,ibkr]"   # from this directory; drop [ibkr] to skip TWS support
-python -m quant_hub            #
-pytest                         # 210 tests, no GUI or network required
+python -m quant_hub            # or the quant-hub launcher (windowed)
+pytest -q                      # no display or network required
 ```
 
 ## Architecture
@@ -24,53 +31,58 @@ pytest                         # 210 tests, no GUI or network required
 Imports point strictly downward; `tests/test_layering.py` enforces this.
 
 ```
-gui/            Tkinter/ttk presentation. Renders state, forwards intent.
-services/       Application facade (MarketService), cache/sync layer
-                (CachedSource + sync planning). No tkinter, no ibapi.
-data/           Pure domain: PriceHistory/Quote types, GBM generator,
-                simulation experiments, full return/risk analytics, OHLCV
-                validation, date-interval math.
+gui/            PySide6 (Qt) presentation with pyqtgraph charts: renders
+                state, forwards intent. No math, no broker calls.
+services/       Application facade (MarketService), cache/sync layer,
+                page-facing data assembly. Never the GUI toolkit or ibapi.
+models/         Pure quantitative models (Black-Scholes, strategies, GARCH,
+                SVI/vol surfaces, Monte Carlo, shared optimizer).
+data/           Pure domain: PriceHistory/Quote/OptionChain types, GBM
+                generator, simulation, return/risk analytics, validation.
                 Usable from notebooks/scripts with zero GUI machinery.
 broker/         Infrastructure. The ONLY package that imports ibapi.
                 Read-only: no order code exists anywhere.
-storage/        SQLite persistence for acquired bars (stdlib sqlite3);
-                DB at ~/.quant_hub/market_data.db.
-visualization/  Matplotlib figure construction (no tkinter; GUI embeds them).
+storage/        SQLite persistence (stdlib sqlite3) for acquired bars and
+                per-page UI state; DB at ~/.quant_hub/market_data.db.
+visualization/  Matplotlib figures for scripts and notebooks.
 events.py       Thread-safe bus: background threads publish, GUI drains.
-app.py          Composition root: the one place everything is wired.
+tasks.py        TaskRunner: one worker thread; results land on the GUI thread.
+core.py, app.py Composition root: the one place everything is wired.
 ```
 
 ### Concurrency model
 
 Two rules produce the whole design:
 
-1. **Only the main thread touches Tkinter.** Background work re-enters the GUI
-   through one `root.after` pump (`MainWindow._pump`) that drains the event
-   bus and the task-result queue.
+1. **Only the GUI thread touches widgets.** Background work re-enters the
+   GUI through one 16 ms `QTimer` pump (`MainWindow._pump`) that drains the
+   event bus and the task-result queue.
 2. **ibapi's callback/threading model never leaves `broker/ibkr.py`.** The
    network thread's callbacks fill per-request buffers and set
    `threading.Event`s; callers see plain blocking methods with timeouts that
-   raise `BrokerError`. The GUI invokes those via `gui/task_runner.py`
+   raise `BrokerError`. The GUI invokes those via `tasks.py`
    (`submit(fn, on_done, on_error)` — callbacks run on the GUI thread).
 
 ### Data flow
 
 ```
-Dashboard "Run Simulation" or "Load" ── TaskRunner (worker thread)
-    ├─ run_gbm_simulation ─────────────────────► GBMSimulationResult
-    └─ MarketService ── active DataSource
+page action ── TaskRunner (worker thread)
+    ├─ synthetic experiment (GBM, GARCH, SSVI chain) ── true process known
+    └─ MarketService ── named source (no global "active" source)
          ├─ SyntheticSource ── GBM generator ──► PriceHistory
          └─ CachedSource ── SQLite hit? ──────► PriceHistory
               └─ miss/partial: IBKRSource ── IBKRBroker ── TWS
                  └─ validate ── persist ── serve from store
-    then analyze_history ──────────────────────► SeriesAnalysis
-    └─ result queued ── after-pump ── charts + stats panel (GUI thread)
+    then pure models/analytics ──► one immutable result
+    └─ queued ── pump ── every chart and stat on the page renders from it
 ```
 
-Both paths converge on the same validated `PriceHistory` and one
-`SeriesAnalysis` bundle, so every consumer is source-agnostic — the property
-future backtesting/model layers rely on. Simulated data additionally carries
-its true parameters, which is what powers the TRUE-vs-ESTIMATE panel.
+Every consumer works from the same validated `PriceHistory`, so code is
+source-agnostic, which is the property future backtesting/model layers rely
+on.
+
+See ARCHITECTURE.md (how), DECISIONS.md (why), ROADMAP.md (next) and
+CURRENT_STATE.md (done / untested).
 
 ## IBKR setup
 
@@ -93,6 +105,8 @@ GUI or broker code.
 
 ## Roadmap
 
-Planned modules (nav placeholders exist): options-chain analysis and pricing,
-IV surfaces, Kalman/state-space models, GARCH, Markov regime models, portfolio
-analytics and Kelly sizing, strategy research and backtesting, paper trading.
+Next: the data side (live IBKR verification, an option-chain adapter feeding
+the Volatility Lab, real positions, a trading dashboard). Planned modules
+with nav placeholders: Kalman/state-space models, Markov regime models,
+portfolio analytics and Kelly sizing, strategy research and backtesting.
+See ROADMAP.md.

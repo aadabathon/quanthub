@@ -1,16 +1,16 @@
 """Typed publish/subscribe event bus bridging background threads to the GUI.
 
-Tkinter widgets may only be touched from the thread running ``mainloop()``.
-Background threads (the IBKR network thread, the task worker) therefore never
-call into the GUI directly; they ``publish()`` immutable event objects onto
-this bus, and the GUI drains the bus from a ``root.after`` pump running on the
-main thread. This makes every thread crossing in the application go through
-exactly one, visible, mechanism.
+Widgets may only be touched from the GUI (main) thread. Background threads
+(the IBKR network thread, the task worker) therefore never call into the GUI
+directly; they ``publish()`` immutable event objects onto this bus, and the
+GUI drains the bus from a timer pump running on the main thread. This makes
+every thread crossing in the application go through exactly one, visible,
+mechanism.
 
 Thread contract:
     * ``publish()``      -- safe from any thread.
     * ``subscribe()``    -- GUI thread only, during startup wiring.
-    * ``dispatch_pending()`` -- GUI thread only (the ``after`` pump).
+    * ``dispatch_pending()`` -- GUI thread only (the pump).
 
 Events are frozen dataclasses keyed by their exact type. ``LogEvent`` is
 defined here; broker events live in ``quant_hub.broker.base`` next to the
@@ -56,7 +56,7 @@ class EventBus:
         """Dispatch queued events to subscribers. GUI thread only.
 
         ``max_events`` bounds work per pump tick so a burst of events cannot
-        starve the Tkinter event loop.
+        starve the GUI event loop.
         """
         for _ in range(max_events):
             try:

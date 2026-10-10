@@ -34,15 +34,15 @@ codebase themselves — the standing constraint is:
    anywhere, under any flag. This is a deliberate safety posture, not an
    unfinished feature. Do not add reconnect-automatically behavior either.
 2. **Layering is enforced by `tests/test_layering.py`** — Qt libraries
-   appear only in `gui_qt/` and `app_qt.py`; `data/` imports
-   nothing from other layers and never tkinter/ibapi; only `broker/` may
+   appear only in `gui/` and `app.py` (and tkinter nowhere); `data/`
+   imports nothing from other layers and never ibapi; only `broker/` may
    import ibapi; `models/` knows only `data/`; `storage/` knows only `data/`
-   and sqlite3; `visualization/` and `services/` never import tkinter. GUI
-   views may call pure `models/` functions directly (no service wrapper
+   and sqlite3; `visualization/` and `services/` never import the GUI. GUI
+   pages may call pure `models/` functions directly (no service wrapper
    needed, D26). If your change fights the layering
    test, your design is wrong, not the test.
-3. **Only the GUI thread touches widgets (Tk or Qt).** Background → GUI crossings go
-   through `events.py` (EventBus) or `gui/task_runner.py`. Never call a
+3. **Only the GUI thread touches widgets.** Background → GUI crossings go
+   through `events.py` (EventBus) or `tasks.py` (TaskRunner). Never call a
    blocking service/broker method directly from a widget callback — submit it
    to the TaskRunner.
 4. **Quant modules follow the GBM exemplar** (`quant_hub/data/synthetic.py`):
@@ -58,20 +58,18 @@ codebase themselves — the standing constraint is:
 # from quanthub/  (Windows; the project runs on Python 3.12)
 py -3.12 -m pip install -e ".[dev,ibkr]"   # once; [ibkr] optional
 py -3.12 -m pytest -q                      # full suite, no GUI/network needed
-py -3.12 -m quant_hub                      # launch the app (Qt UI, D31)
-py -3.12 -m quant_hub --classic            # classic Tk UI, until retired
+py -3.12 -m quant_hub                      # launch the app
 ```
 
 Use the `py -3.12` launcher: bare `python` on this machine resolves to a
 3.11 install that has neither pytest nor the project's dependencies.
 
-**The GUI is migrating from Tk (`gui/`) to Qt (`gui_qt/`), page by page
-(D31).** New UI work goes in `gui_qt/` only: build pages from
-`gui_qt/components.py`, style through `role`/`variant` properties resolved
-in `gui_qt/theme.py` (no colors or font sizes in pages), and render charts
-with the pyqtgraph widgets in `gui_qt/charts.py`. Qt smoke tests run
-headless (`QT_QPA_PLATFORM=offscreen`, see `tests/test_qt_smoke.py`). For
-screenshots, build with `quant_hub.app_qt.create_qt_app()`, `show()`, pump
+**GUI work (Qt, D31).** Build pages from `gui/components.py`, style
+through `role`/`variant` properties resolved in `gui/theme.py` (no colors
+or font sizes in pages), and render charts with the pyqtgraph widgets in
+`gui/charts.py`; see ARCHITECTURE.md's GUI conventions. Smoke tests run
+headless (`QT_QPA_PLATFORM=offscreen`, see `tests/test_gui_smoke.py`). For
+screenshots, build with `quant_hub.app.create_app()`, `show()`, pump
 `app.processEvents()`, then `window.grab().save(path)`. That captures the
 window itself, whatever is in front of it. pyqtgraph hover only fires with
 `mouseRateLimit=0` (set in the theme) and on real mouse-move events sent to
@@ -83,16 +81,11 @@ driver scripts should point `AppConfig(db_path=...)` at a copy of the store:
 pages save UI state on hide. More pyqtgraph traps: `PlotCurveItem` ignores a
 plot's log mode (transform x yourself; `PlotDataItem` handles it), and an
 `AxisItem.tickStrings` override must route `self.logMode` to
-`logTickStrings` itself.
-
-Smoke-testing Tk GUI changes: build via `quant_hub.app.create_app()` (returns
-`(root, main_window)` without entering the mainloop), drive
-`main_window.show_view(name)` with `root.after`, then `root.destroy()`.
-Two gotchas: scripts outside the project dir need
-`PYTHONPATH=...\quanthub` (the editable install is not on every
-interpreter path), and screenshots via `PIL.ImageGrab` capture whatever
-window is frontmost — call `root.attributes("-topmost", True)` and
-`root.update()` first or you photograph your own terminal.
+`logTickStrings` itself. Outside a running event loop (tests, scripts),
+`deleteLater()` never fires: flush it with
+`QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)` or windows
+pile up. Scripts outside the project dir need `PYTHONPATH=...\quanthub`
+(the editable install is not on every interpreter path).
 
 ## Repo layout note
 
