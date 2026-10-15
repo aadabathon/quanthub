@@ -10,7 +10,7 @@ reach the Volatility Lab and are saved; the joint SSVI fit is an option
 ## Status
 
 v0.5 (the Qt UI). Brokerage connectivity is live-verified against TWS 7496 (2026-08-14;
-see below). `py -3.12 -m pytest -q` → **777 passed** in about 95 s, with no
+see below). `py -3.12 -m pytest -q` → **780 passed** in about 105 s, with no
 network or display needed (the GUI smoke tests run offscreen). The real 3D
 draw runs in a fresh subprocess and skips, with the reason, when offscreen
 Chromium can't compile WebGL shaders; that happens on some runs.
@@ -95,7 +95,24 @@ what the desktop shortcut targets. The GUI is `quant_hub/gui/` (Qt, D31) on
   - the local level's EWMA readout: q, K̄ and half-life
   - an info note when a variance fits to zero
   - in synthetic mode, the likelihood at the truth beside the fitted one
-- **Planned modules** (Markov, Portfolio, Research) show placeholders.
+- **Markov Lab (M2):**
+  - synthetic worlds with known regimes (two, three, or none), or source
+    history
+  - 2 regimes, 3, or Auto (the BIC sweep over 1–3)
+  - the price tinted by regime, more strongly the more turbulent, over
+    stacked regime probabilities
+    - a Filtered / Smoothed / Viterbi toggle, with the hindsight views
+      labelled
+    - in synthetic mode, a strip of the true regimes
+  - per-regime vol, drift, expected stay, long-run share and share of the
+    sample's days, with TRUE beside FIT when the counts match
+  - log L, BIC and the BIC of every count tried (a fit that ran out of EM
+    iterations is marked)
+  - the transition matrix, and the regime odds today, in 1, 5 and 20 days,
+    and in the long run
+  - notes for non-convergence, a regime on the variance floor, and BIC
+    choosing a different count than the synthetic truth
+- **Planned modules** (Portfolio, Research) show placeholders.
 - **State:** every page's inputs persist per view through `ViewStateStore`
   (the shapes predate the Qt UI, so old inputs carried over).
 - **Measured speeds:**
@@ -427,6 +444,31 @@ pytest. Environment:
        smoother and Viterbi are checked against enumeration of all Kⁿ
        paths. Plus the closed forms (occupancy, stay lengths, λʰ
        clustering) and forecasts.
-   - Next: M2, the Markov Lab page, after approval.
+   - ~~M2: the Markov Lab page~~ (2026-10-15), `gui/pages/markov_lab.py`.
+     - Above, under The app. Regimes are sorted by vol, so the calmest is
+       always green and the most turbulent orange, in every panel and
+       table.
+     - The chart layer gained `Shade`, a per-day background tint (one
+       image, a pixel per calendar day, so there are no seams and no
+       weekend shift), and stacked panels, whose readout shows each
+       series' own value.
+     - The default synthetic world has three regimes. Every candidate
+       count is identified there, so the BIC sweep converges in about
+       4 s. On the two-regime world, the 3-regime fit runs out its
+       iterations (about 9 s).
+     - Synthetic default (2,520 days, seed 42): BIC picks 3 and Viterbi
+       labels 89% of days correctly. That sample spent 28 / 55 / 17% of
+       its days in the three regimes, against a long run of 46 / 42 /
+       12%, so the page compares the fit with the sample's realized share
+       too.
+     - Live against TWS on SPY through the ibkr path:
+       - 5 years (1,252 returns, 1.9 s): 3 regimes at 9 / 17 / 34% vol
+       - 10 years (2,510 returns, 6.7 s with the fetch): 8 / 19 / 60% vol.
+         The 60% regime is the COVID crash (3.6% of days, 9-day stays).
+       - Today: 86–89% calm.
+     - Tests: 3 smoke tests (truth and views, Auto on market history,
+       notes).
+   - Markov regimes (M) are complete. Next: F, data foundations, after
+     approval.
 6. After the roadmap: the DCF port (SEC EDGAR + SQLite), planned in its own
    session.

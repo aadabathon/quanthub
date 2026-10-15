@@ -284,7 +284,9 @@ checked; until then, users without IBKR keep the synthetic chain.
     - EM never decreases the likelihood
     - parameter recovery
     - BIC picks the true K
-- **M2. Markov Lab page**
+- ~~**M2. Markov Lab page**~~ Done 2026-10-15 (`gui/pages/markov_lab.py`),
+  live-verified on SPY. Also: a Filtered / Smoothed / Viterbi toggle,
+  regime odds 1–20 days ahead, and the BIC of every count tried.
   - synthetic or market history
   - price shaded by filtered regime probability, plus a probability panel
   - transition matrix, per-regime stats, expected durations

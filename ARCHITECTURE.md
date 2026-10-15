@@ -67,7 +67,8 @@ quant_hub/
 │   │                          Sparkline, FanChart (optional history and
 │   │                          overlays), StackedTimeSeries (Panel/Series/Band,
 │   │                          one crosshair, optional fill, fixed y range,
-│   │                          per-panel readout lines), Histogram (markers),
+│   │                          per-panel readout lines, stacked areas, Shade
+│   │                          background tints), Histogram (markers),
 │   │                          CurveChart (y vs numeric/log x: profiles, P&L
 │   │                          with signed shading, MC convergence + band,
 │   │                          markers / point-only series), SmileGrid (small
@@ -82,7 +83,8 @@ quant_hub/
 │                              dashboard.py, markets.py, garch_lab.py,
 │                              simulator.py, options_lab/ (page, underlying,
 │                              pricer, strategy, monte_carlo), volatility_lab.py,
-│                              kalman_lab.py, placeholder.py (planned modules)
+│                              kalman_lab.py, markov_lab.py, placeholder.py
+│                              (planned modules)
 ├── config.py                  AppConfig
 ├── events.py                  EventBus (thread-safe), LogEvent, log handler
 ├── broker/
@@ -207,7 +209,9 @@ GARCH Lab  = conditional-volatility fit: synthetic GARCH or explicit source hist
 Vol Lab    = implied-vol surface from an OptionChain; GARCH/realized overlay;
              heatmap or rotatable 3D surface (D32)
 Kalman Lab = local level / local linear trend on log prices: synthetic or source history
-RESEARCH…  = GARCH Lab, Vol Lab, Kalman Lab, plus placeholders for planned modules
+Markov Lab = hidden volatility regimes in returns (Gaussian HMM, BIC over 1–3):
+             synthetic worlds or source history
+RESEARCH…  = GARCH Lab, Vol Lab, Kalman Lab, Markov Lab, plus placeholders
 ```
 
 **No global source state.** ``MarketService.get_history/get_quote`` take a
