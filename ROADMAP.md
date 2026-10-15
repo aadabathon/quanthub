@@ -295,7 +295,8 @@ checked; until then, users without IBKR keep the synthetic chain.
 
 ### F — Data foundations (before P and R)
 
-- **F1. Settings and store safety**
+- ~~**F1. Settings and store safety**~~ Done 2026-10-15 (D36):
+  `config.load_config`, `storage/schema.py`, the daily-only `CachedSource`.
   - A user settings file (TOML, read with stdlib `tomllib`): providers,
     IBKR host/port/client id, store path. It replaces the hard-coded owner
     defaults (D34).

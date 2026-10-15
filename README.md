@@ -87,13 +87,28 @@ on.
 See ARCHITECTURE.md (how), DECISIONS.md (why), ROADMAP.md (next) and
 CURRENT_STATE.md (done / untested).
 
+## Settings
+
+The first run writes `~/.quant_hub/settings.toml`, a commented file of the
+defaults. Edit it and restart. It sets where the market-data store lives,
+and whether and how to reach Interactive Brokers. Don't use IBKR? Set
+`enabled = false` under `[ibkr]`, and its controls and sources disappear.
+The app is complete on synthetic data without it. A mistake in the file
+never stops the app: it's reported in the log, and that setting keeps its
+default. `QUANT_HUB_SETTINGS=path/to/other.toml` uses another file.
+
+The store is versioned. Before an update changes its schema, the app copies
+the whole database into `~/.quant_hub/backups/`, and never deletes those
+copies itself.
+
 ## IBKR setup
 
 Run TWS or IB Gateway with API access enabled (Configure → API → Settings →
-"Enable ActiveX and Socket Clients"). Defaults in `quant_hub/config.py` target
-live TWS on `127.0.0.1:7496` with TWS's **Read-Only API** enabled — the app
-contains no order code, so a read-only socket loses nothing. The app is fully
-functional on synthetic data without TWS, and never places orders. PyPI's
+"Enable ActiveX and Socket Clients"). The default settings target live TWS
+on `127.0.0.1:7496` with TWS's **Read-Only API** enabled — the app contains
+no order code, so a read-only socket loses nothing. Paper TWS is 7497, IB
+Gateway 4001 (live) or 4002 (paper): set `port` in settings.toml. The app is
+fully functional on synthetic data without TWS, and never places orders. PyPI's
 `ibapi` is the old 9.81 build; the current official API from
 <https://interactivebrokers.github.io> also works — the broker code tolerates
 both callback signatures.

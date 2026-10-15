@@ -576,3 +576,39 @@ and η(1+|ρ|) ≤ 2 (derived, and checked numerically).
     fits, the next step is SVI slices fitted under explicit calendar and
     butterfly constraints, started from the SSVI fit (Gatheral–Jacquier's
     own recommendation). That isn't built.
+
+## D36 — Settings file, schema versions and backups (2026-10-15)
+
+F1 puts D34's settings and the store's safety in place.
+
+- **Settings:** `~/.quant_hub/settings.toml`, read with stdlib `tomllib`
+  over `AppConfig`'s defaults (`config.load_config`).
+  - `QUANT_HUB_SETTINGS` can name another file, for example a paper-trading
+    setup.
+  - The first run writes a commented template, so the file is easy to find.
+  - It covers the store path and IBKR (enabled, host, port, client id). IBKR
+    turned off registers no IBKR sources and hides its controls.
+  - A bad file never stops the app. Each problem is logged (it shows in the
+    status bar and log drawer), and that setting keeps its default. A typo
+    shouldn't make a double-clicked app vanish.
+  - The default port stays 7496, TWS's own live default (read-only API, no
+    order code, D12). It isn't owner-specific; paper and Gateway users set
+    theirs.
+- **Schema versions:** one version for the whole store file, in a
+  `schema_migrations` table (version, time, backup), checked by
+  `storage/schema.prepare_store` before any store opens the file.
+  - A table rather than `PRAGMA user_version`, because it keeps a history:
+    when each step ran, and which backup preceded it.
+  - Version 0 is every file from before versioning. 0 → 1 changes no table.
+  - Steps run in order, each in its own transaction (SQLite's DDL is
+    transactional). A failure rolls back and stops the app with the file
+    at its last good version.
+  - A file from a newer app version is refused, never written.
+- **Backups:** before any migration, the whole file is copied into
+  `backups/` beside it with SQLite's online backup API, named for its
+  version and time. Backups are never deleted automatically: the store
+  holds history IBKR won't serve again. The first run after F1 adopts
+  every existing store at v1, so it leaves a backup of each.
+- **Daily-only cache:** `CachedSource` rejects any bar size but "1 day".
+  Its coverage rule (complete through yesterday) is right for daily bars
+  only (DATA_SYSTEM_IMPROVEMENTS #7).

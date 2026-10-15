@@ -29,8 +29,11 @@ visualization/  Matplotlib figures for scripts and notebooks. Never GUI.
 
 Cross-cutting modules:
 
-- `config.py` — one frozen `AppConfig` dataclass (IBKR host/port, timeouts,
-  defaults). No config files yet, deliberately.
+- `config.py` — one frozen `AppConfig` dataclass (IBKR on/off, host, port,
+  client id, timeouts, store path, defaults), and `load_config`: the user's
+  `~/.quant_hub/settings.toml` over those defaults, every problem reported,
+  none fatal (D34, D36). Only `build_core()` without a config reads the
+  file; scripts and tests pass an `AppConfig`.
 - `events.py` — `EventBus` + `LogEvent` + `EventBusLogHandler`.
 - `tasks.py` — `TaskRunner`: one worker thread + a result queue drained on
   the GUI thread. Toolkit-free, so it lives outside `gui/`.
@@ -160,6 +163,9 @@ quant_hub/
 │                              upsert with counts, range queries, coverage
 ├── storage/chain_store.py     option-chain snapshots (option_chains /
 │                              option_quotes, order kept), same database
+├── storage/schema.py          prepare_store: the file's schema version
+│                              (schema_migrations), an online backup before
+│                              any migration, newer files refused (D36)
 └── visualization/charts.py    matplotlib, for scripts/notebooks (the app
                                uses gui/charts.py): ChartStyle + compositions:
                                plot_price_history, plot_lab_overview (price/
@@ -286,6 +292,14 @@ Key properties (decisions D17–D21):
   stored as ISO text (lexicographic = chronological). Intraday bar sizes
   are rejected at the broker boundary until a timezone policy exists (D19),
   and the analytics annualization (252/yr) assumes daily anyway.
+  `CachedSource` accepts daily bars only: its coverage rule is a daily one.
+- **Schema and backups** (D36): `build_core` runs
+  `storage/schema.prepare_store` before any store opens the file. It reads
+  the version from `schema_migrations`, copies the whole file into
+  `backups/` with SQLite's online backup API before any migration step,
+  applies the steps in order (each one transactional), and refuses a file
+  from a newer app. Each store's `CREATE TABLE IF NOT EXISTS` still defines
+  the current schema for a new file; migration steps change old ones.
 - **Same-day bars**: never marked covered; a request ending "now" refetches
   exactly today's bar each time, upserting the provisional value.
 - **Failure**: a failed fetch fails the whole request (no silently partial

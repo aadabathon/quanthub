@@ -85,6 +85,9 @@ fits the existing seam — good size for a single milestone.
 
 ### 6. No automated backup/versioning story for the SQLite file
 
+**Done in F1 (2026-10-15, D36):** schema versions and a backup before any
+migration.
+
 `~/.quant_hub/market_data.db` is the sole copy of every acquired
 observation once persistence-only history (no re-derivable synthetic
 data) starts accumulating months of real backfills. There's currently no
@@ -96,6 +99,9 @@ realistic risk (a bad migration corrupting months of backfilled history)
 for near-zero cost.
 
 ### 7. `coverage` capping assumes daily bars specifically
+
+**Done in F1 (2026-10-15, D36):** `CachedSource` rejects non-daily bar
+sizes.
 
 `CachedSource._record_coverage` caps coverage at *yesterday* using
 `floor_day`, which is correct for daily bars but is hard-coded to

@@ -10,7 +10,7 @@ reach the Volatility Lab and are saved; the joint SSVI fit is an option
 ## Status
 
 v0.5 (the Qt UI). Brokerage connectivity is live-verified against TWS 7496 (2026-08-14;
-see below). `py -3.12 -m pytest -q` → **780 passed** in about 105 s, with no
+see below). `py -3.12 -m pytest -q` → **806 passed** in about 105 s, with no
 network or display needed (the GUI smoke tests run offscreen). The real 3D
 draw runs in a fresh subprocess and skips, with the reason, when offscreen
 Chromium can't compile WebGL shaders; that happens on some runs.
@@ -468,7 +468,32 @@ pytest. Environment:
        - Today: 86–89% calm.
      - Tests: 3 smoke tests (truth and views, Auto on market history,
        notes).
-   - Markov regimes (M) are complete. Next: F, data foundations, after
-     approval.
+   - Markov regimes (M) are complete.
+   - ~~F1: settings and store safety~~ (2026-10-15, D36).
+     - `~/.quant_hub/settings.toml` (or `QUANT_HUB_SETTINGS`), read with
+       `tomllib` over the defaults.
+       - It covers the store path and IBKR's enabled, host, port and client
+         id. The first run writes a commented template.
+       - Every problem is logged and keeps that setting's default; none is
+         fatal.
+       - IBKR turned off registers no IBKR sources and hides the top bar's
+         Connect control and the status bar's IBKR state. Pages fall back
+         to synthetic.
+       - The default port stays 7496 (TWS live). Your setup needs no file;
+         the template your first start writes holds exactly today's values.
+     - `storage/schema.prepare_store` runs before the stores open the file.
+       - One schema version, recorded in `schema_migrations`.
+       - Before any migration, the whole file is copied into `backups/`
+         (SQLite online backup). Steps are transactional, and a file from a
+         newer app is refused.
+       - v0 → v1 only adopts existing files. Your next launch will leave
+         `~/.quant_hub/backups/market_data.v0.<time>.db`.
+       - Checked on a copy of your store: backed up, adopted, all 5,313
+         bars intact; a second start made no new backup.
+     - `CachedSource` rejects non-daily bar sizes
+       (DATA_SYSTEM_IMPROVEMENTS #7).
+     - Tests: `tests/test_config.py` (15), `tests/test_schema.py` (6), the
+       cache guard (3), and 2 smoke tests (startup backup, IBKR off).
+   - Next: F2, file import (CSV bars), after approval.
 6. After the roadmap: the DCF port (SEC EDGAR + SQLite), planned in its own
    session.
