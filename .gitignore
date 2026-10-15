@@ -15,3 +15,6 @@ venv/
 *.db
 *.sqlite3
 personal/*
+
+# Throwaway prototypes (e.g. spikes/spike_3d.py): kept locally, never committed.
+spikes/
