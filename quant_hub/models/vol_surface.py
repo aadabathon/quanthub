@@ -19,7 +19,10 @@ that is where the liquid, informative prices are. The true price
 
 with :math:`s` the relative spread, :math:`h_{min}` half a one-cent tick,
 :math:`\nu` the noise level in half-spreads, and :math:`Z \sim N(0,1)`. A
-negative bid is floored at zero ("no bid"), as in real far wings.
+negative bid is floored at zero ("no bid"), as in real far wings. With
+``parity_pairs`` > 0, the strikes nearest the forward are also quoted on
+the in-the-money side, as a real chain request does for put–call parity
+(``models/carry.py``); the default 0 leaves every existing draw unchanged.
 
 Implied vols and weights
 ------------------------
@@ -115,8 +118,11 @@ class SyntheticChainSpec:
     relative_spread: float = 0.04
     noise: float = 0.5
     seed: int | None = 7
+    parity_pairs: int = 0
 
     def __post_init__(self) -> None:
+        if self.parity_pairs < 0:
+            raise ValueError("parity_pairs must be >= 0")
         if not self.expiries or any(not math.isfinite(d) or d <= 0 for d in self.expiries):
             raise ValueError("expiries must be positive day counts")
         if self.strikes_per_expiry < MIN_SLICE_QUOTES:
@@ -190,14 +196,21 @@ def synthetic_chain(surface: SSVISurface, spec: SyntheticChainSpec,
         k = np.linspace(K_RANGE_SD[0] * sd, K_RANGE_SD[1] * sd, spec.strikes_per_expiry)
         strikes = np.round(forward * np.exp(k), 2)
         vols = surface.slice(years).implied_vol(np.log(strikes / forward), years)
-        for strike, vol in zip(strikes, vols):
-            option_type = "call" if strike >= forward else "put"
+
+        def quote(strike: float, vol: float, option_type: str) -> OptionQuote:
             true_price = float(price_array(spec.spot, strike, dte, spec.rate, vol, option_type,
                                            spec.dividend_yield))
             half = max(MIN_HALF_SPREAD, 0.5 * spec.relative_spread * true_price)
             mid = true_price + spec.noise * half * float(rng.standard_normal())
             bid, ask = max(mid - half, 0.0), max(mid + half, 2 * MIN_HALF_SPREAD)
-            quotes.append(OptionQuote(option_type, float(strike), float(dte), bid, ask))
+            return OptionQuote(option_type, float(strike), float(dte), bid, ask)
+
+        for strike, vol in zip(strikes, vols):
+            quotes.append(quote(strike, vol, "call" if strike >= forward else "put"))
+        nearest = np.argsort(np.abs(strikes - forward), kind="stable")[:spec.parity_pairs]
+        for i in sorted(nearest):
+            in_the_money = "put" if strikes[i] >= forward else "call"
+            quotes.append(quote(strikes[i], vols[i], in_the_money))
     return OptionChain(
         symbol="SYNTH", source="synthetic SSVI", as_of=as_of or datetime.now(),
         spot=spec.spot, rate=spec.rate, dividend_yield=spec.dividend_yield, quotes=tuple(quotes),
