@@ -413,3 +413,38 @@ a modern, fast workstation UI, explicitly accepting heavy dependencies.
   the app itself draws only with pyqtgraph. The Tk version remains in git
   history (`f7e4d33`). The bullets above use the names from during the
   migration.
+
+## D32 — 3D implied-vol surface: Plotly in Qt WebEngine (2026-10-14)
+
+Owner choice after a side-by-side prototype (Qt Graphs 3D vs Plotly; the
+throwaway script is kept locally in the gitignored `spikes/`).
+
+- **Why Plotly.** Hover readouts anywhere on the surface; quote markers and
+  bid–ask whiskers are easy; a colour bar; the same figure format works in
+  notebooks. Qt Graphs 3D was native and faster to first frame, but it
+  needed Python to hold references to every object (the graph, axes,
+  series and custom items, or the app segfaults), all render-to-texture
+  widgets in a window to share one graphics API, and window flags set
+  before show. The fragility wasn't worth it.
+- **Dependency:** `plotly` is declared for its bundled `plotly.min.js`
+  only. The Python side of plotly is never imported: `gui/surface3d.py`
+  builds the figure as a plain dict and loads the local JS file, so nothing
+  touches the network. Qt WebEngine ships with PySide6.
+- **Cost, and how it's hidden.** Constructing the first web view costs
+  ~0.7 s of GUI-thread time; Chromium then loads in other processes
+  (~1.3 s) and the first WebGL draw takes ~0.5 s. The Volatility Lab
+  builds the view when first shown, while its fit runs in the background.
+  Later updates use `Plotly.react` (in place; the camera is kept through
+  `uirevision`), not a reload. Chromium's harmless GPU log lines are
+  silenced with `QTWEBENGINE_CHROMIUM_FLAGS=--log-level=3`
+  (`gui/__init__.py`).
+- **Math lives in `models/`.** `vol_surface.surface_mesh` interpolates
+  total variance linearly in T at fixed k. That adds no calendar arbitrage
+  of its own and holds ATM forward variance constant between expiries.
+  It also checks g on every interpolated row, since a mix of
+  butterfly-free smiles need not be butterfly-free. It never extrapolates
+  in T, and it marks points where a nearer expiry's SVI wing is
+  extrapolated in k. Derivation in the module docstring.
+- **Scope:** the 3D view is a toggle inside the Volatility Lab's Surface
+  view; the heatmap stays the default. Pyqtgraph remains the 2D charting
+  layer (D31).

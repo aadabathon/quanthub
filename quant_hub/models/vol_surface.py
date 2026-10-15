@@ -47,6 +47,41 @@ Diagnostics
 The per-expiry fit is independent by design (no cross-expiry smoothing), so
 these checks are genuine tests of the fitted surface, not properties it has
 by construction.
+
+Surface mesh (the 3D view)
+--------------------------
+The fit gives smiles only at the quoted expiries :math:`T_1 < \dots < T_N`.
+``surface_mesh`` fills the surface between them by interpolating total
+variance linearly in :math:`T` at fixed log-moneyness :math:`k`:
+
+.. math::  w(k, T) = \lambda\,w_i(k) + (1 - \lambda)\,w_{i+1}(k), \qquad
+           \lambda = \frac{T_{i+1} - T}{T_{i+1} - T_i},
+           \quad T \in [T_i, T_{i+1}].
+
+It never extrapolates in :math:`T`: the mesh spans :math:`[T_1, T_N]`.
+
+*Calendar.* :math:`\partial_T w(k, T) = (w_{i+1}(k) - w_i(k))/(T_{i+1} - T_i)`,
+so between two expiries :math:`w` rises with :math:`T` exactly where their
+fitted smiles don't cross. The interpolation adds no calendar arbitrage of
+its own. At :math:`k = 0` it holds the forward variance constant between
+expiries. The mesh reports :math:`\min [w_{i+1}(k) - w_i(k)]` over the
+:math:`k` it draws, a wider range than the quoted-range check above.
+
+*Butterfly.* :math:`g` is not linear in :math:`w` (it has
+:math:`w'^2/w`), so a mix of two butterfly-free smiles need not be
+butterfly-free. Each mesh row's :math:`w`, :math:`w'` and :math:`w''` are
+the same mixes of the two slices' own derivatives, so the mesh evaluates
+:math:`g` on every row (``svi.butterfly_g``) and reports its minimum.
+
+*Axes.* As in ``surface_grid``, columns are standardized moneyness
+:math:`z = k/\sqrt{\theta(T)}`, now with :math:`\theta(T) = w(0, T)`, so a
+row at :math:`T` is evaluated at :math:`k = z\sqrt{\theta(T)}`. Implied
+vol is :math:`\sqrt{w/T}`. The :math:`z` range is the one quoted at every
+expiry. Between expiries a row's :math:`k` can still lie past the
+*nearer* expiry's quotes, which span fewer of the later expiry's standard
+deviations. There the nearer slice's SVI wing (linear in :math:`k`,
+Lee-bounded) is extrapolated, and the mesh's ``extrapolated`` mask marks
+those points.
 """
 
 from __future__ import annotations
@@ -59,7 +94,7 @@ import numpy as np
 
 from quant_hub.data.options import OptionChain, OptionQuote
 from quant_hub.models.black_scholes import greeks_array, implied_volatility, price_array
-from quant_hub.models.svi import MIN_SLICE_QUOTES, SSVISurface, SVIFit, fit_raw_svi
+from quant_hub.models.svi import MIN_SLICE_QUOTES, SSVISurface, SVIFit, butterfly_g, fit_raw_svi
 
 MIN_HALF_SPREAD = 0.005
 """Half of a one-cent tick: no quote is tighter than this."""
@@ -307,3 +342,107 @@ def smile_curves(fit: SurfaceFit, truth: SSVISurface | None = None,
             quote_iv_bid=ivs.iv_bid[mask], quote_iv_ask=ivs.iv_ask[mask],
         ))
     return curves
+
+
+MESH_ROWS_BETWEEN = 8
+"""Interpolated rows between adjacent fitted expiries in ``surface_mesh``."""
+
+_EDGE = 1e-12
+"""Tolerance on the quoted-range edges, so rounding at a node isn't extrapolation."""
+
+
+@dataclass(frozen=True)
+class SurfaceMesh:
+    """The fitted surface on a (z, T) grid with its quotes and checks (module docstring).
+
+    Rows are days to expiry ``dte``; every fitted expiry is a row, and
+    ``node_rows`` lists which. Columns are standardized moneyness ``z``.
+    ``true_iv`` is the known surface at the same (k, T) points, if there is
+    one. The quote arrays hold the usable quotes at fitted expiries, placed
+    by their own expiry's :math:`\theta`; a bid or ask that doesn't invert
+    is NaN.
+    """
+
+    z: np.ndarray                  # (n_z,)
+    dte: np.ndarray                # (n_t,)
+    iv: np.ndarray                 # (n_t, n_z)
+    true_iv: np.ndarray | None     # (n_t, n_z)
+    extrapolated: np.ndarray       # (n_t, n_z) bool
+    node_rows: np.ndarray          # (n_slices,) row of each fitted expiry
+    min_butterfly_g: float
+    min_calendar_gap: float
+    quote_z: np.ndarray
+    quote_dte: np.ndarray
+    quote_iv: np.ndarray
+    quote_iv_bid: np.ndarray
+    quote_iv_ask: np.ndarray
+
+
+def surface_mesh(fit: SurfaceFit, truth: SSVISurface | None = None, points: int = 61,
+                 rows_between: int = MESH_ROWS_BETWEEN) -> SurfaceMesh:
+    """Interpolate the fitted slices into a mesh for the 3D view (module docstring)."""
+    slices = sorted(fit.slices, key=lambda s: s.dte)
+    if len(slices) < 2:
+        raise ValueError("a surface needs at least two fitted expiries")
+    if points < 2 or rows_between < 0:
+        raise ValueError("need at least two columns and a non-negative row count")
+    params = [s.fit.params for s in slices]
+    theta = np.array([float(p.total_variance(0.0)) for p in params])
+    low = max(s.k_min / math.sqrt(t) for s, t in zip(slices, theta))
+    high = min(s.k_max / math.sqrt(t) for s, t in zip(slices, theta))
+    if not low < high:
+        raise ValueError("the fitted expiries share no quoted moneyness range")
+    z = np.linspace(low, high, points)
+
+    # Rows: each fitted expiry, then ``rows_between`` evenly spaced between it
+    # and the next; row r lies in interval ``intervals[r]``.
+    days: list[float] = []
+    intervals: list[int] = []
+    node_rows: list[int] = []
+    for i in range(len(slices) - 1):
+        node_rows.append(len(days))
+        for d in np.linspace(slices[i].dte, slices[i + 1].dte, rows_between + 2)[:-1]:
+            days.append(float(d))
+            intervals.append(i)
+    node_rows.append(len(days))
+    days.append(slices[-1].dte)
+    intervals.append(len(slices) - 2)
+
+    n_rows = len(days)
+    iv = np.empty((n_rows, points))
+    true_iv = np.empty((n_rows, points)) if truth is not None else None
+    extrapolated = np.zeros((n_rows, points), dtype=bool)
+    min_g = min_gap = math.inf
+    for row, (d, i) in enumerate(zip(days, intervals)):
+        front, back = slices[i], slices[i + 1]
+        years = d / 365.0
+        lam = (back.years - years) / (back.years - front.years)
+        k = z * math.sqrt(lam * theta[i] + (1 - lam) * theta[i + 1])   # z·√θ(T)
+        w = lam * params[i].total_variance(k) + (1 - lam) * params[i + 1].total_variance(k)
+        iv[row] = np.sqrt(w / years)
+        for weight, s in ((lam, front), (1 - lam, back)):
+            if weight > 0:
+                extrapolated[row] |= (k < s.k_min - _EDGE) | (k > s.k_max + _EDGE)
+        if true_iv is not None:
+            true_iv[row] = truth.slice(years).implied_vol(k, years)
+
+        # Checks on a dense k grid across the row: g of the mixed smile, and
+        # the two slices' gap (the sign of the row's calendar slope).
+        dense = np.linspace(k[0], k[-1], 201)
+        w_front, w_back = params[i].total_variance(dense), params[i + 1].total_variance(dense)
+        (f1, f2), (b1, b2) = params[i].derivatives(dense), params[i + 1].derivatives(dense)
+        g = butterfly_g(dense, lam * w_front + (1 - lam) * w_back,
+                        lam * f1 + (1 - lam) * b1, lam * f2 + (1 - lam) * b2)
+        min_g = min(min_g, float(g.min()))
+        min_gap = min(min_gap, float(np.min(w_back - w_front)))
+
+    ivs = fit.ivs
+    root_theta = {s.dte: math.sqrt(t) for s, t in zip(slices, theta)}
+    quoted = ivs.usable & np.isin(ivs.dte, list(root_theta))
+    return SurfaceMesh(
+        z=z, dte=np.array(days), iv=iv, true_iv=true_iv, extrapolated=extrapolated,
+        node_rows=np.array(node_rows), min_butterfly_g=min_g, min_calendar_gap=min_gap,
+        quote_z=ivs.k[quoted] / np.array([root_theta[d] for d in ivs.dte[quoted]]),
+        quote_dte=ivs.dte[quoted], quote_iv=ivs.iv[quoted],
+        quote_iv_bid=ivs.iv_bid[quoted], quote_iv_ask=ivs.iv_ask[quoted],
+    )

@@ -14,7 +14,8 @@ from quant_hub.models.garch import (
 )
 from quant_hub.models.svi import RawSVI, SSVISurface
 from quant_hub.models.vol_surface import (
-    SyntheticChainSpec, chain_implied_vols, fit_surface, surface_grid, synthetic_chain,
+    SyntheticChainSpec, chain_implied_vols, fit_surface, surface_grid, surface_mesh,
+    synthetic_chain,
 )
 
 SURFACE = SSVISurface(v0=0.25**2, v_inf=0.20**2, kappa=2.0, rho=-0.6, eta=1.2)
@@ -113,6 +114,108 @@ class TestSurfaceFit:
         assert iv.shape == (len(dte), 31)
         assert z[0] < 0 < z[-1]
         assert np.all(np.isfinite(iv)) and np.all(iv > 0)
+
+
+class TestSurfaceMesh:
+    @pytest.fixture(scope="class")
+    def clean(self):
+        spec = SyntheticChainSpec(noise=0.0, relative_spread=0.01, seed=3)
+        fit = fit_surface(synthetic_chain(SURFACE, spec))
+        return fit, surface_mesh(fit, SURFACE)
+
+    def test_fitted_expiries_are_rows_and_reproduce_their_slices(self, clean):
+        fit, mesh = clean
+        assert mesh.dte[mesh.node_rows].tolist() == [s.dte for s in fit.slices]
+        assert mesh.dte[0] == fit.slices[0].dte and mesh.dte[-1] == fit.slices[-1].dte
+        for row, s in zip(mesh.node_rows, fit.slices):
+            k = mesh.z * math.sqrt(float(s.fit.params.total_variance(0.0)))
+            np.testing.assert_allclose(mesh.iv[row], s.fit.params.implied_vol(k, s.years),
+                                       rtol=1e-12)
+
+    def test_total_variance_rises_with_expiry_at_fixed_k(self, clean):
+        # Read each row's w(k) = iv^2 T at common k by interpolating along the
+        # row: with calendar-free slices it must rise row by row.
+        fit, mesh = clean
+        assert fit.calendar_free and mesh.min_calendar_gap > 0
+        w = mesh.iv**2 * (mesh.dte[:, None] / 365.0)
+        theta = np.array([np.interp(0.0, mesh.z, row) for row in w])
+        for k0 in (-0.05, 0.0, 0.03):
+            k_rows = mesh.z[None, :] * np.sqrt(theta)[:, None]
+            w_at_k0 = np.array([np.interp(k0, k, row) for k, row in zip(k_rows, w)])
+            assert np.all(np.diff(w_at_k0) > 0)
+
+    def test_atm_forward_variance_is_constant_between_expiries(self, clean):
+        # At k = 0 the interpolation is linear in T: equal steps in T give
+        # equal steps in total variance within each interval.
+        fit, mesh = clean
+        w = mesh.iv**2 * (mesh.dte[:, None] / 365.0)
+        theta = np.array([np.interp(0.0, mesh.z, row) for row in w])
+        for start, end in zip(mesh.node_rows, mesh.node_rows[1:]):
+            steps = np.diff(theta[start:end + 1])
+            np.testing.assert_allclose(steps, steps.mean(), rtol=1e-3)
+
+    def test_butterfly_minimum_matches_finite_differences(self, clean):
+        # Independent of the mesh's analytic mix of derivatives: rebuild each
+        # interpolated smile and difference it numerically.
+        from quant_hub.models.svi import butterfly_g
+        fit, mesh = clean
+        slices = fit.slices
+        theta = [float(s.fit.params.total_variance(0.0)) for s in slices]
+        expected = math.inf
+        for i, (a, b) in enumerate(zip(slices, slices[1:])):
+            for d in np.linspace(a.dte, b.dte, 7):
+                lam = (b.years - d / 365.0) / (b.years - a.years)
+                root = math.sqrt(lam * theta[i] + (1 - lam) * theta[i + 1])
+                k = np.linspace(mesh.z[0] * root, mesh.z[-1] * root, 4001)
+                w = lam * a.fit.params.total_variance(k) + (1 - lam) * b.fit.params.total_variance(k)
+                w1, w2 = np.gradient(w, k), np.gradient(np.gradient(w, k), k)
+                expected = min(expected, float(butterfly_g(k, w, w1, w2)[2:-2].min()))
+        assert mesh.min_butterfly_g > 0
+        assert mesh.min_butterfly_g == pytest.approx(expected, abs=2e-3)
+
+    def test_truth_matches_at_nodes_and_within_interpolation_error_between(self, clean):
+        # SSVI slices are SVI, so a clean chain fits the nodes exactly; between
+        # them the truth isn't linear in T, which is the residual error.
+        _, mesh = clean
+        error = np.abs(mesh.iv - mesh.true_iv)
+        assert error[mesh.node_rows].max() < 1e-6
+        assert error.max() < 0.015
+
+    def test_extrapolated_points_lie_between_expiries_in_the_wings(self, clean):
+        _, mesh = clean
+        assert not mesh.extrapolated[mesh.node_rows].any()
+        assert mesh.extrapolated.any()
+        center = np.abs(mesh.z) < 0.5
+        assert not mesh.extrapolated[:, center].any()
+
+    def test_quotes_sit_on_fitted_expiries(self, clean):
+        fit, mesh = clean
+        assert len(mesh.quote_iv) == int(fit.ivs.usable.sum())
+        assert set(mesh.quote_dte.tolist()) <= set(mesh.dte[mesh.node_rows].tolist())
+        assert mesh.quote_z.min() == pytest.approx(-2.5, abs=0.1)
+        assert mesh.quote_z.max() == pytest.approx(1.5, abs=0.1)
+
+    def test_crossing_slices_show_a_negative_gap(self):
+        spec = SyntheticChainSpec(expiries=(30, 60), noise=0.0, seed=0)
+        inverted = SSVISurface(v0=0.60**2, v_inf=0.05**2, kappa=40.0, rho=-0.3, eta=1.0)
+        chain = synthetic_chain(inverted, spec)
+        bumped = tuple(
+            q if q.dte == 60 else OptionQuote(q.option_type, q.strike, q.dte, q.bid * 3, q.ask * 3)
+            for q in chain.quotes
+        )
+        fit = fit_surface(OptionChain(chain.symbol, chain.source, chain.as_of, chain.spot,
+                                      chain.rate, chain.dividend_yield, bumped))
+        assert surface_mesh(fit).min_calendar_gap < 0
+
+    def test_invalid_requests_rejected(self):
+        one = fit_surface(synthetic_chain(SURFACE, SyntheticChainSpec(expiries=(30,), seed=1)))
+        with pytest.raises(ValueError):
+            surface_mesh(one)
+        fit = fit_surface(synthetic_chain(SURFACE, SyntheticChainSpec(seed=1)))
+        with pytest.raises(ValueError):
+            surface_mesh(fit, points=1)
+        with pytest.raises(ValueError):
+            surface_mesh(fit, rows_between=-1)
 
 
 class TestButterflyDetection:

@@ -11,6 +11,12 @@ same job once chain data exists. The *model* side of the term structure
 already uses real history: "Compare with history" loads a source, fits
 GARCH, and overlays its expected-vol curve and trailing realized vols on the
 ATM IV term structure (``services/vol_context.py``, D30).
+
+The Surface view switches between a heatmap and a rotatable 3D surface
+(``gui/surface3d.py``, Plotly, D32). The same job builds the 3D mesh
+(``vol_surface.surface_mesh``) from the fit. The 3D view embeds Chromium,
+whose first construction costs ~0.7 s of GUI time, so the page builds it as
+soon as it is first shown, while the fit is still running.
 """
 
 from __future__ import annotations
@@ -18,8 +24,8 @@ from __future__ import annotations
 import logging
 
 import numpy as np
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtWidgets import QHBoxLayout, QStackedWidget, QVBoxLayout, QWidget
 
 from quant_hub.data.stats import TRADING_DAYS_PER_YEAR
 from quant_hub.tasks import TaskRunner
@@ -38,6 +44,7 @@ from quant_hub.gui.components import (
     label,
 )
 from quant_hub.gui.pages.base import ScrollPage
+from quant_hub.gui.surface3d import Surface3D
 from quant_hub.gui.theme import (
     FIELD_L,
     FIELD_M,
@@ -50,10 +57,12 @@ from quant_hub.gui.theme import (
 from quant_hub.models.svi import SSVISurface
 from quant_hub.models.vol_surface import (
     SurfaceFit,
+    SurfaceMesh,
     SyntheticChainSpec,
     fit_surface,
     smile_curves,
     surface_grid,
+    surface_mesh,
     synthetic_chain,
 )
 from quant_hub.services.market_service import MarketService
@@ -70,11 +79,14 @@ _DEFAULTS = {
     "source": "synthetic", "symbol": "SPY", "lookback": "1825",
 }
 _VIEWS = ("Smiles", "Term structure", "Surface")
+_HEATMAP, _3D = "Heatmap", "3D"
 _SUBTITLES = {
     "Smiles": "Implied vol vs log-moneyness ln(K/F), one panel per expiry, each on its own "
               "scale",
     "Term structure": "At-the-money vol by expiry: SVI fit vs the true surface, and vs history",
     "Surface": "Fitted IV over moneyness in ATM standard deviations (k/√θ), expiries as rows",
+    _3D: "Fitted IV over k/√θ and days to expiry: drag to rotate, scroll to zoom, hover "
+         "for values",
 }
 _GROUP_WIDTH = 150
 
@@ -87,11 +99,15 @@ class VolatilityLabPage(ScrollPage):
         self._fit: SurfaceFit | None = None
         self._truth: SSVISurface | None = None
         self._context: VolContext | None = None
+        self._mesh: SurfaceMesh | None = None
+        self._mesh_problem = ""
+        self._surface3d: Surface3D | None = None
         saved = {**_DEFAULTS, **{k: str(v) for k, v in state_store.load(_STATE_KEY).items()}}
         if saved["source"] not in market_service.source_names:
             saved["source"] = market_service.source_names[0]
         view = saved.get("tab", _VIEWS[0])
         self._view = view if view in _VIEWS else _VIEWS[0]
+        self._surface_mode = _3D if saved.get("surface_mode") == _3D else _HEATMAP
 
         self._header = PageHeader(
             "Volatility Lab",
@@ -153,17 +169,17 @@ class VolatilityLabPage(ScrollPage):
         return card
 
     def _build_views(self, saved: dict) -> Card:
-        self._views_card = Card("Surface fit", _SUBTITLES[self._view])
+        self._views_card = Card("Surface fit", self._subtitle())
         views = SegmentedControl(list(_VIEWS), self._view)
         views.changed.connect(self._on_view)
         self._views_card.add_action(views)
         self._stack = PageStack()
         self._smiles = SmileGrid()
         self._term = self._build_term(saved)
-        self._surface = Heatmap(x_name="k/√θ", x_fmt="{:+.2f}", value_fmt="{:.2%}")
+        self._surface_view = self._build_surface()
         self._empty = EmptyState("mdi6.sigma", "No fit yet",
                                  "Set up the experiment above and press Generate & fit.")
-        for widget in (self._smiles, self._term, self._surface, self._empty):
+        for widget in (self._smiles, self._term, self._surface_view, self._empty):
             self._stack.addWidget(widget)
         self._stack.setCurrentWidget(self._empty)
         self._stack.setMinimumHeight(420)
@@ -203,6 +219,27 @@ class VolatilityLabPage(ScrollPage):
         column.addWidget(self._term_chart, 1)
         return holder
 
+    def _build_surface(self) -> QWidget:
+        holder = QWidget()
+        column = QVBoxLayout(holder)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(SPACE_M)
+        controls = QHBoxLayout()
+        controls.setSpacing(SPACE_M)
+        self._surface_modes = SegmentedControl([_HEATMAP, _3D], self._surface_mode)
+        self._surface_modes.changed.connect(self._on_surface_mode)
+        controls.addWidget(self._surface_modes, 0, Qt.AlignTop)
+        self._mesh_label = label("", "muted", wrap=True)
+        controls.addWidget(self._mesh_label, 1)
+        column.addLayout(controls)
+        self._surface_stack = QStackedWidget()
+        self._surface = Heatmap(x_name="k/√θ", x_fmt="{:+.2f}", value_fmt="{:.2%}")
+        self._surface_empty = EmptyState("ph.cube", "No 3D surface", "")
+        self._surface_stack.addWidget(self._surface)
+        self._surface_stack.addWidget(self._surface_empty)
+        column.addWidget(self._surface_stack, 1)
+        return holder
+
     def _build_fit_table(self) -> Card:
         card = Card("Fit by expiry", "ATM vol: SVI fit vs the true surface")
         self._table = DataTable([("Expiry", "left"), ("SVI", "right"), ("True", "right"),
@@ -216,6 +253,8 @@ class VolatilityLabPage(ScrollPage):
         card = Card("Checks")
         self._checks = StatTable([
             ("Arbitrage", (("butterfly", "Butterfly  (min g)"), ("calendar", "Calendar  (min Δw)"))),
+            ("Between expiries", (("mesh_butterfly", "Butterfly  (min g)"),
+                                  ("mesh_calendar", "Calendar  (min Δw)"))),
             ("Quotes", (("used", "Used in fits"), ("no_bid", "Excluded: no bid"),
                         ("bounds", "Excluded: outside bounds"))),
         ], value_header="")
@@ -228,11 +267,16 @@ class VolatilityLabPage(ScrollPage):
     def on_show(self) -> None:
         if self._fit is None:
             self._run()
+        if self._surface3d is None:
+            # Build the 3D view now, while the fit runs in the background,
+            # so choosing 3D later doesn't stall (module docstring).
+            QTimer.singleShot(50, self._ensure_surface3d)
 
     def on_hide(self) -> None:
         state = {key: field.text() for key, field in self._fields.items()}
         state |= {"source": self._source.current(), "symbol": self._symbol.text(),
-                  "lookback": self._lookback.text(), "tab": self._view}
+                  "lookback": self._lookback.text(), "tab": self._view,
+                  "surface_mode": self._surface_mode}
         self._state_store.save(_STATE_KEY, state)
 
     # ----------------------------------------------------------------- jobs
@@ -244,8 +288,8 @@ class VolatilityLabPage(ScrollPage):
             return
         self._run_button.setEnabled(False)
         self._header.set_status("Quoting the chain and fitting SVI…")
-        self._tasks.submit(lambda: (truth, fit_surface(synthetic_chain(truth, spec))),
-                           on_done=self._on_fit, on_error=self._on_error)
+        self._tasks.submit(lambda: _fit_job(truth, spec), on_done=self._on_fit,
+                           on_error=self._on_error)
 
     def _read_inputs(self) -> tuple[SSVISurface, SyntheticChainSpec]:
         f = self._fields
@@ -269,8 +313,8 @@ class VolatilityLabPage(ScrollPage):
             seed=f["seed"].number(integer=True, allow_blank=True))
         return truth, spec
 
-    def _on_fit(self, result: tuple[SSVISurface, SurfaceFit]) -> None:
-        self._truth, self._fit = result
+    def _on_fit(self, result: tuple[SSVISurface, SurfaceFit, SurfaceMesh | None, str]) -> None:
+        self._truth, self._fit, self._mesh, self._mesh_problem = result
         self._run_button.setEnabled(True)
         fit = self._fit
         self._header.set_status(f"Fitted {len(fit.slices)} expiries from "
@@ -315,8 +359,46 @@ class VolatilityLabPage(ScrollPage):
     # --------------------------------------------------------------- render
     def _on_view(self, view: str) -> None:
         self._view = view
-        self._views_card.set_subtitle(_SUBTITLES[view])
+        self._views_card.set_subtitle(self._subtitle())
         self._show_view()
+
+    def _on_surface_mode(self, mode: str) -> None:
+        self._surface_mode = mode
+        self._views_card.set_subtitle(self._subtitle())
+        self._show_surface()
+
+    def _subtitle(self) -> str:
+        if self._view == "Surface" and self._surface_mode == _3D:
+            return _SUBTITLES[_3D]
+        return _SUBTITLES[self._view]
+
+    def _ensure_surface3d(self) -> Surface3D:
+        if self._surface3d is None:
+            self._surface3d = Surface3D()
+            self._surface_stack.addWidget(self._surface3d)
+            if self._mesh is not None:
+                self._surface3d.set_mesh(self._mesh)
+        return self._surface3d
+
+    def _show_surface(self) -> None:
+        if self._surface_mode == _HEATMAP:
+            self._surface_stack.setCurrentWidget(self._surface)
+            self._mesh_label.setText("")
+            return
+        if self._mesh is None:
+            self._surface_empty.set_text("No 3D surface", self._mesh_problem)
+            self._surface_stack.setCurrentWidget(self._surface_empty)
+            self._mesh_label.setText("")
+            return
+        self._surface_stack.setCurrentWidget(self._ensure_surface3d())
+        share = float(self._mesh.extrapolated.mean())
+        self._mesh_label.setText(
+            "White lines are the fitted expiries; between them, total variance is "
+            "interpolated linearly in T at fixed k"
+            + (f", and {share:.0%} of the mesh lies past a nearer expiry's quotes "
+               "(SVI wings, extrapolated)" if share else "")
+            + (". Orange wireframe: the true surface." if self._mesh.true_iv is not None
+               else "."))
 
     def _show_view(self) -> None:
         if self._fit is None:
@@ -328,7 +410,9 @@ class VolatilityLabPage(ScrollPage):
             return
         self._stack.setCurrentWidget(
             {"Smiles": self._smiles, "Term structure": self._term,
-             "Surface": self._surface}[self._view])
+             "Surface": self._surface_view}[self._view])
+        if self._view == "Surface":
+            self._show_surface()
 
     def _render(self) -> None:
         fit = self._fit
@@ -336,6 +420,8 @@ class VolatilityLabPage(ScrollPage):
         if fit.slices:
             z, dte, iv = surface_grid(fit)
             self._surface.set_grid(z, [f"{d:g}d" for d in dte], iv)
+        if self._mesh is not None and self._surface3d is not None:
+            self._surface3d.set_mesh(self._mesh)
         self._render_term_structure()
         self._render_diagnostics()
         self._show_view()
@@ -381,6 +467,20 @@ class VolatilityLabPage(ScrollPage):
                                ("ok" if fit.calendar_free else "VIOLATED")
                                + (f" · {gap:.5f}" if np.isfinite(gap) else ""),
                                tone="good" if fit.calendar_free else "critical")
+        mesh = self._mesh
+        if mesh is None:
+            self._checks.set_value("mesh_butterfly", "—")
+            self._checks.set_value("mesh_calendar", "—")
+        else:
+            butterfly_ok, calendar_ok = mesh.min_butterfly_g >= 0, mesh.min_calendar_gap >= 0
+            self._checks.set_value(
+                "mesh_butterfly",
+                f"{'ok' if butterfly_ok else 'VIOLATED'} · {mesh.min_butterfly_g:.3f}",
+                tone="good" if butterfly_ok else "critical")
+            self._checks.set_value(
+                "mesh_calendar",
+                f"{'ok' if calendar_ok else 'VIOLATED'} · {mesh.min_calendar_gap:.5f}",
+                tone="good" if calendar_ok else "critical")
         ivs = fit.ivs
         self._checks.set_value("used", f"{int(ivs.usable.sum())} / {len(ivs.usable)}")
         self._checks.set_value("no_bid", str(ivs.excluded_no_bid))
@@ -388,6 +488,16 @@ class VolatilityLabPage(ScrollPage):
         skipped = ", ".join(f"{d:g}d" for d in fit.skipped_expiries)
         self._note.setText((f"Skipped (under 6 usable quotes): {skipped}. " if skipped else "")
                            + "χ²/pt ≈ noise² when residuals are pure quote noise.")
+
+
+def _fit_job(truth: SSVISurface, spec: SyntheticChainSpec
+             ) -> tuple[SSVISurface, SurfaceFit, SurfaceMesh | None, str]:
+    """Worker thread: quote, fit, and mesh the surface (or say why it can't)."""
+    fit = fit_surface(synthetic_chain(truth, spec))
+    try:
+        return truth, fit, surface_mesh(fit, truth), ""
+    except ValueError as exc:
+        return truth, fit, None, f"Can't draw it: {exc}."
 
 
 def _group_title(text: str):

@@ -87,6 +87,17 @@ plot's log mode (transform x yourself; `PlotDataItem` handles it), and an
 pile up. Scripts outside the project dir need `PYTHONPATH=...\quanthub`
 (the editable install is not on every interpreter path).
 
+Qt WebEngine (the 3D surface, D32):
+- **Load order.** Import `QtWebEngineWidgets` before the `QApplication`
+  exists (`app.py` does, through the page imports).
+- **No draws while hidden.** Chromium stalls drawing in a hidden view, so
+  `Surface3D` only sends a figure while shown, and its loading cover sits
+  over the view instead of hiding it.
+- **Offscreen tests.** Offscreen WebGL is reliable only for a process's
+  first web view, and even then shader compiles sometimes fail. That's
+  why the real-draw test runs in a subprocess and skips on WebGL errors.
+- **Screenshots.** `window.grab()` does capture the web view.
+
 ## Repo layout note
 
 The project lives at `C:\Users\adams\Projects\quanthub`, which is its own

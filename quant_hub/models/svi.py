@@ -111,6 +111,13 @@ MIN_SLICE_QUOTES = 6
 """Fewest quotes accepted for a five-parameter slice fit (one spare dof)."""
 
 
+def butterfly_g(k: np.ndarray, w: np.ndarray, w1: np.ndarray, w2: np.ndarray) -> np.ndarray:
+    """:math:`g(k)` (module docstring) from any smile's total variance and its
+    first two k-derivatives, so smiles that aren't one SVI (an interpolated
+    surface row) are checked by the same formula."""
+    return (1 - k * w1 / (2 * w)) ** 2 - (w1**2 / 4) * (1 / w + 0.25) + w2 / 2
+
+
 @dataclass(frozen=True)
 class RawSVI:
     """One raw-SVI smile in total variance vs log-forward-moneyness."""
@@ -159,9 +166,7 @@ class RawSVI:
     def butterfly_g(self, k: np.ndarray) -> np.ndarray:
         """Gatheral–Jacquier :math:`g(k)`; negative anywhere = butterfly arbitrage."""
         k = np.asarray(k, dtype=float)
-        w = self.total_variance(k)
-        w1, w2 = self.derivatives(k)
-        return (1 - k * w1 / (2 * w)) ** 2 - (w1**2 / 4) * (1 / w + 0.25) + w2 / 2
+        return butterfly_g(k, self.total_variance(k), *self.derivatives(k))
 
     def risk_neutral_density(self, k: np.ndarray) -> np.ndarray:
         """Density of :math:`\\ln(S_T/F)` implied by the smile (module docstring)."""

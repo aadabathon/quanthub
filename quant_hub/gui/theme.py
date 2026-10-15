@@ -177,6 +177,7 @@ QFrame[role="iconTile"] {{ background: {p.accent_soft}; border: 1px solid {p.acc
 QFrame[role="navRow"] {{ background: transparent; border: 1px solid {p.border};
                          border-radius: 9px; }}
 QFrame[role="navRow"]:hover {{ background: {p.hover}; border-color: {p.border_strong}; }}
+QFrame[role="cover"] {{ background: {p.surface}; border: none; }}
 QFrame[role="divider"] {{ background: {p.border}; border: none; max-height: 1px; }}
 QFrame[role="vdivider"] {{ background: {p.border_strong}; border: none; max-width: 1px; }}
 

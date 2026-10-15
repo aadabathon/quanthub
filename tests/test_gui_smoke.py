@@ -475,12 +475,113 @@ def test_vol_lab_fit_fills_every_view_and_diagnostics(qt_app):
     assert lab._checks.value_text("calendar").startswith("ok")
     assert len(lab._smiles._panels) == 6
     assert lab._surface._values.shape[0] == 6
-    for view, widget in (("Term structure", lab._term), ("Surface", lab._surface),
+    for view, widget in (("Term structure", lab._term), ("Surface", lab._surface_view),
                          ("Smiles", lab._smiles)):
         lab._on_view(view)
         assert lab._stack.currentWidget() is widget
+    assert lab._surface_stack.currentWidget() is lab._surface   # heatmap by default
     _hover(lab._surface._canvas, 0.4, 0.5)
     assert "IV" in lab._surface._readout.text() and "k/√θ" in lab._surface._readout.text()
+
+
+def test_vol_lab_3d_toggle(qt_app):
+    # Wiring only: Chromium's drawing is checked in a fresh process below.
+    app, window = qt_app
+    lab = _fitted_vol_lab(app, window)
+    assert lab._mesh is not None and lab._mesh.true_iv is not None
+    assert lab._checks.value_text("mesh_butterfly").startswith("ok")
+    assert lab._checks.value_text("mesh_calendar").startswith("ok")
+    lab._on_view("Surface")
+    lab._surface_modes.set_current("3D")
+    lab._on_surface_mode("3D")
+    surface = lab._surface3d
+    assert surface is not None and lab._surface_stack.currentWidget() is surface
+    assert "fitted expiries" in lab._mesh_label.text()
+    lab._on_surface_mode("Heatmap")
+    assert lab._surface_stack.currentWidget() is lab._surface
+
+
+_DRAW_3D = """
+import sys, time
+from pathlib import Path
+from quant_hub.app import create_app
+from quant_hub.config import AppConfig
+
+app, window = create_app(AppConfig(db_path=Path(sys.argv[1])), argv=["test"])
+window.show()
+lab = window.show_page("Volatility Lab")
+deadline = time.perf_counter() + 90
+def wait(condition):
+    while not condition():
+        if time.perf_counter() > deadline:
+            print("timed out"); sys.exit(1)
+        app.processEvents(); time.sleep(0.005)
+wait(lambda: lab._fit is not None)
+lab._on_view("Surface")
+lab._on_surface_mode("3D")
+surface = lab._surface3d
+drawn = []
+surface.rendered.connect(lambda: drawn.append(True))
+wait(lambda: drawn or not surface._loading._title.text().startswith("Loading"))
+outcome = "drawn" if drawn else surface._loading._body.text()
+print("RESULT: " + " ".join(outcome.split()))
+app.aboutToQuit.emit()
+"""
+
+
+def test_vol_lab_3d_draws_in_a_fresh_process(tmp_path):
+    # Offscreen Chromium is most reliable for the first web view in a
+    # process (later views in a long test run can lose WebGL), so the real
+    # draw runs in its own process; the app itself has one window. Even then,
+    # offscreen WebGL sometimes can't compile shaders: that's the test
+    # environment, so it skips with the reason. A hang, or any other plotly
+    # error, fails.
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "-c", _DRAW_3D, str(tmp_path / "market_data.db")],
+        capture_output=True, text=True, timeout=180,
+        env={**os.environ, "QT_QPA_PLATFORM": "offscreen"})
+    outcome = next((line[len("RESULT: "):] for line in result.stdout.splitlines()
+                    if line.startswith("RESULT: ")), None)
+    assert outcome is not None, result.stdout + result.stderr      # e.g. timed out
+    if outcome != "drawn" and ("WebGL" in outcome or "shader" in outcome):
+        pytest.skip(f"no working WebGL offscreen here: {outcome[:120]}")
+    assert outcome == "drawn"
+
+
+def test_vol_lab_3d_needs_two_expiries(qt_app):
+    app, window = qt_app
+    lab = _fitted_vol_lab(app, window)
+    first = lab._fit
+    lab._fields["expiries"].set_text("30")
+    lab._run()
+    wait_for(app, lambda: lab._fit is not first)
+    assert lab._mesh is None
+    lab._on_view("Surface")
+    lab._on_surface_mode("3D")
+    assert lab._surface_stack.currentWidget() is lab._surface_empty
+    assert "two fitted expiries" in lab._surface_empty._body.text()
+    assert lab._checks.value_text("mesh_butterfly") == "—"
+
+
+def test_surface_figure_is_plain_json():
+    import json
+    from quant_hub.gui.surface3d import surface_figure
+    from quant_hub.models.svi import SSVISurface
+    from quant_hub.models.vol_surface import (SyntheticChainSpec, fit_surface, surface_mesh,
+                                              synthetic_chain)
+    truth = SSVISurface(v0=0.25**2, v_inf=0.20**2, kappa=2.0, rho=-0.6, eta=1.2)
+    mesh = surface_mesh(fit_surface(synthetic_chain(truth, SyntheticChainSpec(seed=2))), truth)
+    figure = surface_figure(mesh)
+    text = json.dumps(figure, allow_nan=False)      # NaN would not be valid JSON
+    assert [t["name"] for t in figure["data"]] == [
+        "SVI surface", "Fitted expiries", "True SSVI", "Bid–ask", "Quotes (mid)"]
+    surface = figure["data"][0]
+    assert len(surface["z"]) == len(mesh.dte) and len(surface["z"][0]) == len(mesh.z)
+    assert figure["layout"]["scene"]["uirevision"] == "surface"
+    assert len(text) < 400_000
 
 
 def test_vol_lab_rejects_bad_expiries(qt_app):

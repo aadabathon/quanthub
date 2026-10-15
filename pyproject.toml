@@ -19,6 +19,9 @@ dependencies = [
     "PySide6>=6.7",
     "pyqtgraph>=0.13.7",
     "qtawesome>=1.3",
+    # plotly.js for the 3D vol surface (D32): only the bundled plotly.min.js is
+    # used, drawn in Qt WebEngine (part of PySide6); plotly's Python API isn't.
+    "plotly>=6.0",
 ]
 
 [project.optional-dependencies]
