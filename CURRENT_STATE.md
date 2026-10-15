@@ -156,6 +156,19 @@ what the desktop shortcut targets. The GUI is `quant_hub/gui/` (Qt, D31) on
   stream briefly and self-cancel, and treat entitlement codes 10167/10089
   as advisories. A missing price is a typed `NoMarketDataError` carrying the
   reason. There is no global active source.
+- **Live verification (2026-10-15), Qt UI, TWS 7496 read-only, 9/9 pass:**
+  - The check drove the app's own handlers against a copy of the store,
+    with its own client id.
+  - Connected from the top bar.
+  - Markets quotes: all seven watchlist symbols came back DELAYED,
+    including AAPL, which was UNAVAILABLE in August.
+  - Sync 1Y for SPY filled 2026-08-17 → 2026-10-15 in 10 s.
+  - The GARCH, Kalman and Volatility Lab `ibkr` loads each took 1–3 s.
+  - The Options Lab loaded spot from the delayed quote and realized vol.
+  - Disconnect ended DISCONNECTED, not ERROR.
+  - It found the D11 duration bug: leading gaps were fetched short and
+    marked covered anyway. Fixed, with a regression test, and re-verified
+    live: a 5Y request after a 1Y sync now returns all 1,253 bars.
 - **Live verification (2026-08-14), Tk era, same broker and services code:**
   - SPY/QQQ/MSFT/TLT/GLD → DELAYED quotes with real last-trade timestamps
   - AAPL → UNAVAILABLE ("requires additional subscription for API") while
@@ -163,11 +176,16 @@ what the desktop shortcut targets. The GUI is `quant_hub/gui/` (Qt, D31) on
 
 ## Untested / known limits
 
-- **Not yet verified against live TWS:**
-  - the Qt UI's IBKR paths: Connect from the top bar, Markets quotes, Sync,
-    and the Options/GARCH/Vol/Kalman Lab `ibkr` loads
-  - the Options Lab quote → last-close fallback, which has only been tested
-    with a fake source
+- **Not yet verified against live TWS:** the Options Lab quote →
+  last-close fallback. Every watchlist symbol now has a delayed quote, so
+  live data didn't exercise it; it's tested only with a fake source.
+- **Store repaired (2026-10-15).** The D11 bug had left one hole: SPY's
+  coverage claimed 2021-08-14 onward, but its bars started 2022-08-16.
+  - Backup first: `~/.quant_hub/market_data.db.bak-2026-10-15`.
+  - The coverage row was narrowed to the bars, then a live load through
+    `CachedSource` fetched the missing year: SPY now holds 1,297 bars from
+    2021-08-16.
+  - A re-audit found every series' coverage matching its bars.
 - **IBKR disconnected:** market-history loads on `ibkr` fail for any window
   reaching today, because `CachedSource` must fetch the uncached tail. The
   pages show the error and keep the previous chart labelled.
@@ -237,7 +255,8 @@ pytest. Environment:
 3. ~~Owner-requested, ahead of the data phase: Kalman K1 and K2, and the
    3D surface (S3D)~~ (2026-10-14).
 4. The data side:
-   - live-verify the Qt UI and the labs' `ibkr` loads against TWS
+   - ~~live-verify the Qt UI and the labs' `ibkr` loads against TWS~~
+     (2026-10-15, 9/9; the D11 duration bug was found and fixed)
    - then an IBKR option-chain adapter emitting `OptionChain`
    - real positions as `OptionLeg`s
    - the trading dashboard
