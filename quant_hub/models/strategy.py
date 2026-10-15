@@ -281,14 +281,26 @@ TemplateBuilder = Callable[[float, float, float], Strategy]
 
 
 def _template(build: Callable[[Callable[[float], float], float, float], Strategy]) -> TemplateBuilder:
-    """Adapt a builder written in terms of ``k(offset)`` = strike at spot*(1+offset)."""
+    """Adapt a builder written in terms of ``k(offset)``, the listed strike near
+    spot*(1+offset).
+
+    Strikes are the listed strike nearest spot plus a whole number of listed
+    steps, at least one for a nonzero offset. Rounding each strike on its own
+    would break symmetric structures: at spot 771.51 a 5% butterfly would be
+    735/770/810, wings of 35 and 40, its two tails no longer level.
+    """
 
     def builder(spot: float, dte: float, width: float) -> Strategy:
         if spot <= 0 or dte <= 0 or not 0 < width < 1:
             raise ValueError("templates need spot > 0, dte > 0, and 0 < width < 1")
+        step = nearest_listed_strike(0.0, spot)            # the listing increment
+        centre = nearest_listed_strike(spot, spot)
 
         def k(offset: float) -> float:
-            return nearest_listed_strike(spot * (1.0 + offset), spot)
+            steps = round(spot * offset / step)
+            if offset != 0.0 and steps == 0:
+                steps = 1 if offset > 0 else -1
+            return max(step, centre + steps * step)
 
         return build(k, dte, width)
 

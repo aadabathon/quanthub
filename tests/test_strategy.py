@@ -149,6 +149,22 @@ class TestHelpers:
     def test_nearest_listed_strike(self, value, spot, expected):
         assert nearest_listed_strike(value, spot) == pytest.approx(expected)
 
+    @pytest.mark.parametrize("spot", [771.51, 100.0, 42.37, 3.21])
+    def test_symmetric_templates_stay_symmetric_at_any_spot(self, spot):
+        # Live C4 finding: rounding each strike on its own made a 5% butterfly
+        # at 771.51 into 735/770/810, with its two tails $500 apart.
+        fly = STRATEGY_TEMPLATES["Call butterfly"](spot, 30.0, 0.05)
+        low, mid, high = (leg.strike for leg in fly.legs)
+        assert mid - low == pytest.approx(high - mid) and low < mid < high
+        market = MarketInputs(spot, 0.04, 0.25, 0.01)
+        assert expiry_profile(fly, market).max_loss == pytest.approx(-entry_cost(fly, market))
+        condor = sorted(leg.strike for leg in STRATEGY_TEMPLATES["Iron condor"](spot, 30.0, 0.05).legs)
+        assert condor[1] - condor[0] == pytest.approx(condor[3] - condor[2])
+
+    def test_narrow_widths_keep_distinct_strikes(self):
+        fly = STRATEGY_TEMPLATES["Call butterfly"](100.0, 30.0, 0.01)
+        assert [leg.strike for leg in fly.legs] == [95.0, 100.0, 105.0]
+
     @pytest.mark.parametrize(
         "bad",
         [
