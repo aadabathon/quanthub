@@ -326,7 +326,23 @@ pytest. Environment:
        stale (92d: 20.7% against a 13.8% smile). Shown as received.
      - Tests: `tests/test_chain_store.py` (8), and the offline market-mode
        smoke tests.
-   - Next: C3, a joint SSVI fit across expiries (math first), then C4,
-     market vol into the Options Lab.
+   - ~~C3: joint SSVI fit~~ (2026-10-15), `models/ssvi_fit.py`.
+     - Arbitrage-free by construction: γ ∈ (0, ½], η(1+|ρ|) ≤ 2, θ
+       nondecreasing.
+     - The search: θ profiled by golden section, pooling adjacent
+       violators for calendar order, under a 3-D Nelder–Mead.
+     - `fit_surface(method="svi" | "ssvi")`. The Volatility Lab has an
+       SVI / SSVI toggle on the Fit card that refits the loaded chain, and
+       the subtitle shows ρ, η, γ.
+     - Synthetic, 8 seeds of heavy noise: worst ATM error 4.6 → 1.6 vol
+       points, arbitrage-free 8/8 against 3/8. χ² calibrated: 0.96 of
+       expected.
+     - Live SPY/SPX: it fits far worse than SVI (χ²/pt 1,015 vs 7, and 28
+       vs 0.6), even fitted one expiry at a time. Real smiles lie outside
+       the SSVI slice family.
+     - So independent SVI stays the default (D35).
+     - Tests: `tests/test_ssvi_fit.py` (15), including "never worse than
+       the truth", plus a GUI toggle test. A fit takes 1.3–2.5 s.
+   - Next: C4, market vol into the Options Lab.
 6. After the roadmap: the DCF port (SEC EDGAR + SQLite), planned in its own
    session.

@@ -239,7 +239,11 @@ checked; until then, users without IBKR keep the synthetic chain.
   - Snapshot persistence, if decision 4 is approved.
   - The 3D view, checks and GARCH overlay work unchanged.
   - Live-verified.
-- **C3. Joint SSVI fit**
+- ~~**C3. Joint SSVI fit**~~ Done 2026-10-15 (`models/ssvi_fit.py`).
+  - It wins on noisy synthetic chains.
+  - Live SPY/SPX smiles lie outside the SSVI family, so it's an option and
+    independent SVI stays the default (D35).
+  - Possible follow-up: constrained SVI slices started from SSVI.
   - `models/svi.py` fits θ(T) per expiry plus global ρ, η.
   - No static arbitrage by construction when η(1+|ρ|) ≤ 2: that is the
     regularizer noisy real chains need (D30).

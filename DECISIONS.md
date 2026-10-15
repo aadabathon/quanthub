@@ -542,3 +542,37 @@ backbone.
   `broker/`, so they get their own package, which may import only `data/`
   plus pandas and the stdlib. The layering test enforces it; the name is
   settled in F.
+
+## D35 — Joint SSVI is an option, not the default (2026-10-15)
+
+C3 implemented the reviewed joint SSVI fit (`models/ssvi_fit.py`): N + 3
+parameters, and free of static arbitrage by construction for γ ∈ (0, ½]
+and η(1+|ρ|) ≤ 2 (derived, and checked numerically).
+
+- **Synthetic results (8 seeds):**
+  - It recovers the SSVI truth exactly.
+  - Under the D30 heavy-noise case it beats independent SVI on every seed:
+    median IV error 1.12 → 0.69 vol points, worst ATM 4.62 → 1.55.
+  - Arbitrage-free 8 of 8 times, against SVI's 3.
+- **The search:** it profiles θ (golden section per expiry, pooling
+  adjacent violators for calendar order) under a 3-D Nelder–Mead over
+  (ρ, η, γ).
+  - The first version, one Nelder–Mead over all N + 3 coordinates, stalled
+    when a θ increment collapsed. It ended at χ² 430 when the truth scored
+    331.
+  - A test now requires the fit never to score worse than the truth.
+- **Live SPY and SPX chains: it fits far worse than independent SVI.**
+  - χ²/pt: SPY 1,015 against 7, SPX 28 against 0.6. SPY's 7-day ATM vol
+    is 9.5% against 10.6%.
+  - Fitting SSVI to each expiry alone barely helps, so the limit is the
+    SSVI slice family (vertex position and curvature tied together), not
+    the shared shape.
+- **Decision:**
+  - The Volatility Lab defaults to independent SVI, which passes the
+    arbitrage checks on these chains.
+  - SSVI is a one-click option (refitting the loaded chain) for noisy or
+    thin chains.
+  - If real chains turn out noisy enough to need regularized but flexible
+    fits, the next step is SVI slices fitted under explicit calendar and
+    butterfly constraints, started from the SSVI fit (Gatheral–Jacquier's
+    own recommendation). That isn't built.
