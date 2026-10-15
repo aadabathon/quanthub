@@ -308,8 +308,12 @@ class IBKRBroker:
 
         Limitation (D11): the request always ends "now" -- IBKR anchors
         history as a duration back from an end time, and pinning historical
-        end times needs per-version timezone formatting. The window length is
-        honored via ``duration_string(start, end)``; callers slice.
+        end times needs per-version timezone formatting. So the duration
+        must reach from ``start`` to *now*, not to ``end``: a window ending
+        in the past (a cached series' leading or interior gap) measured to
+        ``end`` comes back anchored at now and misses its own beginning
+        (found live, 2026-10-15). Over-fetch is harmless; callers slice to
+        [start, end].
         """
         if bar_size not in _VALID_BAR_SIZES:
             raise ValueError(
@@ -322,7 +326,7 @@ class IBKRBroker:
             reqId=req_id,
             contract=contract,
             endDateTime="",  # now
-            durationStr=duration_string(start, end),
+            durationStr=duration_string(start, max(end, datetime.now())),
             barSizeSetting=bar_size,
             whatToShow="TRADES",
             useRTH=1,

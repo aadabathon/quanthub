@@ -108,3 +108,45 @@ class TestIBKRSourceFetchBars:
         source = IBKRSource(FakeBroker(self.BARS))
         frame = source.fetch_bars("SPY", datetime(2024, 2, 1), datetime(2024, 2, 2), "1 day")
         assert len(frame) == 0
+
+
+class _RecordingApp:
+    """Stands in for ibapi's client: records history requests and completes
+    them at once (no bars), so ``IBKRBroker.get_history`` runs without TWS."""
+
+    def __init__(self, broker):
+        self.broker = broker
+        self.requests = []
+
+    def reqHistoricalData(self, **kwargs):  # noqa: N802 (ibapi API)
+        self.requests.append(kwargs)
+        self.broker._on_request_done(kwargs["reqId"])
+
+    def cancelHistoricalData(self, req_id):  # noqa: N802 (ibapi API)
+        pass
+
+
+class TestHistoryRequestReachesStart:
+    def test_window_ending_in_the_past_is_measured_to_now(self):
+        # Live-TWS finding (2026-10-15): requests end "now" (D11), so a
+        # cached series' leading gap [start, end] with end in the past must
+        # ask for start..now. Asking for its own length (start..end) came
+        # back anchored at now, lost its first year, and the cache recorded
+        # the whole gap as covered.
+        pytest.importorskip("ibapi")
+        from datetime import timedelta
+
+        from quant_hub.broker.base import ConnectionState
+        from quant_hub.broker.ibkr import IBKRBroker
+        from quant_hub.broker.types import ContractSpec
+        from quant_hub.config import AppConfig
+        from quant_hub.events import EventBus
+
+        broker = IBKRBroker(AppConfig(), EventBus())
+        broker._state = ConnectionState.CONNECTED
+        broker._app = _RecordingApp(broker)
+        now = datetime.now()
+        start, end = now - timedelta(days=5 * 365), now - timedelta(days=365)
+        broker.get_history(ContractSpec("SPY"), start, end)
+        assert broker._app.requests[0]["endDateTime"] == ""
+        assert broker._app.requests[0]["durationStr"] == "5 Y"    # not "4 Y"

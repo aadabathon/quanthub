@@ -86,6 +86,17 @@ v0.1 anchors every request at now. Long windows round UP to whole years
 (`duration_string`), and `IBKRSource` slices the frame back to [start, end],
 making over-fetch harmless. Lift when pinned historical windows are needed.
 
+**Amended 2026-10-15 (live finding).** Because a request ends now, its
+duration must reach from `start` to *now*, not to `end`. `get_history` had
+measured `duration_string(start, end)`, so a window ending in the past (a
+cached series' leading or interior gap, D18) came back anchored at now and
+missed its own beginning, while `CachedSource` recorded the whole gap as
+covered: a silent, permanent hole. It now measures to `max(end, now)`.
+The owner's store had one such hole (SPY, 2021-08-14 → 2022-08-15), created
+when a 1Y sync preceded a 5Y load on 2026-08-14. It was repaired the same
+day: the coverage row was narrowed to the stored bars, then the missing year
+was fetched.
+
 ## D12 — Read-only brokerage, no auto-reconnect (2026-08-13)
 
 Safety posture, not a TODO: no order code exists anywhere, and a dropped
