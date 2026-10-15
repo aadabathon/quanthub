@@ -254,11 +254,53 @@ pytest. Environment:
 2. ~~Qt migration Q1–Q6~~ (2026-10-10).
 3. ~~Owner-requested, ahead of the data phase: Kalman K1 and K2, and the
    3D surface (S3D)~~ (2026-10-14).
-4. The data side:
-   - ~~live-verify the Qt UI and the labs' `ibkr` loads against TWS~~
-     (2026-10-15, 9/9; the D11 duration bug was found and fixed)
-   - then an IBKR option-chain adapter emitting `OptionChain`
-   - real positions as `OptionLeg`s
-   - the trading dashboard
-5. After the roadmap: the DCF port (SEC EDGAR + SQLite), planned in its own
+4. ~~Live-verify the Qt UI against TWS~~ (2026-10-15, 9/9; the D11 duration
+   bug was found and fixed).
+5. **The road to v1.0** (ROADMAP.md, planned 2026-10-15), in order C → M → F
+   → P → R:
+   - C: option chains from IBKR
+   - M: Markov regimes
+   - F: data foundations (store safety, adjusted prices)
+   - P: Portfolio, with the read-only account
+   - R: Research and backtesting
+
+   - Decisions approved 2026-10-15: D33, D34 (provider-agnostic).
+   - ~~C0 live spike~~ (2026-10-15): delayed option quotes work for free.
+     SPY: 40 quotes in 2.5 s. SPX: 20 in 0.7 s. IBKR model IV/greeks come
+     too (D33).
+   - C1 acquisition landed (2026-10-15).
+     - `OptionChain` gains per-expiry carry and `reference_iv`.
+     - `ChainRequest` and the selection rules live in `data/options.py`,
+       with the `OptionChainSource` port.
+     - `IBKRBroker` gains option parameters, per-expiry strike lists and
+       batched option quotes (no regulatory snapshots); 10091 is now an
+       advisory.
+     - `broker/option_chain.py` is the two-pass adapter, caching strike
+       lists for the day.
+     - `tests/test_option_chains.py` has 30 tests.
+     - Live: SPY and SPX chains, about 180 quotes each, 6 expiries, all
+       fitted and arbitrage-free. Our IVs are within 0.1 vol point of
+       IBKR's model IVs (median), even on a flat placeholder carry.
+     - Speed: about 40 s for the day's first chain (strike lists, ~4 s
+       per expiry), then about 15 s.
+   - ~~C1b parity-implied carry~~ (2026-10-15), `models/carry.py`.
+     - Weighted regression of C − P on K per expiry. It falls back to a
+       fixed rate when the rate is implausible or its SE exceeds 1%, and
+       records Student-t dof.
+     - Synthetic chains gained an optional `parity_pairs`.
+     - `tests/test_carry.py` has 15 tests:
+       - noise-free recovery to 1e-9
+       - interval coverage of 94–95% (±1.96 would give 88% at n = 5)
+       - a wrong flat dividend yield: median IV error from 1.08 to 0.04
+         vol points
+     - Live, χ²/pt: SPY from 8–122 (flat) to 0.3–12; SPX from 3.6–43
+       to 0.0–3.8.
+     - SPX's longer expiries take the regression branch (r 4.9–6.2%);
+       SPY's 1-point strikes stay on the fixed rate.
+     - Caveat for the page: q_T is measured against the stale delayed
+       spot, so short-dated yields are noise (SPY 7d: −1.3%). Show
+       forwards, not short-dated q.
+   - Next: C2, real chains in the Volatility Lab (source selector, chain
+     quality, implied-carry table, snapshot persistence).
+6. After the roadmap: the DCF port (SEC EDGAR + SQLite), planned in its own
    session.

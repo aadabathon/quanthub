@@ -133,43 +133,274 @@ do), then turn to the data side. Each milestone is approved before the next.
    (OHLC range estimators wait for real bars, D4). Candidate tie-in: the
    GARCH variance-forecast term structure vs the ATM IV term structure.
 
-## Current phase — data side
+## Done — data side, first pass (2026-10-15)
 
-- Live-verify the Qt UI (top-bar Connect, Markets quotes and Sync) and the
-  Options Lab, GARCH Lab and Volatility Lab `ibkr` loads against TWS.
-- Options chains via IBKR (read-only, D12): a `broker/` adapter emitting
-  `data/options.OptionChain`, feeding the unchanged Volatility Lab
-  pipeline. Then a joint SSVI (whole-surface) fit, to regularize noisy real
-  chains (D30).
-- Real portfolio/positions (read-only) and the real-time trading dashboard.
-- **Pinned historical end-times** (lifts D11) — minimal backfill/interior-gap
-  fetches; prerequisite for deep backfills without over-fetch.
-- Corporate-action adjustment policy (see `DATA_SYSTEM_IMPROVEMENTS.md`)
-  before real multi-year histories feed models.
+- Kalman K1/K2 and the 3D vol surface (S3D, D32) landed 2026-10-14.
+- Live TWS verification of the Qt UI (2026-10-15, 9/9): connect, quotes,
+  Sync, the labs' `ibkr` loads, a clean disconnect. It found and fixed
+  the D11 duration bug that left leading-gap holes, and the owner's store
+  was repaired.
 
-## Model candidates after the current phase
+## Current phase — the road to v1.0 (planned 2026-10-15)
 
-- **Kalman filtering** (local-level/trend on log prices), derived and
-  validated on a synthetic state-space world first. K1 (model, filter,
-  smoother, MLE) and K2 (the Kalman Lab page) landed 2026-10-14.
-- **Synthetic-data expansion** — mean-reverting (OU), correlated assets,
-  regime-switching generators, to feed model validation before real data.
+Owner direction: v1.0 is the option-chain adapter, Markov regimes, Portfolio
+and Research on top of what exists. After that, the work is refining and
+mastering the workflows to trade with. **v1.0 stays read-only (D12).** The
+app informs decisions, and trades are placed by hand in TWS. Paper trading
+and execution come after v1.0, as their own guarded design phase.
 
-## Later (unordered)
+How every milestone runs, as so far:
+- derive the math in the module docstring, and get the owner's review
+- implement it with statistical tests on a synthetic world with a known
+  answer
+- build the page (TRUE vs FIT where there is a truth)
+- live-verify against TWS where IBKR is involved
 
-- Markov regime models over returns/vol.
-- Portfolio analytics: CAGR/geometric-growth optimization, Kelly-style
-  sizing, risk metrics beyond drawdown.
-- Strategy research + backtesting engine (consumes the same `PriceHistory`
-  and future model outputs; no GUI coupling — the SQLite store now provides
-  its reproducible data foundation).
-- Frequency-aware annualization in `data/stats.py`, then expose the already-
-  plumbed weekly/monthly (and eventually intraday, per D19) bar sizes.
-- Paper trading; execution only after that, as its own guarded design phase.
-- Streaming (non-snapshot) market data via the broker's existing
-  callback-confinement pattern.
-- Possible web deployment of selected research tools (explicitly out of scope
-  until the owner raises it).
+Each milestone is approved before the next starts.
+
+**Order: C → M → F → P → R.** Each module ends in a version bump:
+- **C, option chains (v0.6):** finishes the data side the Volatility Lab
+  was built for.
+- **M, Markov (v0.7):** a self-contained model, and an input Research needs.
+- **F, data foundations:** small, but must land before P and R put
+  multi-year, multi-asset returns to work.
+- **P, Portfolio (v0.8):** needs F. It supplies the position sizing R
+  uses.
+- **R, Research (v0.9):** comes last because it consumes everything
+  (Kalman, GARCH, Markov signals; Portfolio sizing; adjusted histories).
+- **v1.0:** a stabilization pass.
+
+### Decisions (approved 2026-10-15: D33, D34)
+
+The owner approved the recommendations:
+- option quotes measured in C0; no paid regulatory snapshots
+- SPY and SPX
+- parity-implied forwards per expiry
+- chain snapshots persisted
+- both price bases stored
+- daily vectorized backtester with an explicit lag
+
+**Amended:** positions come from the owner's Fidelity CSV export first;
+IBKR's read-only positions are an optional second adapter.
+
+**Provider-agnostic (D34).** Anyone who clones the repo should find it
+useful, whatever broker they use.
+- Every acquired data kind is a port whose shape lives in `data/`:
+  bars, quotes, option chains, positions.
+- v1.0 adapters:
+  - synthetic
+  - file import (CSV, with presets such as Fidelity positions and a
+    documented generic layout)
+  - IBKR (optional, live)
+- The app is fully usable with no broker connection.
+- A user settings file replaces the hard-coded owner defaults.
+- A free online provider is a later candidate, once its terms of use are
+  checked.
+
+### C — Option chains (v0.6)
+
+Chains arrive through an `OptionChainSource` port (D34). IBKR is the first
+adapter. A non-IBKR live chain provider is a candidate once its terms are
+checked; until then, users without IBKR keep the synthetic chain.
+
+- ~~**C0. Live spike (throwaway, against TWS 7496)**~~ Done 2026-10-15.
+  Delayed option quotes work for free; findings are in D33.
+  - `reqSecDefOptParams` for SPY/SPX: expiries, strikes, trading classes
+  - option quote modes (live, delayed, frozen, unavailable)
+  - IBKR's own model IV and greeks (`tickOptionComputation`)
+  - quotes per second, and the market-data line limit (usually 100
+    concurrent)
+  - **Output:** findings that settle decisions 1–3.
+- ~~**C1. Broker and adapter**~~ Done 2026-10-15, with the
+  parity-implied carry (C1b, `models/carry.py`). Live, implied carry cut
+  SPY's χ²/pt from 8–122 to 0.3–12, and SPX's from 3.6–43 to 0.0–3.8.
+  - Broker side:
+    - `IBKRBroker` gains read-only `get_option_params` and a batched
+      `get_option_quotes`
+    - batches stay under the line limit
+    - each quote streams briefly and self-cancels
+    - typed errors, and the D22 advisory handling
+  - Adapter side: `broker/option_chain.py` turns a selection into an
+    `OptionChain`.
+  - Selection policy (pure, unit-tested):
+    - listed expiries nearest to target day-counts (7/30/60/91/182/365,
+      as the synthetic chain)
+    - strikes in a moneyness band of about −2.5 to +1.5 ATM standard
+      deviations
+    - out-of-the-money sides, plus calls and puts at a few near-ATM
+      strikes for parity
+  - Tests run against a fake broker.
+- **C2. Volatility Lab on real chains**
+  - The Experiment card gains a chain source: synthetic or `ibkr`.
+  - Real chains have no TRUE column.
+  - Chain quality stats: fetched, no bid, wide spreads, skipped expiries.
+  - Per-expiry implied forwards, if decision 3 is approved.
+  - Snapshot persistence, if decision 4 is approved.
+  - The 3D view, checks and GARCH overlay work unchanged.
+  - Live-verified.
+- **C3. Joint SSVI fit**
+  - `models/svi.py` fits θ(T) per expiry plus global ρ, η.
+  - No static arbitrage by construction when η(1+|ρ|) ≤ 2: that is the
+    regularizer noisy real chains need (D30).
+  - Validated on the synthetic world, whose truth *is* SSVI.
+  - The page compares it with independent slices.
+- **C4. Market vol into the Options Lab**
+  - Price and analyse strategies with each strike's IV from the fitted
+    surface, instead of one realized σ.
+  - Provenance stays visible (D23).
+
+### M — Markov regimes (v0.7)
+
+- **M1. `models/markov.py`**
+  - Gaussian hidden Markov model on daily log returns: regime s,
+    r | s ~ N(μₛ, σₛ²).
+  - Algorithms:
+    - scaled forward–backward
+    - Viterbi path
+    - Baum–Welch (EM) with multi-start
+    - a variance floor against degenerate states
+    - states ordered by σ, so labels are stable
+    - BIC for choosing 2 or 3 regimes
+  - Filtered probabilities are tradable; smoothed ones are hindsight (as
+    in the Kalman Lab).
+  - Expected regime duration is 1/(1 − pᵢᵢ).
+  - Synthetic regime-switching generator.
+  - Tests:
+    - forward–backward and Viterbi vs brute-force enumeration on short
+      series
+    - EM never decreases the likelihood
+    - parameter recovery
+    - BIC picks the true K
+- **M2. Markov Lab page**
+  - synthetic or market history
+  - price shaded by filtered regime probability, plus a probability panel
+  - transition matrix, per-regime stats, expected durations
+  - TRUE | FIT
+  - Live-verified.
+
+### F — Data foundations (before P and R)
+
+- **F1. Settings and store safety**
+  - A user settings file (TOML, read with stdlib `tomllib`): providers,
+    IBKR host/port/client id, store path. It replaces the hard-coded owner
+    defaults (D34).
+  - A schema version table, and an automatic copy of the database before
+    any migration (SQLite online backup API).
+  - Non-daily bar sizes rejected at the `CachedSource` boundary
+    (DATA_SYSTEM_IMPROVEMENTS #6, #7).
+- **F2. File import: the universal provider (D34)**
+  - New infrastructure package (layering-tested: `data/` + pandas + stdlib
+    only).
+  - A CSV `BarSource` with a documented generic layout and column-mapping
+    presets (DATA_SYSTEM_IMPROVEMENTS #5).
+  - Imported bars go through the same validation and store as IBKR's, under
+    their own provider name.
+- **F3. Adjusted prices (D33)**
+  - IBKR `ADJUSTED_LAST` fetched and stored.
+  - A file import declares its basis.
+  - The basis is named on every call, like the source (D23).
+  - Tests: a split shows as a gap in raw bars and is continuous in adjusted
+    bars; total return over a dividend matches.
+
+### P — Portfolio (v0.8)
+
+- **P1. `models/portfolio.py`**
+  - Alignment and estimation:
+    - multi-asset return alignment
+    - covariance estimation: sample, and Ledoit–Wolf shrinkage
+  - Allocation rules:
+    - minimum variance
+    - tangency
+    - growth-optimal (Kelly) w* = Σ⁻¹(μ − r), with growth
+      r + ½·SR²max, and fractional Kelly's growth/variance trade-off
+    - long-only allocations: method chosen in the derivation, since
+      there's no SciPy
+  - Risk:
+    - historical and Gaussian VaR and expected shortfall
+    - drawdown statistics
+    - risk contributions
+  - The docstring covers volatility drag and why estimation error in μ
+    makes full Kelly dangerous; one year of data gives μ̂ a standard error
+    about the size of σ.
+  - Synthetic correlated-GBM generator. Weights recovered on known μ and
+    Σ; closed forms checked.
+- **P2. Positions, broker-agnostic (D33, D34)**
+  - A `Position` shape in `data/`: stocks, ETFs, options as `OptionLeg`s,
+    and cash.
+  - A positions port with two adapters:
+    - CSV import, with a Fidelity preset first and the generic layout
+    - IBKR read-only positions, account summary and P&L (optional)
+  - Imports are snapshots stamped with their as-of date, and kept.
+  - Live-verified with a real Fidelity export.
+- **P3. Portfolio page**
+  - holdings: imported positions, the IBKR account, or a hypothetical
+    basket
+  - allocation and risk (vol, beta, VaR/ES, drawdown)
+  - efficient frontier and the Kelly/fractional-Kelly views
+  - what-if rebalance, with a hand-placed ticket
+  - aggregate option greeks across positions (the "trading dashboard"
+    item)
+
+### R — Research and backtesting (v0.9)
+
+- **R1. `models/backtest.py` (decision 7)**
+  - Positions come from information up to t and earn returns t → t+1.
+  - Explicit cost model: half-spread plus commission, charged per unit
+    turnover.
+  - Metrics: CAGR, vol, Sharpe with its standard error, Sortino, max
+    drawdown, turnover.
+  - Walk-forward / out-of-sample splits.
+  - Deflated Sharpe ratio for many trials.
+  - Tests:
+    - look-ahead: scrambling the future can't change past positions
+    - cost identities
+    - hand-computed cases
+- **R2. Strategy library and synthetic worlds**
+  - Strategies are pure `signal(history, params) → positions` functions:
+    - Kalman trend / level deviation
+    - GARCH vol targeting
+    - Markov regime filter
+    - momentum and mean reversion baselines
+  - Sizing comes from Portfolio.
+  - Validation worlds:
+    - a world with a planted edge, which a strategy should find
+    - a null random walk, where the deflated Sharpe must flag the best of
+      many strategies as noise
+- **R3. Research page and research log**
+  - universe, strategy and parameters, run on the TaskRunner
+  - equity vs benchmark, drawdown, rolling Sharpe
+  - a trades table
+  - an in-sample / out-of-sample split
+  - a parameter-sweep heatmap with deflated Sharpe
+  - every run saved to SQLite (parameters, data range, results), so
+    research is reproducible
+
+### v1.0 — stabilization
+
+- Live-verify the end-to-end workflows as a routine:
+  - sync
+  - regimes
+  - vol surface
+  - portfolio risk
+  - research checks
+- Close the known limits that affect trading use.
+- The clone-and-use path (D34): a README "getting started without a
+  broker" covering synthetic labs, CSV imports and the settings file.
+  IBKR setup becomes an optional section.
+- Docs and the version bump.
+
+### After v1.0 (unordered)
+
+- Paper trading, then execution, as their own guarded design phase (D12).
+- Option-strategy backtests on the stored chain snapshots.
+- Streaming market data, and intraday bars (needs a timezone policy, D19).
+- Pinned historical end-times (lifts D11).
+- A CSV/Parquet `BarSource` (DATA_SYSTEM_IMPROVEMENTS #5).
+- Frequency-aware annualization.
+- Parallel universe backfill (revisits D9).
+- Possible web deployment of selected tools (out of scope until the owner
+  raises it).
+- After the roadmap: the owner's DCF modeler port (SEC EDGAR + SQLite).
 
 ## Intended stack flow (architecture already accommodates this)
 

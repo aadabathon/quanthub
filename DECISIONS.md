@@ -459,3 +459,86 @@ throwaway script is kept locally in the gitignored `spikes/`).
 - **Scope:** the 3D view is a toggle inside the Volatility Lab's Surface
   view; the heatmap stays the default. Pyqtgraph remains the 2D charting
   layer (D31).
+
+## D33 — v1.0 scope and its seven data/design calls (2026-10-15)
+
+v1.0 adds four modules, in order C → M → F → P → R:
+- option chains (C)
+- Markov regimes (M)
+- data foundations (F)
+- Portfolio (P)
+- Research and backtesting (R)
+
+It stays read-only (D12); trades are placed by hand. Plan: ROADMAP.md. The
+owner approved the recommendations:
+
+1. **Option quotes:** C0 measures what the API returns. Never use
+   regulatory snapshots (charged per request). Quotes stream briefly and
+   self-cancel (D22). The owner decides on IBKR's OPRA bundle if delayed
+   quotes are missing.
+2. **Underlyings:** SPY and SPX. SPX options are European, so IV inversion
+   is exact. For SPY (American), only out-of-the-money quotes are fit, with
+   early exercise a documented limit.
+3. **Carry:** each expiry's forward and discount factor come from
+   put–call parity at near-the-money strikes (C − P = D(F − K)).
+   `OptionChain` gains optional per-expiry forwards and discount factors.
+4. **Chain snapshots are persisted** in SQLite. They're the only route to
+   option history, since IBKR has none for expired contracts.
+5. **Both price bases are stored:** TRADES (display, levels) and adjusted
+   (return math), with the basis named on every call like the source (D23).
+6. **Positions come from the owner's broker export first.** Amended by the
+   owner: the portfolio is at Fidelity, so positions arrive by CSV import
+   (D34); IBKR's read-only positions are an optional second adapter. Still
+   no order code.
+7. **Backtester:** daily bars, vectorized, with an explicit one-bar lag. A
+   position decided at close t earns t → t+1, and that rule is tested.
+
+**C0 findings (2026-10-15, TWS 7496, `spikes/spike_options.py`).**
+- Delayed option quotes work with no option-data subscription (market
+  data type 3, ticks 66/67, plus 10167/10090/10091 advisories, which D22
+  already treats as non-failures). OPRA is only needed for real-time.
+- SPY quotes: 40 contracts filled bid and ask in 2.5 s (median 1.5 s).
+- SPX quotes: 20 contracts in 0.7 s.
+- Options parameters: SPY has class SPY (34 expiries, 491 strikes); SPX
+  has classes SPX (monthly, AM-settled) and SPXW (weeklies, 41 expiries).
+  Both list a 0-DTE expiry, so selection needs a minimum DTE.
+- IBKR's own model IV and greeks also arrive delayed (ticks 80–83): a
+  free cross-check for our inversion.
+- The delayed spot is a last-trade print whose time can differ from the
+  option quotes'. The parity-implied forward (point 3) sidesteps spot
+  entirely for moneyness.
+
+## D34 — Provider-agnostic data: useful whatever you trade on (2026-10-15)
+
+Owner direction: anyone should be able to clone the repo and find it useful,
+whatever broker they use. So IBKR becomes one optional provider, not the
+backbone.
+
+- **Every acquired data kind is a port** whose shape lives in `data/`:
+  - daily bars (already: `BarSource`, D20)
+  - quotes
+  - option chains (`OptionChain`, D30)
+  - positions (new)
+
+  Adapters fill the ports, and pages name their provider per call, as they
+  already name sources (D23).
+- **v1.0 adapters:**
+  - synthetic (always available)
+  - file import (CSV): universal, since every broker and data vendor
+    exports CSV, with presets per format (Fidelity positions first) and a
+    documented generic layout
+  - IBKR (optional, live)
+
+  A free online provider is a candidate only once its terms of use are
+  checked.
+- **No broker connection required.** The app is fully usable on synthetic
+  data and imported files. Live-only features, like streaming quotes and
+  live chains, say what they need instead of failing.
+- **Settings, not hard-coded owner defaults.** A user settings file covers
+  providers, IBKR host, port and client id, and the store path. It
+  replaces `AppConfig`'s frozen defaults (currently the owner's live TWS
+  port) as the source of truth.
+- **Where adapters live:** file importers are infrastructure like
+  `broker/`, so they get their own package, which may import only `data/`
+  plus pandas and the stdlib. The layering test enforces it; the name is
+  settled in F.
