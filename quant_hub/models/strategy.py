@@ -42,10 +42,18 @@ segment by segment, with no grid. ``expiry_profile`` implements this.
 Mixed expiries (calendars) are not piecewise linear at the first expiry,
 so their curves are analyzed on a spot grid (``grid_breakevens``).
 
+Per-leg market inputs
+---------------------
+A leg may carry its own volatility, rate and dividend yield. A market
+surface gives each leg its strike's implied vol and its expiry's carry
+(``models/market_surface.apply_surface``). A leg without them uses the
+shared ``MarketInputs``.
+
 Assumptions
 -----------
-Scenario valuation: rate, dividend yield, and volatility stay at their
-entry values over the horizon (no vol-surface dynamics); a leg that expires
+Scenario valuation: each leg's rate, dividend yield, and volatility stay at
+their entry values over the horizon (sticky strike: no vol-surface
+dynamics); a leg that expires
 before the horizon is settled at its intrinsic value *at the scenario spot*
 (as if spot were already there at its expiry); carry on the entry cash and
 dividends received by a stock leg over the horizon are ignored. European
@@ -75,13 +83,20 @@ CONTRACT_MULTIPLIER = 100.0
 
 @dataclass(frozen=True)
 class OptionLeg:
-    """One option position. ``premium`` is per share; None = fair value at entry."""
+    """One option position. ``premium`` is per share; None = fair value at entry.
+
+    ``vol``, ``rate`` and ``dividend_yield`` override the shared market
+    inputs for this leg (module docstring); None uses the shared ones.
+    """
 
     option_type: OptionType
     strike: float
     dte: float
     quantity: float
     premium: float | None = None
+    vol: float | None = None
+    rate: float | None = None
+    dividend_yield: float | None = None
 
     def __post_init__(self) -> None:
         if self.option_type not in ("call", "put"):
@@ -94,6 +109,10 @@ class OptionLeg:
             raise ValueError("quantity must be a non-zero number of contracts")
         if self.premium is not None and (not math.isfinite(self.premium) or self.premium < 0):
             raise ValueError("premium must be non-negative")
+        if self.vol is not None and not (math.isfinite(self.vol) and self.vol > 0):
+            raise ValueError("a leg's vol must be positive")
+        if any(v is not None and not math.isfinite(v) for v in (self.rate, self.dividend_yield)):
+            raise ValueError("a leg's rate and dividend yield must be finite")
 
 
 @dataclass(frozen=True)
@@ -144,16 +163,20 @@ def entry_cost(strategy: Strategy, market: MarketInputs) -> float:
     return total
 
 
+def leg_inputs(leg: OptionLeg, market: MarketInputs) -> tuple[float, float, float]:
+    """The leg's ``(sigma, rate, dividend_yield)``: its own where set, else the market's."""
+    return (market.sigma if leg.vol is None else leg.vol,
+            market.rate if leg.rate is None else leg.rate,
+            market.dividend_yield if leg.dividend_yield is None else leg.dividend_yield)
+
+
 def leg_entry_premium(leg: OptionLeg, market: MarketInputs) -> float:
     """The premium paid per share: the recorded one, else fair value at entry."""
     if leg.premium is not None:
         return leg.premium
-    return float(
-        price_array(
-            market.spot, leg.strike, leg.dte, market.rate, market.sigma,
-            leg.option_type, market.dividend_yield,
-        )
-    )
+    sigma, rate, dividend_yield = leg_inputs(leg, market)
+    return float(price_array(market.spot, leg.strike, leg.dte, rate, sigma, leg.option_type,
+                             dividend_yield))
 
 
 def strategy_value(
@@ -166,10 +189,9 @@ def strategy_value(
     for leg in strategy.legs:
         remaining = leg.dte - days_forward
         if remaining > 0:
-            leg_value = price_array(
-                spots, leg.strike, remaining, market.rate, market.sigma,
-                leg.option_type, market.dividend_yield,
-            )
+            sigma, rate, dividend_yield = leg_inputs(leg, market)
+            leg_value = price_array(spots, leg.strike, remaining, rate, sigma, leg.option_type,
+                                    dividend_yield)
         else:
             leg_value = intrinsic_value(spots, leg.strike, leg.option_type)
         value = value + leg.quantity * strategy.multiplier * leg_value
@@ -196,10 +218,9 @@ def strategy_greeks(
         remaining = leg.dte - days_forward
         if remaining <= 0:
             continue
-        g = greeks_array(
-            spots, leg.strike, remaining, market.rate, market.sigma,
-            leg.option_type, market.dividend_yield,
-        )
+        sigma, rate, dividend_yield = leg_inputs(leg, market)
+        g = greeks_array(spots, leg.strike, remaining, rate, sigma, leg.option_type,
+                         dividend_yield)
         size = leg.quantity * strategy.multiplier
         for name in totals:
             totals[name] = totals[name] + size * getattr(g, name)

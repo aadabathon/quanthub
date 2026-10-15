@@ -55,7 +55,7 @@ def _sections(core: Core) -> PageSections:
     simulator = ("Simulator", "ph.trend-up", lambda _shell: SimulatorPage(
         core.tasks, core.config, core.state_store))
     options = ("Options Lab", "ph.calculator", lambda _shell: OptionsLabPage(
-        core.market_service, core.tasks, core.state_store))
+        core.market_service, core.chains, core.tasks, core.state_store))
     vol_lab = ("Volatility Lab", "mdi6.sigma", lambda _shell: VolatilityLabPage(
         core.market_service, core.chains, core.tasks, core.state_store))
     kalman = ("Kalman Lab", "ph.sliders-horizontal", lambda _shell: KalmanLabPage(

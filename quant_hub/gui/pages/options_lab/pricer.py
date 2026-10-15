@@ -1,6 +1,8 @@
 """Pricer tab: one European contract, priced forward or inverted to IV.
 
-"Price from σ" prices at the underlying card's σ. "σ from price" inverts a
+"Price from σ" prices at the underlying card's σ, or, when the card prices
+from a market surface (C4), at the surface's implied vol and carry for this
+strike and expiry. "σ from price" inverts a
 quoted option price to implied volatility (the bracketed-Newton solver in
 ``models/black_scholes.py``), then shows greeks and profiles *at that IV*,
 i.e. the option as the market prices it. All closed form, so it runs on the
@@ -34,6 +36,7 @@ from quant_hub.gui.components import (
 )
 from quant_hub.gui.pages.base import debounce
 from quant_hub.gui.theme import PALETTE, SIDE_PANEL_WIDTH, SPACE_L, SPACE_M, SPACE_S
+from quant_hub.models.market_surface import MarketSurface, SurfacePoint
 from quant_hub.models.black_scholes import (
     BlackScholesInputs,
     MarketInputs,
@@ -74,9 +77,12 @@ def days_label(days: float) -> str:
 
 class PricerTab(QWidget):
     def __init__(self, get_market: Callable[[], MarketInputs], saved: dict,
-                 report: Reporter) -> None:
+                 report: Reporter,
+                 get_surface: Callable[[], MarketSurface | None] = lambda: None) -> None:
         super().__init__()
         self._get_market, self._report = get_market, report
+        self._get_surface = get_surface
+        self._point: SurfacePoint | None = None
         saved_metric = saved.get("metric", "price")
         self._metric = next((k for k, v in _METRICS.items() if v[0] == saved_metric), "Price")
         self._type = "put" if saved.get("option_type") == "put" else "call"
@@ -162,13 +168,18 @@ class PricerTab(QWidget):
         Raises ValueError (bad field, or a quote outside no-arbitrage bounds)."""
         market = self._get_market()
         contract = self.contract()
-        sigma = market.sigma
+        sigma, rate, dividend_yield = market.sigma, market.rate, market.dividend_yield
+        surface = self._get_surface()
+        self._point = surface.point(contract.strike, contract.dte) if surface else None
+        if self._point is not None:
+            sigma, rate, dividend_yield = (self._point.vol, self._point.rate,
+                                           self._point.dividend_yield)
         if self._mode == VOL_FROM_PRICE:
             sigma = implied_volatility(self._quote.number(minimum=0.0), market.spot,
-                                       contract.strike, contract.dte, market.rate,
-                                       contract.option_type, market.dividend_yield)
-        return BlackScholesInputs(market.spot, contract.strike, contract.dte, market.rate, sigma,
-                                  contract.option_type, market.dividend_yield)
+                                       contract.strike, contract.dte, rate,
+                                       contract.option_type, dividend_yield)
+        return BlackScholesInputs(market.spot, contract.strike, contract.dte, rate, sigma,
+                                  contract.option_type, dividend_yield)
 
     def refresh(self) -> None:
         try:
@@ -208,7 +219,15 @@ class PricerTab(QWidget):
         intrinsic = float(intrinsic_value(inputs.spot, inputs.strike, inputs.option_type))
         inverting = self._mode == VOL_FROM_PRICE
         self._hero.setText(f"{inputs.sigma:.2%}" if inverting else f"{value:,.4f}")
-        vol_note = f"{inputs.sigma:.2%}" + (f"  (card {market.sigma:.1%})" if inverting else "")
+        point = self._point
+        if point is not None and not inverting:
+            vol_note = f"{inputs.sigma:.2%} surface" + (" · extrapolated" if point.extrapolated
+                                                        else "")
+        elif point is not None:
+            vol_note = f"{inputs.sigma:.2%}  (surface {point.vol:.1%})"
+        else:
+            vol_note = f"{inputs.sigma:.2%}" + (f"  (card {market.sigma:.1%})" if inverting
+                                                else "")
         self._stats.set_value("vol", vol_note)
         self._stats.set_value("intrinsic", f"{intrinsic:,.4f}")
         self._stats.set_value("time_value", f"{value - intrinsic:,.4f}")

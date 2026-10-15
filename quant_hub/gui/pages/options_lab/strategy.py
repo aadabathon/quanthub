@@ -9,8 +9,13 @@ Single-expiry positions get the exact piecewise-linear expiry analysis
 (``expiry_profile``); calendars fall back to the sampled curve and their
 numbers are marked "≈".
 
+With a market surface on the underlying card (C4), every leg takes its own
+implied vol and its expiry's carry from the surface (``apply_surface``), and
+the legs table shows each leg's σ.
+
 The "days forward" slider moves the scenario date: the second curve is the
-position marked to model at T+h with σ, r, q held fixed (no vol dynamics).
+position marked to model at T+h with each leg's σ, r, q held fixed (sticky
+strike: no vol dynamics).
 It recomputes on every slider step — the whole grid is a few milliseconds.
 """
 
@@ -51,6 +56,7 @@ from quant_hub.gui.theme import (
     SPACE_S,
 )
 from quant_hub.models.black_scholes import MarketInputs
+from quant_hub.models.market_surface import MarketSurface, apply_surface
 from quant_hub.models.strategy import (
     STRATEGY_TEMPLATES,
     OptionLeg,
@@ -92,9 +98,11 @@ def _legs_from_state(raw) -> list[OptionLeg]:
 
 class StrategyTab(QWidget):
     def __init__(self, get_market: Callable[[], MarketInputs], saved: dict,
-                 report: Reporter) -> None:
+                 report: Reporter,
+                 get_surface: Callable[[], MarketSurface | None] = lambda: None) -> None:
         super().__init__()
         self._get_market, self._report = get_market, report
+        self._get_surface = get_surface
         self._legs: list[OptionLeg] = _legs_from_state(saved.get("legs"))
         try:
             self._horizon = max(0, int(float(saved.get("horizon", "0"))))
@@ -159,7 +167,7 @@ class StrategyTab(QWidget):
         card = Card("Legs", "Blank premium = enters at model fair value · Delete removes the "
                             "selected leg")
         self._table = DataTable([("Qty", "left"), ("Type", "left"), ("Strike", "right"),
-                                 ("Expiry", "right"), ("Entry / share", "right")],
+                                 ("Expiry", "right"), ("σ", "right"), ("Entry / share", "right")],
                                 row_height=34, focusable=True)
         self._table.balance_columns()
         self._table.setMinimumHeight(130)
@@ -234,13 +242,16 @@ class StrategyTab(QWidget):
         try:
             market = self._get_market()
             strategy = Strategy(tuple(self._legs), stock_quantity=self._shares.number())
+            surface = self._get_surface()
+            if surface is not None:
+                strategy = apply_surface(strategy, surface)
         except ValueError as exc:
             self._report(str(exc), True)
             self._show_empty(str(exc))
             return
         self._report("", False)
         self._chart_stack.setCurrentWidget(self._chart)
-        self._render_legs(market)
+        self._render_legs(market, strategy.legs, surface)
         self._show(strategy, market)
 
     # ------------------------------------------------------------- editing
@@ -282,15 +293,26 @@ class StrategyTab(QWidget):
         self.refresh()
 
     # ----------------------------------------------------------- rendering
-    def _render_legs(self, market: MarketInputs) -> None:
-        rows = []
-        for leg in self._legs:
+    def _render_legs(self, market: MarketInputs, priced: tuple[OptionLeg, ...],
+                     surface: MarketSurface | None) -> None:
+        rows, extrapolated = [], []
+        for leg in priced:
             paid = (f"{leg.premium:,.2f}" if leg.premium is not None
                     else (f"fair {leg_entry_premium(leg, market):,.2f}", PALETTE.text_secondary))
+            vol = leg.vol if leg.vol is not None else market.sigma
+            outside = surface is not None and surface.point(leg.strike, leg.dte).extrapolated
+            extrapolated.append(outside)
             rows.append([(f"{leg.quantity:+g}",
                           PALETTE.good if leg.quantity > 0 else PALETTE.critical),
-                         leg.option_type, f"{leg.strike:,.2f}", days_label(leg.dte), paid])
+                         leg.option_type, f"{leg.strike:,.2f}", days_label(leg.dte),
+                         (f"{vol:.1%}" + (" *" if outside else ""),
+                          PALETTE.warning if outside else PALETTE.text_secondary), paid])
         self._table.set_rows(rows)
+        for row, outside in enumerate(extrapolated):
+            if outside:
+                self._table.item(row, 4).setToolTip(
+                    "Extrapolated: outside the chain's quoted strikes or expiries, so "
+                    "this vol comes from the fitted wing or the flat-vol rule, not quotes")
 
     def _show(self, strategy: Strategy, market: MarketInputs) -> None:
         spots = spot_grid(strategy, market)

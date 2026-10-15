@@ -384,6 +384,111 @@ def test_options_pricer_prices_and_inverts(qt_app):
     assert pricer._hero.text() == "20.00%"
 
 
+def test_options_lab_prices_from_a_saved_chain_surface(qt_app):
+    # C4 offline: a saved chain (synthetic, with parity pairs) becomes the
+    # surface every contract is priced from.
+    import math
+
+    from quant_hub.models.black_scholes import price_array
+    from quant_hub.models.svi import SSVISurface
+    from quant_hub.models.vol_surface import SyntheticChainSpec, synthetic_chain
+
+    app, window = qt_app
+    truth = SSVISurface(v0=0.25**2, v_inf=0.20**2, kappa=2.0, rho=-0.6, eta=1.2)
+    chain = synthetic_chain(truth, SyntheticChainSpec(rate=0.045, dividend_yield=0.015,
+                                                      noise=0.0, parity_pairs=5))
+    window._core.chain_store.save(chain)
+    lab = _manual_lab(app, window)
+    card = lab._underlying
+    card._symbol.set_text("SYNTH")
+    card._vol_modes.set_current("Surface")
+    card._on_vol_mode("Surface")
+    wait_for(app, lambda: card.surface() is not None)
+    assert card._badge.text() == "SURFACE" and not card._vol.isEnabled()
+    assert card._spot.text() == "100.00"
+
+    pricer = lab._pricer
+    pricer._strike.set_text("95")
+    pricer._dte.set_text("91")
+    pricer._on_mode("Price from σ")
+    point = card.surface().point(95.0, 91.0)
+    years = 91 / 365
+    true_vol = float(truth.slice(years).implied_vol(math.log(95.0 / point.forward), years))
+    assert point.vol == pytest.approx(true_vol, abs=2e-4)
+    expected = float(price_array(100.0, 95.0, 91.0, point.rate, point.vol, "call",
+                                 point.dividend_yield))
+    assert float(pricer._hero.text()) == pytest.approx(expected, abs=1e-4)
+    assert "surface" in pricer._stats.value_text("vol")
+
+    lab._on_tab("Strategy")
+    strategy = lab._strategy
+    strategy.refresh()
+    sigmas = [strategy._table.item(r, 4).text() for r in range(strategy._table.rowCount())]
+    assert sigmas and all(s.endswith("%") for s in sigmas)
+    # A new symbol's surface re-centres the legs, so none sits in a far wing.
+    surface = card.surface()
+    assert all(not surface.point(leg.strike, leg.dte).extrapolated for leg in strategy._legs)
+
+    card._vol_modes.set_current("Flat σ")
+    card._on_vol_mode("Flat σ")
+    assert card.surface() is None and card._vol.isEnabled()
+
+
+def test_options_lab_surface_recentres_strikes_built_at_another_price(qt_app):
+    # Live C4 finding: the saved state said "centred on SPY", but that was
+    # synthetic SPY at $385, and the real chain's SPY is at $771. A same-name
+    # surface far from the strikes' spot must still re-centre them.
+    from quant_hub.models.strategy import OptionLeg
+    from quant_hub.models.svi import SSVISurface
+    from quant_hub.models.vol_surface import SyntheticChainSpec, synthetic_chain
+
+    app, window = qt_app
+    truth = SSVISurface(v0=0.25**2, v_inf=0.20**2, kappa=2.0, rho=-0.6, eta=1.2)
+    window._core.chain_store.save(synthetic_chain(truth, SyntheticChainSpec(parity_pairs=5)))
+    lab = _manual_lab(app, window, spot="385")
+    card, strategy = lab._underlying, lab._strategy
+    strategy._apply_template()                      # strikes built around $385
+    card._centred_on, card._centred_at = "SYNTH", 385.0
+    card._symbol.set_text("SYNTH")
+
+    def load_surface():
+        card._vol_modes.set_current("Surface")
+        card._on_vol_mode("Surface")
+        wait_for(app, lambda: card.surface() is not None)
+        lab._on_tab("Strategy")
+        strategy.refresh()
+
+    load_surface()
+    surface = card.surface()
+    assert all(0.8 * surface.spot < leg.strike < 1.2 * surface.spot for leg in strategy._legs)
+    assert all(not surface.point(leg.strike, leg.dte).extrapolated for leg in strategy._legs)
+    assert "strikes re-centred on spot" in lab._header._status.full_text()
+
+    # A far-wing leg is priced, and its vol is flagged as extrapolated.
+    strategy._legs.append(OptionLeg("put", 40.0, 30.0, 1))
+    strategy.refresh()
+    flagged = strategy._table.item(strategy._table.rowCount() - 1, 4)
+    assert flagged.text().endswith(" *") and "Extrapolated" in flagged.toolTip()
+    assert not strategy._table.item(0, 4).text().endswith("*")
+
+    # Reloading the same symbol at the same spot keeps the user's strikes.
+    card._vol_modes.set_current("Flat σ")
+    card._on_vol_mode("Flat σ")
+    load_surface()
+    assert strategy._legs[-1].strike == 40.0
+    assert "re-centred" not in lab._header._status.full_text()
+
+
+def test_options_lab_surface_without_a_saved_chain_says_where_to_get_one(qt_app):
+    app, window = qt_app
+    lab = _manual_lab(app, window)
+    card = lab._underlying
+    card._symbol.set_text("QQQ")
+    card._on_vol_mode("Surface")
+    wait_for(app, lambda: "Volatility Lab" in lab._header._status.full_text())
+    assert card.surface() is None
+
+
 def test_options_pricer_live_update_and_error_card(qt_app):
     app, window = qt_app
     lab = _manual_lab(app, window)

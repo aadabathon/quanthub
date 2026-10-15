@@ -21,6 +21,7 @@ from quant_hub.gui.pages.options_lab.pricer import PricerTab
 from quant_hub.gui.pages.options_lab.strategy import StrategyTab
 from quant_hub.gui.pages.options_lab.underlying import UnderlyingCard
 from quant_hub.services.market_service import MarketService
+from quant_hub.services.option_chains import ChainService
 from quant_hub.storage.state_store import ViewStateStore
 
 _STATE_KEY = "options_lab"
@@ -28,7 +29,7 @@ _TABS = ("Pricer", "Strategy", "Monte Carlo")
 
 
 class OptionsLabPage(ScrollPage):
-    def __init__(self, market_service: MarketService, tasks: TaskRunner,
+    def __init__(self, market_service: MarketService, chains: ChainService, tasks: TaskRunner,
                  state_store: ViewStateStore) -> None:
         super().__init__()
         self._state_store = state_store
@@ -41,13 +42,14 @@ class OptionsLabPage(ScrollPage):
             "European options on one underlying: pricing and implied vol, multi-leg "
             "strategies, and a Monte Carlo check")
         self.body.addWidget(self._header)
-        self._underlying = UnderlyingCard(market_service, tasks, saved.get("market", {}),
-                                          self._report)
+        self._underlying = UnderlyingCard(market_service, chains, tasks,
+                                          saved.get("market", {}), self._report)
         self.body.addWidget(self._underlying)
 
-        self._pricer = PricerTab(self._underlying.market, saved.get("pricer", {}), self._report)
+        self._pricer = PricerTab(self._underlying.market, saved.get("pricer", {}), self._report,
+                                 self._underlying.surface)
         self._strategy = StrategyTab(self._underlying.market, saved.get("strategy", {}),
-                                     self._report)
+                                     self._report, self._underlying.surface)
         self._monte_carlo = MonteCarloTab(self._pricer.inputs, tasks,
                                           saved.get("monte_carlo", {}), self._report)
         self._stack = PageStack()

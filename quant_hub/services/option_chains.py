@@ -18,6 +18,9 @@ from __future__ import annotations
 import logging
 
 from quant_hub.data.options import ChainRequest, OptionChain, OptionChainSource
+from quant_hub.models.carry import implied_carry
+from quant_hub.models.market_surface import MarketSurface
+from quant_hub.models.vol_surface import fit_surface
 from quant_hub.storage.chain_store import ChainStore
 
 _logger = logging.getLogger(__name__)
@@ -63,3 +66,10 @@ class ChainService:
         snapshot = self._store.save(chain)
         _logger.info("%s chain from %s saved as snapshot #%d", symbol, source, snapshot)
         return chain, snapshot
+
+
+def load_market_surface(chains: ChainService, symbol: str) -> tuple[MarketSurface, int]:
+    """The newest saved chain for ``symbol`` as a market surface (C4): implied
+    carry, then the default independent SVI fit (D35). Worker thread."""
+    chain, snapshot = chains.get_chain(symbol, STORED)
+    return MarketSurface(fit_surface(implied_carry(chain).chain)), snapshot
