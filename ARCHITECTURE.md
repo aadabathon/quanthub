@@ -136,9 +136,12 @@ quant_hub/
 │   ├── market_surface.py      MarketSurface: a fit → (σ, r, q) at any (K, T),
 │   │                          extrapolation flagged; apply_surface fills
 │   │                          strategy legs (sticky strike) (C4)
-│   └── kalman.py              linear Gaussian state space: Joseph-form filter,
-│                              RTS smoother, simulation; local level / local
-│                              linear trend MLE (zero-variance reporting)
+│   ├── kalman.py              linear Gaussian state space: Joseph-form filter,
+│   │                          RTS smoother, simulation; local level / local
+│   │                          linear trend MLE (zero-variance reporting)
+│   └── markov.py              Gaussian HMM on returns: scaled filter, Kim
+│                              smoother, Viterbi, multi-start EM with a
+│                              variance floor, BIC over K, forecasts (M1)
 ├── services/
 │   ├── market_service.py      source registry + get_history/get_quote facade
 │   ├── underlying.py          any source → spot (quote, else last close) +

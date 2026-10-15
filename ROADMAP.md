@@ -262,7 +262,9 @@ checked; until then, users without IBKR keep the synthetic chain.
 
 ### M — Markov regimes (v0.7)
 
-- **M1. `models/markov.py`**
+- ~~**M1. `models/markov.py`**~~ Done 2026-10-15. As planned below, plus a
+  closed-form clustering check (squared returns decay as λʰ) and regime
+  forecasts α_n Pʰ.
   - Gaussian hidden Markov model on daily log returns: regime s,
     r | s ~ N(μₛ, σₛ²).
   - Algorithms:

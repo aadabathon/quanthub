@@ -10,7 +10,7 @@ reach the Volatility Lab and are saved; the joint SSVI fit is an option
 ## Status
 
 v0.5 (the Qt UI). Brokerage connectivity is live-verified against TWS 7496 (2026-08-14;
-see below). `py -3.12 -m pytest -q` → **737 passed** in about 85 s, with no
+see below). `py -3.12 -m pytest -q` → **777 passed** in about 95 s, with no
 network or display needed (the GUI smoke tests run offscreen). The real 3D
 draw runs in a fresh subprocess and skips, with the reason, when offscreen
 Chromium can't compile WebGL shaders; that happens on some runs.
@@ -394,7 +394,39 @@ pytest. Environment:
      - Tests: `tests/test_market_surface.py` (14), template symmetry (5),
        and 3 Options Lab smoke tests (surface pricing, re-centring at
        another price, the no-saved-chain hint).
-   - The option-chain adapter (C) is complete. Next: M, Markov regimes,
-     after owner approval.
+   - The option-chain adapter (C) is complete.
+   - ~~M1: Gaussian hidden Markov model~~ (2026-10-15), `models/markov.py`.
+     The derivation was reviewed before the code.
+     - The filter uses log-shifted emissions, with a log-space redo for a
+       day whose best regime is impossible. The backward smoother is
+       Kim's, and Viterbi runs in logs.
+     - EM has closed-form M-steps and is monotone by Gibbs' inequality.
+       - π is fixed at uniform.
+       - A variance floor (1% of the sample variance) keeps the
+         likelihood bounded. Without it, a regime collapses onto stale
+         zero returns (σ ≈ 1e-150).
+       - Starts: volatility quantiles plus 4 seeded random starts, short
+         runs of 25 iterations, at most 500 iterations.
+     - States are sorted by σ. BIC picks K from 1–3. Also: the stationary
+       distribution, expected durations, and regime forecasts with
+       predictive moments.
+     - A fit that runs out of iterations usually means K is too big. On
+       i.i.d. returns, 3 regimes were still crawling after 2,000
+       iterations.
+     - Synthetic, against the truth:
+       - every fit beats the true parameters' log L (by 1–10 nats)
+       - σ within 2.2 SE, p_ii within 3.6 SE, μ within 4.1 SE (14
+         seeded fits)
+       - BIC picks the true K, including 1 on i.i.d. returns
+       - calibration error under 0.03 (a transposed P scores 0.27)
+     - Real SPY (1,296 days, 2021–2026; sweep 1.5 s): BIC prefers 3
+       regimes, narrowly over 2. Vols are 9 / 17 / 33% annualized, on
+       45 / 44 / 10% of days. The April 2025 selloff is in the 33%
+       regime.
+     - Tests: `tests/test_markov.py` (40, about 20 s). The filter,
+       smoother and Viterbi are checked against enumeration of all Kⁿ
+       paths. Plus the closed forms (occupancy, stay lengths, λʰ
+       clustering) and forecasts.
+   - Next: M2, the Markov Lab page, after approval.
 6. After the roadmap: the DCF port (SEC EDGAR + SQLite), planned in its own
    session.
