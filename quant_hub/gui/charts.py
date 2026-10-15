@@ -35,6 +35,8 @@ from quant_hub.gui.theme import PALETTE, SPACE_XS, font_family, FONT_UI
 
 _DAY_S = 86_400
 _TICK_FONT_PX = 11
+_SHADE_ALPHA = 0.32   # a background tint's opacity at value 1 (Shade)
+_STACK_ALPHA = 0.5    # fill opacity of a stacked panel's areas
 
 
 # ----------------------------------------------------------------- helpers
@@ -483,6 +485,17 @@ class Band:
 
 
 @dataclass(frozen=True)
+class Shade:
+    """A background tint in a ``Panel``: each date's column is ``color`` at
+    an opacity proportional to its value in ``values`` (0–1), such as a
+    regime's probability. Tints of several shades blend. Not in the
+    readout: another panel carries the values."""
+
+    values: np.ndarray
+    color: str
+
+
+@dataclass(frozen=True)
 class Panel:
     """One row of a ``StackedTimeSeries``: a title, its lines, the axis
     format, a relative height, and optional horizontal reference lines
@@ -490,7 +503,12 @@ class Panel:
 
     ``y_range`` fixes the value axis instead of fitting everything drawn,
     for series whose early values would flatten the rest (a filter's
-    diffuse start)."""
+    diffuse start).
+
+    ``stacked`` draws the series as stacked areas, each on top of the ones
+    before (shares that sum to one, such as regime probabilities), while
+    the readout still shows each series' own value. ``shades`` tint the
+    background behind everything."""
 
     title: str
     series: Sequence[Series]
@@ -500,6 +518,8 @@ class Panel:
     references: Sequence[tuple[str, float]] = ()
     bands: Sequence[Band] = ()
     y_range: tuple[float, float] | None = None
+    stacked: bool = False
+    shades: Sequence[Shade] = ()
 
 
 def _days(dte: float) -> str:
@@ -565,13 +585,16 @@ class StackedTimeSeries(QWidget):
             if panel.zero_line:
                 plot.addItem(pg.InfiniteLine(pos=0.0, angle=0, pen=pg.mkPen(PALETTE.border_strong)),
                              ignoreBounds=True)
+            self._add_shades(plot, panel)
             for band in panel.bands:
                 lower = pg.PlotCurveItem(self._x, band.lower, pen=pg.mkPen(None))
                 upper = pg.PlotCurveItem(self._x, band.upper, pen=pg.mkPen(None))
                 plot.addItem(lower)
                 plot.addItem(upper)
                 plot.addItem(pg.FillBetweenItem(lower, upper, brush=_color(band.color, 0.18)))
-            for series in panel.series:
+            if panel.stacked:
+                self._add_stack(plot, panel)
+            for series in () if panel.stacked else panel.series:
                 pen = pg.mkPen(series.color, width=series.width,
                                style=Qt.DashLine if series.dashed else Qt.SolidLine)
                 curve = pg.PlotDataItem(self._x, series.values, pen=pen)
@@ -603,6 +626,55 @@ class StackedTimeSeries(QWidget):
         if self._plots:
             self._plots[0].setXRange(self._x[0], self._x[-1], padding=0.01)
         self._show_readout(len(self._x) - 1)
+
+    def _add_shades(self, plot: pg.PlotItem, panel: Panel) -> None:
+        """One image with a pixel per calendar day, each holding its latest
+        date's tint, so weekends and holidays don't shift columns and no
+        seams show between them. The shades composite in order ("over"),
+        each at ``_SHADE_ALPHA`` × its value. The image is as tall as the
+        panel's data and then some: the view clips it, and it doesn't count
+        toward the autorange."""
+        if not panel.shades or not len(self._x):
+            return
+        x = self._x
+        days = int(round((x[-1] - x[0]) / _DAY_S)) + 1
+        grid = x[0] + np.arange(days) * _DAY_S
+        latest = np.clip(np.searchsorted(x, grid + _DAY_S / 2, side="right") - 1, 0, len(x) - 1)
+        premultiplied, alpha = np.zeros((days, 3)), np.zeros(days)
+        for shade in panel.shades:
+            values = np.clip(np.nan_to_num(np.asarray(shade.values, dtype=float)), 0, 1)
+            a = (_SHADE_ALPHA * values[latest])[:, None]
+            rgb = np.array(_color(shade.color).getRgbF()[:3])
+            premultiplied = rgb * a + premultiplied * (1 - a)
+            alpha = a[:, 0] + alpha * (1 - a[:, 0])
+        rgba = np.zeros((days, 1, 4), dtype=np.ubyte)
+        rgba[:, 0, :3] = np.round(255 * np.divide(
+            premultiplied, alpha[:, None], out=np.zeros_like(premultiplied),
+            where=alpha[:, None] > 0))
+        rgba[:, 0, 3] = np.round(255 * alpha)
+        if panel.y_range is not None:
+            low, high = panel.y_range
+        else:
+            values = np.concatenate([np.asarray(s.values, dtype=float) for s in panel.series])
+            values = values[np.isfinite(values)]
+            low, high = (float(values.min()), float(values.max())) if len(values) else (0.0, 1.0)
+        span = max(high - low, abs(high) * 1e-6, 1e-12)
+        image = pg.ImageItem(rgba, levels=(0, 255))   # image[x, y]: one row, a column a day
+        image.setRect(QRectF(grid[0] - _DAY_S / 2, low - span, days * _DAY_S,
+                             high - low + 2 * span))
+        plot.addItem(image, ignoreBounds=True)
+
+    def _add_stack(self, plot: pg.PlotItem, panel: Panel) -> None:
+        base = np.zeros(len(self._x))
+        for series in panel.series:
+            top = base + np.nan_to_num(np.asarray(series.values, dtype=float))
+            lower = pg.PlotCurveItem(self._x, base, pen=pg.mkPen(None))
+            upper = pg.PlotCurveItem(self._x, top, pen=pg.mkPen(series.color, width=1))
+            plot.addItem(lower)
+            plot.addItem(upper)
+            fill = _color(series.color, _STACK_ALPHA)
+            plot.addItem(pg.FillBetweenItem(lower, upper, brush=fill))
+            base = top
 
     def clear(self) -> None:
         self._canvas.ci.clear()

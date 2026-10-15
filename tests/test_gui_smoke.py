@@ -230,6 +230,82 @@ def test_kalman_invalid_noise_is_flagged(qt_app):
     assert "must be positive" in lab._header._status.full_text()
 
 
+# ---------------------------------------------------------------- Markov Lab
+def _markov_lab(app, window, **state):
+    """The Markov Lab with small inputs saved before its first fit (fits are
+    the slow part: the default 2,520-day BIC sweep takes ~4 s)."""
+    window._core.state_store.save("markov_lab", {
+        "days": "400", "count": "2 regimes", "world": "Two regimes", **state})
+    lab = window.show_page("Markov Lab")
+    wait_for(app, lambda: lab._run_result is not None, timeout_s=30)
+    return lab
+
+
+def test_markov_lab_synthetic_fit_shows_truth_and_views(qt_app):
+    app, window = qt_app
+    lab = _markov_lab(app, window)
+    run = lab._run_result
+    assert run.fit.model.n_regimes == 2 and len(run.returns) == 400
+    table = lab._stats[2]
+    assert table.isVisibleTo(lab) and table._truth_header.isVisibleTo(lab)
+    assert table.value_text("vol1").endswith("%")
+    assert table.value_text("bic1") == "not fitted"           # one count, no sweep
+    panels = lab._chart._panels
+    assert [p.title.split(" ·")[0] for p in panels] == [
+        "Price", "Filtered probabilities", "True regime"]
+    assert panels[1].stacked and len(panels[0].shades) == 1   # calm isn't tinted
+    np.testing.assert_allclose(panels[1].series[1].values, run.filtered.filtered[:, 1])
+    # The hindsight views swap the probabilities, never the fit.
+    lab._on_view("Smoothed")
+    np.testing.assert_allclose(lab._chart._panels[1].series[1].values, run.smoothed[:, 1])
+    lab._on_view("Viterbi")
+    assert set(np.unique(lab._chart._panels[1].series[0].values)) <= {0.0, 1.0}
+    assert lab._run_result is run
+    assert lab._transitions.rowCount() == 2 and "(" in lab._transitions.item(0, 1).text()
+    assert lab._odds.rowCount() == 2
+    # The chart shows a trailing window; the fit used every return.
+    lab._on_window("1Y")
+    assert len(lab._chart._x) == 252
+
+
+def test_markov_lab_auto_on_market_history(qt_app):
+    # The synthetic source's history is GBM: no regimes, so BIC keeps one.
+    app, window = qt_app
+    lab = _markov_lab(app, window, mode="Market history", count="Auto (BIC)",
+                      source="synthetic", symbol="SPY", lookback="600")
+    run = lab._run_result
+    k = run.fit.model.n_regimes
+    assert [f.model.n_regimes for f in run.fits] == [1, 2, 3] and run.truth is None
+    table = lab._stats[k]
+    assert table.isVisibleTo(lab) and not table._truth_header.isVisibleTo(lab)
+    assert "lowest" in table.value_text(f"bic{k}")
+    assert [p.title.split(" ·")[0] for p in lab._chart._panels] == [
+        "Price", "Filtered probabilities"]
+    assert "SPY" in lab._chart_card.subtitle.full_text()
+    assert lab._transitions.rowCount() == k
+
+
+def test_markov_lab_notes(qt_app):
+    from dataclasses import replace
+
+    from quant_hub.models.markov import fit_hmm
+
+    app, window = qt_app
+    # Two regimes fitted to the three-regime world: no TRUE column to line up.
+    lab = _markov_lab(app, window, world="Three regimes")
+    assert lab._finding.isVisibleTo(lab) and "this world has 3" in lab._finding._text.text()
+    assert not lab._stats[2]._truth_header.isVisibleTo(lab)
+    assert not lab._warning.isVisibleTo(lab)
+    # EM stopped short, and a regime on the variance floor.
+    run = lab._run_result
+    stopped = replace(fit_hmm(run.returns, 2, max_iterations=2), at_floor=(0,))
+    assert not stopped.converged
+    lab._on_done(replace(run, fit=stopped, fits=(stopped,)))
+    assert lab._warning.isVisibleTo(lab) and "without converging" in lab._warning._text.text()
+    assert "variance floor" in lab._finding._text.text()
+    assert lab._stats[2].value_text("iterations").endswith("(stopped)")
+
+
 # ------------------------------------------------------------------- Markets
 
 def test_markets_synthetic_quotes_add_and_remove(qt_app):
