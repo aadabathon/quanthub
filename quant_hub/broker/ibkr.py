@@ -36,7 +36,8 @@ import logging
 import math
 import threading
 import time
-from datetime import datetime, timedelta
+from collections.abc import Sequence
+from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from quant_hub.broker.base import ConnectionEvent, ConnectionState
@@ -49,6 +50,9 @@ from quant_hub.broker.types import (
     NoHistoricalDataError,
     NoMarketDataError,
     NotConnectedError,
+    OptionContractSpec,
+    OptionParams,
+    OptionQuoteResult,
     PacingViolationError,
     QuoteResult,
     RequestTimeoutError,
@@ -80,7 +84,10 @@ _INFO_CODES = {2104, 2106, 2107, 2108, 2119, 2158}
 # the bug that broke the watchlist. 10089/10090 are recorded the same way;
 # if no ticks ever follow (observed for AAPL under 10089), the request
 # times out into NoMarketDataError carrying the advisory text.
-_ADVISORY_CODES = {10167, 10089, 10090}
+# 10091 ("Part of requested market data requires additional subscription
+# for API ... Delayed market data") arrives with SPY option quotes whose
+# delayed ticks all follow (C0 spike, 2026-10-15).
+_ADVISORY_CODES = {10167, 10089, 10090, 10091}
 # 300 = "can't find EId": our own cancel of an already-dead stream.
 _IGNORABLE_CODES = {300}
 
@@ -103,6 +110,17 @@ _MDT_TO_MODE = {
     3: MarketDataMode.DELAYED,
     4: MarketDataMode.DELAYED_FROZEN,
 }
+# Option quotes need both sides: 1/2 = BID/ASK, 66/67 = DELAYED_BID/ASK. A
+# bid of 0 or -1 is TWS's "no bid", still an answer, so option requests
+# record these ticks whatever their value.
+_OPTION_BID_TICKS = (1, 66)
+_OPTION_ASK_TICKS = (2, 67)
+# tickOptionComputation types carrying the broker's MODEL values
+# (13 live, 83 delayed); 10-12 / 80-82 are bid/ask/last-implied.
+_OPTION_MODEL_TICKS = (13, 83)
+# Option quote lines per batch: TWS usually allows 100 concurrent market
+# data lines, and the account's other streams need room too.
+OPTION_QUOTE_BATCH = 50
 # After the first usable price tick, wait briefly for the rest of the same
 # burst (close/open/timestamp/mode arrive within milliseconds — observed
 # live) before reading the buffers.
@@ -160,6 +178,10 @@ class _Pending:
         self.notices: list[str] = []
         self.market_data_type: int | None = None
         self.trade_time: float | None = None  # epoch seconds, from tickString
+        self.option = False  # an option quote: record bid/ask ticks of any value
+        self.model_iv: float | None = None
+        self.contracts: list[Any] = []  # ibapi Contract objects from contractDetails
+        self.option_params: list[OptionParams] = []
 
 
 if _HAVE_IBAPI:
@@ -202,6 +224,29 @@ if _HAVE_IBAPI:
             self._owner._on_market_data_type(reqId, marketDataType)
 
         def tickSnapshotEnd(self, reqId: int) -> None:
+            self._owner._on_request_done(reqId)
+
+        def tickOptionComputation(self, reqId: int, tickType: int, *args: Any) -> None:
+            # 9.81 sends (impliedVol, delta, optPrice, pvDividend, gamma, vega,
+            # theta, undPrice); newer APIs put tickAttrib first.
+            values = args[1:] if len(args) == 9 else args
+            self._owner._on_option_computation(reqId, tickType, values[0] if values else None)
+
+        # -- contracts and option parameters --------------------------------
+        def contractDetails(self, reqId: int, contractDetails: Any) -> None:
+            self._owner._on_contract_details(reqId, contractDetails)
+
+        def contractDetailsEnd(self, reqId: int) -> None:
+            self._owner._on_request_done(reqId)
+
+        def securityDefinitionOptionParameter(self, reqId: int, exchange: str,
+                                              underlyingConId: int, tradingClass: str,
+                                              multiplier: str, expirations: Any,
+                                              strikes: Any) -> None:
+            self._owner._on_option_params(reqId, exchange, tradingClass, multiplier,
+                                          expirations, strikes)
+
+        def securityDefinitionOptionParameterEnd(self, reqId: int) -> None:
             self._owner._on_request_done(reqId)
 
 
@@ -384,6 +429,107 @@ class IBKRBroker:
             with self._lock:
                 self._pending.pop(req_id, None)
 
+    # ------------------------------------------------------------ option chains
+    def get_contract_id(self, spec: ContractSpec) -> int:
+        """IBKR's contract id for an instrument (needed to list its options)."""
+        req_id, pending = self._register_request()
+        self._app.reqContractDetails(req_id, self._to_contract(spec))
+        self._await(req_id, pending, cancel=lambda _req_id: None)
+        if not pending.contracts:
+            raise InvalidContractError(f"IBKR knows no {spec.sec_type} {spec.symbol}")
+        return int(pending.contracts[0].conId)
+
+    def get_option_strikes(self, symbol: str, trading_class: str,
+                           expiries: Sequence[date]) -> dict[date, tuple[float, ...]]:
+        """The strikes actually listed for each expiry of one trading class.
+
+        ``get_option_params`` gives the union over all expiries, but far-dated
+        and quarterly expiries list far fewer strikes (C1, live 2026-10-15).
+        Contract details with the strike and right left open return every
+        listed contract of an expiry. That's about 4–5 s per expiry, so all
+        requests go out together and are awaited together."""
+        slots: list[tuple[int, _Pending, date]] = []
+        try:
+            for expiry in expiries:
+                req_id, pending = self._register_request()
+                contract = Contract()
+                contract.symbol = symbol.upper().strip()
+                contract.secType = "OPT"
+                contract.exchange = "SMART"
+                contract.currency = "USD"
+                contract.lastTradeDateOrContractMonth = expiry.strftime("%Y%m%d")
+                contract.tradingClass = trading_class
+                slots.append((req_id, pending, expiry))
+                self._app.reqContractDetails(req_id, contract)
+            deadline = time.monotonic() + self._config.request_timeout_s
+            for _, pending, expiry in slots:
+                if not pending.done.wait(timeout=max(0.0, deadline - time.monotonic())):
+                    raise RequestTimeoutError(
+                        f"IBKR listed no {symbol} {expiry} strikes within "
+                        f"{self._config.request_timeout_s:.0f}s")
+                if pending.error is not None:
+                    raise pending.error
+        finally:
+            with self._lock:
+                for req_id, _, _ in slots:
+                    self._pending.pop(req_id, None)
+        return {expiry: tuple(sorted({float(c.strike) for c in pending.contracts}))
+                for _, pending, expiry in slots}
+
+    def get_option_params(self, spec: ContractSpec) -> list[OptionParams]:
+        """Every exchange/trading class listing options on ``spec``, with its
+        expiries and (union of) strikes (``reqSecDefOptParams``)."""
+        con_id = self.get_contract_id(spec)
+        req_id, pending = self._register_request()
+        self._app.reqSecDefOptParams(req_id, spec.symbol.upper().strip(), "", spec.sec_type,
+                                     con_id)
+        self._await(req_id, pending, cancel=lambda _req_id: None)
+        return list(pending.option_params)
+
+    def get_option_quotes(self, contracts: Sequence[OptionContractSpec],
+                          batch_size: int = OPTION_QUOTE_BATCH) -> list[OptionQuoteResult | None]:
+        """Bid and ask for each contract, in order; ``None`` where no usable
+        quote came (an unlisted strike, no ask, no entitlement).
+
+        Batches of ``batch_size`` stay under TWS's market-data line limit.
+        Each batch *streams*: never a regulatory snapshot, which IBKR bills per
+        request (D33). It waits until every contract has both sides or
+        ``quote_timeout_s`` passes, lets the model-IV ticks land, then cancels
+        every line. Entitlement advisories don't fail a contract (D22).
+        """
+        if batch_size < 1:
+            raise ValueError("batch_size must be >= 1")
+        results: list[OptionQuoteResult | None] = []
+        for start in range(0, len(contracts), batch_size):
+            results.extend(self._quote_option_batch(contracts[start:start + batch_size]))
+        return results
+
+    def _quote_option_batch(self, batch: Sequence[OptionContractSpec]
+                            ) -> list[OptionQuoteResult | None]:
+        slots: list[tuple[int, _Pending, OptionContractSpec]] = []
+        try:
+            for spec in batch:
+                req_id, pending = self._register_request()
+                pending.option = True
+                slots.append((req_id, pending, spec))
+                self._app.reqMktData(req_id, self._to_option_contract(spec), "", False, False,
+                                     [])
+            deadline = time.monotonic() + self._config.quote_timeout_s
+            while time.monotonic() < deadline and not all(
+                    pending.error is not None or _has_both_sides(pending)
+                    for _, pending, _ in slots):
+                time.sleep(0.05)
+            time.sleep(_QUOTE_BURST_GRACE_S)  # model-IV ticks trail the prices
+        finally:
+            for req_id, _, _ in slots:
+                try:
+                    self._app.cancelMktData(req_id)
+                except Exception:
+                    _logger.debug("cancelMktData failed for %d", req_id, exc_info=True)
+                with self._lock:
+                    self._pending.pop(req_id, None)
+        return [_option_result(spec, pending) for _, pending, spec in slots]
+
     # ---------------------------------------------------------- request plumbing
     def _register_request(self) -> tuple[int, _Pending]:
         if self.state is not ConnectionState.CONNECTED:
@@ -428,6 +574,20 @@ class IBKRBroker:
         contract.secType = spec.sec_type
         contract.exchange = spec.exchange
         contract.currency = spec.currency
+        return contract
+
+    @staticmethod
+    def _to_option_contract(spec: OptionContractSpec) -> "Contract":
+        contract = Contract()
+        contract.symbol = spec.symbol.upper().strip()
+        contract.secType = "OPT"
+        contract.exchange = spec.exchange
+        contract.currency = spec.currency
+        contract.lastTradeDateOrContractMonth = spec.expiry.strftime("%Y%m%d")
+        contract.strike = float(spec.strike)
+        contract.right = spec.right
+        contract.multiplier = spec.multiplier
+        contract.tradingClass = spec.trading_class
         return contract
 
     # ------------------------------------------- callbacks (network thread!)
@@ -509,6 +669,10 @@ class IBKRBroker:
     def _on_tick_price(self, req_id: int, tick_type: int, price: float) -> None:
         with self._lock:
             pending = self._pending.get(req_id)
+        if pending is not None and pending.option:
+            if tick_type in _OPTION_BID_TICKS or tick_type in _OPTION_ASK_TICKS:
+                pending.ticks[tick_type] = float(price)
+            return
         if pending is not None and price > 0:
             pending.ticks[tick_type] = float(price)
             if tick_type in _PRICE_TICK_PRIORITY:
@@ -531,8 +695,66 @@ class IBKRBroker:
         if pending is not None:
             pending.market_data_type = market_data_type
 
+    def _on_option_computation(self, req_id: int, tick_type: int, iv: Any) -> None:
+        if tick_type not in _OPTION_MODEL_TICKS:
+            return
+        with self._lock:
+            pending = self._pending.get(req_id)
+        # TWS sends -1 or a huge sentinel when it has no model value.
+        if pending is not None and isinstance(iv, (int, float)) and 0 < iv < 10:
+            pending.model_iv = float(iv)
+
+    def _on_contract_details(self, req_id: int, details: Any) -> None:
+        with self._lock:
+            pending = self._pending.get(req_id)
+        if pending is not None:
+            pending.contracts.append(details.contract)
+
+    def _on_option_params(self, req_id: int, exchange: str, trading_class: str,
+                          multiplier: str, expirations: Any, strikes: Any) -> None:
+        with self._lock:
+            pending = self._pending.get(req_id)
+        if pending is None:
+            return
+        try:
+            pending.option_params.append(OptionParams(
+                exchange=str(exchange), trading_class=str(trading_class),
+                multiplier=str(multiplier),
+                expiries=tuple(sorted(datetime.strptime(e, "%Y%m%d").date()
+                                      for e in expirations)),
+                strikes=tuple(sorted(float(k) for k in strikes))))
+        except (ValueError, TypeError) as exc:
+            pending.error = BrokerError(f"unparseable option parameters from IBKR: {exc}")
+            pending.done.set()
+
     def _on_request_done(self, req_id: int) -> None:
         with self._lock:
             pending = self._pending.get(req_id)
         if pending is not None:
             pending.done.set()
+
+
+def _has_both_sides(pending: _Pending) -> bool:
+    ticks = pending.ticks
+    return (any(t in ticks for t in _OPTION_BID_TICKS)
+            and any(t in ticks for t in _OPTION_ASK_TICKS))
+
+
+def _option_result(spec: OptionContractSpec, pending: _Pending) -> OptionQuoteResult | None:
+    """A usable quote needs an ask; a missing or non-positive bid is "no bid"."""
+    if pending.error is not None:
+        _logger.debug("no quote for %s %s %g%s: %s", spec.symbol, spec.expiry, spec.strike,
+                      spec.right, pending.error)
+        return None
+    ticks = pending.ticks
+    ask = next((ticks[t] for t in _OPTION_ASK_TICKS if t in ticks), None)
+    if ask is None or ask <= 0:
+        return None
+    bid = next((ticks[t] for t in _OPTION_BID_TICKS if t in ticks), 0.0)
+    bid = max(bid, 0.0)
+    if bid > ask:
+        return None  # crossed: not a usable market
+    return OptionQuoteResult(
+        contract=spec, bid=bid, ask=ask,
+        mode=_MDT_TO_MODE.get(pending.market_data_type, MarketDataMode.UNKNOWN),
+        model_iv=pending.model_iv)

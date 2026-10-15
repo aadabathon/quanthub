@@ -216,8 +216,8 @@ def chain_implied_vols(chain: OptionChain) -> ChainIVs:
 
     def solve(price: float, q: OptionQuote) -> float:
         try:
-            return implied_volatility(price, chain.spot, q.strike, q.dte, chain.rate,
-                                      q.option_type, chain.dividend_yield)
+            return implied_volatility(price, chain.spot, q.strike, q.dte, chain.rate_at(q.dte),
+                                      q.option_type, chain.dividend_yield_at(q.dte))
         except ValueError:
             return math.nan
 
@@ -231,8 +231,9 @@ def chain_implied_vols(chain: OptionChain) -> ChainIVs:
         if math.isnan(iv):
             out_of_bounds += 1
             continue
-        raw_vega = 100.0 * float(greeks_array(chain.spot, q.strike, q.dte, chain.rate, iv,
-                                              q.option_type, chain.dividend_yield).vega)
+        raw_vega = 100.0 * float(greeks_array(chain.spot, q.strike, q.dte, chain.rate_at(q.dte),
+                                              iv, q.option_type,
+                                              chain.dividend_yield_at(q.dte)).vega)
         if raw_vega <= 0:
             out_of_bounds += 1
             continue

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 
 from quant_hub.data.types import MarketDataMode
 
@@ -20,6 +20,48 @@ class ContractSpec:
     sec_type: str = "STK"
     exchange: str = "SMART"
     currency: str = "USD"
+
+
+@dataclass(frozen=True)
+class OptionContractSpec:
+    """One listed option on ``symbol`` (the underlying). ``trading_class``
+    and ``multiplier`` come from the broker's option parameters; SPX lists
+    both SPX (monthly, AM-settled) and SPXW (weekly, PM-settled) classes."""
+
+    symbol: str
+    expiry: date
+    strike: float
+    right: str  # "C" or "P"
+    trading_class: str = ""
+    multiplier: str = "100"
+    exchange: str = "SMART"
+    currency: str = "USD"
+
+
+@dataclass(frozen=True)
+class OptionParams:
+    """What is listed for one exchange and trading class.
+
+    ``strikes`` is the union over all of its expiries, so a given strike
+    need not exist for every expiry."""
+
+    exchange: str
+    trading_class: str
+    multiplier: str
+    expiries: tuple[date, ...]
+    strikes: tuple[float, ...]
+
+
+@dataclass(frozen=True)
+class OptionQuoteResult:
+    """A quoted option: bid (0 = no bid) and ask, provenance, and the
+    broker's own model implied vol when it sends one."""
+
+    contract: OptionContractSpec
+    bid: float
+    ask: float
+    mode: MarketDataMode
+    model_iv: float | None = None
 
 
 @dataclass(frozen=True)
