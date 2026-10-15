@@ -584,6 +584,56 @@ def test_surface_figure_is_plain_json():
     assert len(text) < 400_000
 
 
+def test_vol_lab_market_chain_from_stored_snapshot(qt_app):
+    # Market mode end to end without a broker: a saved snapshot (here a
+    # synthetic chain with parity pairs and provider IVs) through "stored".
+    from dataclasses import replace
+
+    from quant_hub.models.svi import SSVISurface
+    from quant_hub.models.vol_surface import SyntheticChainSpec, synthetic_chain
+
+    app, window = qt_app
+    truth = SSVISurface(v0=0.25**2, v_inf=0.20**2, kappa=2.0, rho=-0.6, eta=1.2)
+    chain = synthetic_chain(truth, SyntheticChainSpec(parity_pairs=5, dividend_yield=0.02))
+    chain = replace(chain, quotes=tuple(replace(q, reference_iv=0.2) for q in chain.quotes))
+    snapshot = window._core.chain_store.save(chain)
+
+    lab = _fitted_vol_lab(app, window)
+    lab._on_mode("Market chain")
+    assert lab._groups["Market chain"].isVisibleTo(lab)
+    assert not lab._groups["Synthetic"].isVisibleTo(lab)
+    lab._chain_source.select.set_current("stored")
+    lab._fields["chain_symbol"].set_text("SYNTH")
+    first = lab._fit
+    lab._run()
+    wait_for(app, lambda: lab._fit is not first)
+    assert lab._truth is None and lab._snapshot == snapshot
+    assert lab._table.horizontalHeaderItem(2).text() == "IBKR"
+    assert lab._table.item(0, 2).text() == "20.00%"
+    assert lab._carry_card.isVisibleTo(lab) and lab._carry_table.rowCount() == 6
+    assert "snapshot #" in lab._header._status.full_text()
+    assert lab._checks.value_text("itm") == "30"            # 6 expiries x 5 ITM sides
+    assert lab._mesh is not None and lab._mesh.true_iv is None
+
+    lab._on_mode("Synthetic")
+    second = lab._fit
+    lab._run()
+    wait_for(app, lambda: lab._fit is not second)
+    assert lab._table.horizontalHeaderItem(2).text() == "True"
+    assert not lab._carry_card.isVisibleTo(lab)
+
+
+def test_vol_lab_stored_without_snapshot_says_so(qt_app):
+    app, window = qt_app
+    lab = _fitted_vol_lab(app, window)
+    lab._on_mode("Market chain")
+    lab._chain_source.select.set_current("stored")
+    lab._fields["chain_symbol"].set_text("QQQ")
+    lab._run()
+    wait_for(app, lambda: "no saved QQQ chain" in lab._header._status.full_text())
+    assert all(w.isEnabled() for w in lab._run_buttons())
+
+
 def test_vol_lab_rejects_bad_expiries(qt_app):
     app, window = qt_app
     lab = _fitted_vol_lab(app, window)

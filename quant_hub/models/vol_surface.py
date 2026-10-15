@@ -149,6 +149,7 @@ class ChainIVs:
     usable: np.ndarray
     excluded_no_bid: int
     excluded_out_of_bounds: int
+    excluded_in_the_money: int = 0
 
 
 @dataclass(frozen=True)
@@ -217,12 +218,19 @@ def synthetic_chain(surface: SSVISurface, spec: SyntheticChainSpec,
     )
 
 
-def chain_implied_vols(chain: OptionChain) -> ChainIVs:
-    """Invert every quote's mid (and bid/ask, for display) to implied vol."""
+def chain_implied_vols(chain: OptionChain, otm_only: bool = True) -> ChainIVs:
+    """Invert every quote's mid (and bid/ask, for display) to implied vol.
+
+    ``otm_only`` keeps only out-of-the-money quotes (calls at or above the
+    expiry's forward, puts below), the standard smile input. In-the-money
+    quotes add nothing a parity pair's OTM side doesn't already give, and
+    for American options (SPY) they carry early-exercise premium. Real
+    chains include them only for ``models/carry.py``.
+    """
     n = len(chain.quotes)
     out = {name: np.full(n, np.nan) for name in ("iv", "iv_bid", "iv_ask", "dw")}
     usable = np.zeros(n, dtype=bool)
-    no_bid = out_of_bounds = 0
+    no_bid = out_of_bounds = in_the_money = 0
     dte = np.array([q.dte for q in chain.quotes])
     strike = np.array([q.strike for q in chain.quotes])
     forwards = np.array([chain.forward(q.dte) for q in chain.quotes])
@@ -235,6 +243,9 @@ def chain_implied_vols(chain: OptionChain) -> ChainIVs:
             return math.nan
 
     for i, q in enumerate(chain.quotes):
+        if otm_only and (q.option_type == "call") != (q.strike >= forwards[i]):
+            in_the_money += 1
+            continue
         out["iv_ask"][i] = solve(q.ask, q)
         if q.bid <= 0:
             no_bid += 1
@@ -260,12 +271,13 @@ def chain_implied_vols(chain: OptionChain) -> ChainIVs:
         mid=np.array([q.mid for q in chain.quotes]), iv=out["iv"], iv_bid=out["iv_bid"],
         iv_ask=out["iv_ask"], variance_uncertainty=out["dw"], usable=usable,
         excluded_no_bid=no_bid, excluded_out_of_bounds=out_of_bounds,
+        excluded_in_the_money=in_the_money,
     )
 
 
-def fit_surface(chain: OptionChain) -> SurfaceFit:
+def fit_surface(chain: OptionChain, otm_only: bool = True) -> SurfaceFit:
     """Fit raw SVI independently per expiry, then run the arbitrage checks."""
-    ivs = chain_implied_vols(chain)
+    ivs = chain_implied_vols(chain, otm_only)
     slices: list[SliceFit] = []
     skipped: list[float] = []
     for dte in chain.expiries:

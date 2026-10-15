@@ -9,8 +9,9 @@ The rules the whole design rests on:
 * ``broker``   -- the only package allowed to import ibapi; never GUI/storage.
 * ``storage``  -- sqlite3 + ``data`` only; never GUI, broker, or ibapi.
 * ``visualization`` -- matplotlib figures for scripts/notebooks; never GUI.
-* ``gui``      -- the Qt front end (D31): never ibapi, the concrete broker, or
-                  the bar store (it reads market data through services).
+* ``gui``      -- the Qt front end (D31): never ibapi, the concrete broker or
+                  chain adapter, or the bar/chain stores (it reads market data
+                  and option chains through services).
 * Qt libraries (PySide6, pyqtgraph, qtawesome, qtpy) are imported only by
   ``gui`` and the composition root ``app.py``; tkinter by nothing (retired).
 
@@ -38,7 +39,8 @@ RULES = {
     "visualization": ["ibapi", "quant_hub.gui", "quant_hub.broker", "quant_hub.services",
                       "quant_hub.storage"],
     "gui": ["ibapi", "quant_hub.broker.ibkr", "quant_hub.broker.market_source",
-            "quant_hub.storage.bar_store"],
+            "quant_hub.broker.option_chain", "quant_hub.storage.bar_store",
+            "quant_hub.storage.chain_store"],
 }
 
 QT_LIBRARIES = ("PySide6", "pyqtgraph", "qtawesome", "qtpy")

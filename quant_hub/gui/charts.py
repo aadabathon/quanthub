@@ -502,6 +502,12 @@ class Panel:
     y_range: tuple[float, float] | None = None
 
 
+def _days(dte: float) -> str:
+    """Days to expiry as a label: real expiries are fractional (they run to
+    16:00 New York), so 6.93 shows as "7d"."""
+    return f"{dte:.0f}d"
+
+
 def _swatch(series: Series) -> str:
     glyph = "╍" if series.dashed else "━"
     return f"<span style='color:{series.color}'>{glyph}</span>"
@@ -986,6 +992,7 @@ class SmileGrid(QWidget):
         self._canvas.ci.setSpacing(10)
         layout.addWidget(self._canvas, 1)
         self._panels: list[tuple[pg.PlotItem, pg.InfiniteLine, object]] = []
+        self._has_truth = False   # whether any panel draws a true smile
         self._canvas.scene().sigMouseMoved.connect(self._on_mouse_moved)
         self._canvas.left.connect(self._on_leave)
 
@@ -993,6 +1000,7 @@ class SmileGrid(QWidget):
         self._canvas.ci.clear()
         self._panels = []
         shown = list(curves)[:max_panels]
+        self._has_truth = any(curve.true_iv is not None for curve in shown)
         cols = min(3, len(shown)) or 1
         muted_pen = pg.mkPen(_color(PALETTE.muted, 0.9), width=1.6)
         for i, curve in enumerate(shown):
@@ -1002,7 +1010,7 @@ class SmileGrid(QWidget):
             plot.vb.setDefaultPadding(0.06)
             plot.getAxis("left").setWidth(42)
             plot.showGrid(x=False, y=True, alpha=0.9)
-            plot.setTitle(f"{curve.dte:g}d", color=PALETTE.text_secondary, size="9pt",
+            plot.setTitle(_days(curve.dte), color=PALETTE.text_secondary, size="9pt",
                           justify="left")
             plot.addItem(pg.InfiniteLine(pos=0.0, angle=90, pen=pg.mkPen(PALETTE.border_strong)),
                          ignoreBounds=True)
@@ -1049,13 +1057,14 @@ class SmileGrid(QWidget):
         sep = "&nbsp;&nbsp;·&nbsp;&nbsp;"
         legend = [f"<span style='color:{PALETTE.muted}'>┃</span> bid–ask IV",
                   f"<span style='color:{PALETTE.text}'>●</span> mid IV",
-                  f"<span style='color:{PALETTE.text_secondary}'>╍</span> true",
+                  *([f"<span style='color:{PALETTE.text_secondary}'>╍</span> true"]
+                    if self._has_truth else []),
                   f"<span style='color:{PALETTE.series}'>━</span> SVI fit"]
         if curve is None:
             self._readout.setText(sep.join(["hover a smile"] + legend))
             return
         k = curve.k_grid[i]
-        parts = [f"<b style='{strong}'>{curve.dte:g}d</b>",
+        parts = [f"<b style='{strong}'>{_days(curve.dte)}</b>",
                  f"k <b style='{strong}'>{k:+.3f}</b>"]
         if curve.fitted_iv is not None:
             parts.append(f"<span style='color:{PALETTE.series}'>━</span> SVI "
