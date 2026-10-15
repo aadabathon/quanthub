@@ -471,10 +471,26 @@ class Series:
 
 
 @dataclass(frozen=True)
+class Band:
+    """A shaded interval in a ``Panel`` (a confidence band), drawn under the
+    lines and read out as ``lower – upper``."""
+
+    name: str
+    lower: np.ndarray
+    upper: np.ndarray
+    color: str = PALETTE.series
+    fmt: str = "{:,.2f}"
+
+
+@dataclass(frozen=True)
 class Panel:
     """One row of a ``StackedTimeSeries``: a title, its lines, the axis
     format, a relative height, and optional horizontal reference lines
-    ``(label, value)`` drawn dotted with their label at the right."""
+    ``(label, value)`` drawn dotted with their label at the right.
+
+    ``y_range`` fixes the value axis instead of fitting everything drawn,
+    for series whose early values would flatten the rest (a filter's
+    diffuse start)."""
 
     title: str
     series: Sequence[Series]
@@ -482,6 +498,8 @@ class Panel:
     stretch: int = 1
     zero_line: bool = False
     references: Sequence[tuple[str, float]] = ()
+    bands: Sequence[Band] = ()
+    y_range: tuple[float, float] | None = None
 
 
 def _swatch(series: Series) -> str:
@@ -491,10 +509,14 @@ def _swatch(series: Series) -> str:
 
 class StackedTimeSeries(QWidget):
     """Panels sharing one date axis, with a single crosshair across all of
-    them and a readout of every series at the hovered date."""
+    them and a readout of every series at the hovered date.
 
-    def __init__(self) -> None:
+    ``readout_per_panel`` gives each panel its own readout line, for charts
+    with more values than one line holds."""
+
+    def __init__(self, readout_per_panel: bool = False) -> None:
         super().__init__()
+        self._per_panel = readout_per_panel
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(SPACE_XS)
@@ -537,6 +559,12 @@ class StackedTimeSeries(QWidget):
             if panel.zero_line:
                 plot.addItem(pg.InfiniteLine(pos=0.0, angle=0, pen=pg.mkPen(PALETTE.border_strong)),
                              ignoreBounds=True)
+            for band in panel.bands:
+                lower = pg.PlotCurveItem(self._x, band.lower, pen=pg.mkPen(None))
+                upper = pg.PlotCurveItem(self._x, band.upper, pen=pg.mkPen(None))
+                plot.addItem(lower)
+                plot.addItem(upper)
+                plot.addItem(pg.FillBetweenItem(lower, upper, brush=_color(band.color, 0.18)))
             for series in panel.series:
                 pen = pg.mkPen(series.color, width=series.width,
                                style=Qt.DashLine if series.dashed else Qt.SolidLine)
@@ -558,6 +586,8 @@ class StackedTimeSeries(QWidget):
                     label=name, labelOpts={"position": 0.99, "color": PALETTE.text_secondary,
                                            "fill": _color(PALETTE.surface, 0.85),
                                            "anchors": [(1, 1), (1, 1)]}))
+            if panel.y_range is not None:
+                plot.setYRange(*panel.y_range, padding=0.0)
             vline = pg.InfiniteLine(angle=90, pen=_crosshair_pen(), movable=False)
             vline.setVisible(False)
             plot.addItem(vline, ignoreBounds=True)
@@ -597,13 +627,21 @@ class StackedTimeSeries(QWidget):
         if self._dates is None or not len(self._x):
             return
         strong = f"color:{PALETTE.text}"
-        parts = [f"<b style='{strong}'>{self._dates[i]:%b %d, %Y}</b>"]
+        sep = "&nbsp;&nbsp;·&nbsp;&nbsp;"
+        lines = []
         for panel in self._panels:
+            parts = []
             for series in panel.series:
                 value = series.values[i]
                 text = "—" if not np.isfinite(value) else series.fmt.format(value)
                 parts.append(f"{_swatch(series)} {series.name} <b style='{strong}'>{text}</b>")
-        self._readout.setText("&nbsp;&nbsp;·&nbsp;&nbsp;".join(parts))
+            for band in panel.bands:
+                parts.append(f"<span style='color:{band.color}'>▮</span> {band.name} "
+                             f"<b style='{strong}'>{band.fmt.format(band.lower[i])} – "
+                             f"{band.fmt.format(band.upper[i])}</b>")
+            lines.append(sep.join(parts))
+        date = f"<b style='{strong}'>{self._dates[i]:%b %d, %Y}</b>{sep}"
+        self._readout.setText(date + ("<br>" if self._per_panel else sep).join(lines))
 
 
 # --------------------------------------------------------------- histogram

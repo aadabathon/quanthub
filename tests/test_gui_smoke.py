@@ -138,6 +138,98 @@ def test_garch_invalid_input_is_flagged(qt_app):
     assert "must be a number" in lab._header._status.full_text()
 
 
+# ---------------------------------------------------------------- Kalman Lab
+
+def _kalman_fit(app, lab, days="300"):
+    lab._days.set_text(days)
+    lab._fit()
+    wait_for(app, lambda: lab._run_result is not None
+             and len(lab._run_result.log_prices) == int(days))
+
+
+def test_kalman_local_level_shows_truth_and_ewma(qt_app):
+    app, window = qt_app
+    lab = window.show_page("Kalman Lab")
+    _kalman_fit(app, lab)
+    table = lab._stats["Local level"]
+    assert table.isVisibleTo(lab) and not lab._stats["Local trend"].isVisibleTo(lab)
+    assert table._truth_header.isVisibleTo(lab)               # TRUE column shown
+    assert table.value_text("observations") == "300"
+    gain = lab._run_result.fit.parameters.steady_state_gain
+    assert table.value_text("gain") == f"{gain:.4f}"
+    names = [s.name for p in lab._series_chart._panels for s in p.series]
+    assert names == ["Close", "True level", "Smoothed (hindsight)", "Filtered level"]
+    assert [b.name for b in lab._series_chart._panels[0].bands] == ["95% band"]
+    # The chart shows a trailing window; the fit used every close.
+    assert len(lab._series_chart._x) == 252
+    lab._on_window("ALL")
+    assert len(lab._series_chart._x) == 300
+
+
+def test_kalman_trend_adds_drift_panel(qt_app):
+    app, window = qt_app
+    lab = window.show_page("Kalman Lab")
+    lab._models.set_current("Local trend")
+    lab._on_model("Local trend")
+    assert lab._slope_sd.isVisibleTo(lab)
+    _kalman_fit(app, lab, days="400")
+    panels = lab._series_chart._panels
+    assert [p.title.split(" ·")[0] for p in panels] == ["Price", "Slope"]
+    assert panels[1].y_range is not None
+    assert lab._stats["Local trend"].isVisibleTo(lab)
+    assert lab._stats["Local trend"].value_text("drift").endswith("%")
+
+
+def test_kalman_market_history_on_synthetic_source(qt_app):
+    app, window = qt_app
+    lab = window.show_page("Kalman Lab")
+    wait_for(app, lambda: lab._run_result is not None)        # the first-show fit
+    lab._modes.set_current("Market history")
+    lab._on_mode("Market history")
+    lab._source.select.set_current("synthetic")
+    lab._symbol.set_text("SPY")
+    lab._lookback.set_text("400")
+    lab._fit()
+    wait_for(app, lambda: "SPY" in lab._level_card.subtitle.full_text())
+    assert not lab._stats["Local level"]._truth_header.isVisibleTo(lab)
+    names = [s.name for p in lab._series_chart._panels for s in p.series]
+    assert "True level" not in names
+
+
+def test_kalman_zero_noise_note(qt_app):
+    from quant_hub.gui.pages.kalman_lab import _Run
+    from quant_hub.models.kalman import fit_local_level, rts_smoother
+
+    app, window = qt_app
+    lab = window.show_page("Kalman Lab")
+    wait_for(app, lambda: lab._run_result is not None)
+    assert not lab._zero_note.isVisibleTo(lab)
+    # Positively autocorrelated changes: the fit puts the noise at zero.
+    shocks = np.random.default_rng(9).normal(scale=0.01, size=400)
+    changes = np.empty_like(shocks)
+    changes[0] = shocks[0]
+    for t in range(1, len(shocks)):
+        changes[t] = 0.3 * changes[t - 1] + shocks[t]
+    y = 4.6 + np.cumsum(changes)
+    fit = fit_local_level(y)
+    assert fit.zero_variances == ("noise_variance",)
+    lab._on_done(_Run(pd.bdate_range("2024-01-02", periods=len(y)), y, fit,
+                      rts_smoother(fit.filtered), None, None, None, "AR changes"))
+    assert lab._zero_note.isVisibleTo(lab)
+    assert "Noise σ fit to zero" in lab._zero_note._text.text()
+    assert lab._stats["Local level"].value_text("noise_sd") == "≈ 0"
+    assert lab._stats["Local level"].value_text("q") == "∞"
+
+
+def test_kalman_invalid_noise_is_flagged(qt_app):
+    app, window = qt_app
+    lab = window.show_page("Kalman Lab")
+    lab._noise_sd.set_text("0")
+    lab._fit()
+    assert lab._noise_sd.edit.property("invalid") is True
+    assert "must be positive" in lab._header._status.full_text()
+
+
 # ------------------------------------------------------------------- Markets
 
 def test_markets_synthetic_quotes_add_and_remove(qt_app):

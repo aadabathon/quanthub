@@ -757,16 +757,19 @@ def centered(widget: QWidget, align=Qt.AlignLeft) -> QWidget:
 
 
 class Note(QFrame):
-    """An inline explanation box (e.g. why a quote is unavailable)."""
+    """An inline explanation box: ``critical`` for a problem (why a quote is
+    unavailable), ``info`` for a finding the reader should know about."""
 
-    def __init__(self, icon_name: str = "ph.warning") -> None:
+    def __init__(self, icon_name: str = "ph.warning", tone: str = "critical") -> None:
         super().__init__()
         set_role(self, "note")
+        self.setProperty("tone", tone)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(SPACE_M, SPACE_S, SPACE_M, SPACE_S)
         layout.setSpacing(SPACE_S)
         glyph = QLabel()
-        glyph.setPixmap(icon(icon_name, PALETTE.critical).pixmap(QSize(16, 16)))
+        ink = PALETTE.series_light if tone == "info" else PALETTE.critical
+        glyph.setPixmap(icon(icon_name, ink).pixmap(QSize(16, 16)))
         layout.addWidget(glyph, 0, Qt.AlignTop)
         self._text = label("", wrap=True)
         layout.addWidget(self._text, 1)

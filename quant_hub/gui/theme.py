@@ -165,6 +165,8 @@ QLabel[role="badge"][tone="info"] {{ color: {p.series_light}; background: {p.acc
 QLabel[role="badge"][tone="neutral"] {{ color: {p.text_secondary}; background: {p.raised}; }}
 QFrame[role="note"] {{ background: {p.critical_soft}; border: 1px solid {p.critical_border};
                       border-radius: 8px; }}
+QFrame[role="note"][tone="info"] {{ background: {p.accent_soft};
+                                    border: 1px solid {p.accent_soft_border}; }}
 QFrame[role="note"] QLabel {{ color: {p.text}; }}
 
 /* ---- cards & tiles ----------------------------------------------------- */
