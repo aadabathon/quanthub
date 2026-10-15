@@ -91,8 +91,11 @@ quant_hub/
 │   │                          (incl. InvalidContract/NoHistoricalData/Pacing)
 │   ├── ibkr.py                IBKRBroker: callbacks → blocking calls;
 │   │                          bar-size whitelist, error-code classification
-│   └── market_source.py       IBKRSource: Broker → DataSource + BarSource
-│                              adapter (volume lots→shares per D21)
+│   ├── market_source.py       IBKRSource: Broker → DataSource + BarSource
+│   │                          adapter (volume lots→shares per D21)
+│   └── option_chain.py        IBKROptionChainSource: two-pass chain fetch
+│                              (parity pairs, then OTM wings), per-day strike
+│                              cache, dte to 16:00 New York (C1)
 ├── data/
 │   ├── types.py               PriceHistory (validated), Quote
 │   ├── sources.py             DataSource + BarSource protocols, SyntheticSource
@@ -123,6 +126,9 @@ quant_hub/
 │   │                          estimate + SE vs the closed form
 │   ├── svi.py                 raw SVI (derivatives, density g(k)), SSVI
 │   │                          surface, spread-weighted SVI fit
+│   ├── carry.py               per-expiry forward and discount factor from
+│   │                          put–call parity (weighted regression, fixed-rate
+│   │                          fallback, Student-t dof) (C1b)
 │   ├── vol_surface.py         chain → IVs + weights → per-expiry SVI →
 │   │                          butterfly/calendar checks; synthetic chains;
 │   │                          surface_mesh (total variance linear in T at
@@ -138,10 +144,14 @@ quant_hub/
 │   │                          expected-vol term structure (D30)
 │   ├── workstation.py         local-store overview, windowed history, GBM
 │   │                          forecast fan (the Dashboard's data, D31)
+│   ├── option_chains.py       ChainService: chains by named source, every
+│   │                          live fetch saved; "stored" = latest snapshot
 │   ├── sync.py                SyncStatus/SyncPlan: FULL_HIT/PARTIAL_HIT/MISS
 │   └── cached_source.py       CachedSource: BarSource + BarStore → DataSource
 ├── storage/bar_store.py       SQLite schema (instruments/bars/coverage),
 │                              upsert with counts, range queries, coverage
+├── storage/chain_store.py     option-chain snapshots (option_chains /
+│                              option_quotes, order kept), same database
 └── visualization/charts.py    matplotlib, for scripts/notebooks (the app
                                uses gui/charts.py): ChartStyle + compositions:
                                plot_price_history, plot_lab_overview (price/

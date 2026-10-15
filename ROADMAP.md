@@ -230,7 +230,8 @@ checked; until then, users without IBKR keep the synthetic chain.
     - out-of-the-money sides, plus calls and puts at a few near-ATM
       strikes for parity
   - Tests run against a fake broker.
-- **C2. Volatility Lab on real chains**
+- ~~**C2. Volatility Lab on real chains**~~ Done 2026-10-15, live on SPY
+  and SPX (about 42 s per chain).
   - The Experiment card gains a chain source: synthetic or `ibkr`.
   - Real chains have no TRUE column.
   - Chain quality stats: fetched, no bid, wide spreads, skipped expiries.

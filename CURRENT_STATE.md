@@ -300,7 +300,33 @@ pytest. Environment:
      - Caveat for the page: q_T is measured against the stale delayed
        spot, so short-dated yields are noise (SPY 7d: −1.3%). Show
        forwards, not short-dated q.
-   - Next: C2, real chains in the Volatility Lab (source selector, chain
-     quality, implied-carry table, snapshot persistence).
+   - ~~C2: real chains in the Volatility Lab~~ (2026-10-15).
+     - A Synthetic / Market chain mode on the Chain card. Market mode
+       takes a source (`ibkr`, or `stored` for the latest saved snapshot,
+       which needs no broker), a symbol, target expiries, strikes per
+       expiry, and a fallback rate.
+     - The job fetches, saves the snapshot, implies carry, fits and meshes.
+       The Carry card shows each expiry's forward ±SE and its branch.
+     - The fit table's TRUE column becomes the provider's model IV: the
+       median of the four quotes nearest the forward.
+     - Checks count excluded in-the-money quotes.
+     - `storage/chain_store.py` keeps snapshots in the same database
+       (D33). `services/option_chains.py` is the chain service.
+     - Fits use out-of-the-money quotes only (`otm_only`). Live, this
+       didn't change SPY's ATM IVs (0.01 vol pt), so early exercise isn't
+       its misfit. It's kept because a parity strike's two sides give the
+       same IV twice, which would double-weight the money.
+     - The Experiment card's quote-noise inputs got their own row, so the
+       page fits at 1280×800. That supersedes the separate clipping-fix
+       session's uncommitted change.
+     - Live in the app: SPY and SPX in about 42 s each, all expiries
+       fitted, every arbitrage check ok. SPX's model IVs agree within
+       0.1–0.3 vol pt.
+     - Caveat: IBKR's delayed model IVs for SPY are sparse and sometimes
+       stale (92d: 20.7% against a 13.8% smile). Shown as received.
+     - Tests: `tests/test_chain_store.py` (8), and the offline market-mode
+       smoke tests.
+   - Next: C3, a joint SSVI fit across expiries (math first), then C4,
+     market vol into the Options Lab.
 6. After the roadmap: the DCF port (SEC EDGAR + SQLite), planned in its own
    session.
