@@ -46,6 +46,10 @@ def qt_app(tmp_path):
     app, window = create_app(AppConfig(db_path=db, default_symbol="BBB"), argv=["test"])
     window.show()
     yield app, window
+    _close(app, window)
+
+
+def _close(app, window) -> None:
     app.aboutToQuit.emit()      # the same shutdown sequence a real quit runs
     window.close()
     window.deleteLater()
@@ -54,6 +58,29 @@ def qt_app(tmp_path):
     from PySide6.QtCore import QCoreApplication, QEvent
     QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
     app.processEvents()
+
+
+def test_the_store_is_versioned_and_backed_up_before_the_stores_open(qt_app, tmp_path):
+    # The fixture's store predates versioning, so startup copied it first (F1).
+    backups = list((tmp_path / "backups").iterdir())
+    assert len(backups) == 1 and backups[0].name.startswith("market_data.v0.")
+
+
+def test_ibkr_turned_off_leaves_no_controls_or_sources(tmp_path):
+    # D34: someone who doesn't use IBKR sets enabled = false in settings.toml.
+    app, window = create_app(AppConfig(db_path=tmp_path / "s.db", ibkr_enabled=False),
+                             argv=["test"])
+    try:
+        window.show()
+        core = window._core
+        assert core.market_service.source_names == ["synthetic"]
+        assert core.chains.source_names == ["stored"]
+        assert not window._top._button.isVisibleTo(window)
+        assert not window.status._ibkr.isVisibleTo(window)
+        lab = window.show_page("Kalman Lab")
+        assert lab._source.current() == "synthetic"     # its saved default was ibkr
+    finally:
+        _close(app, window)
 
 
 def test_dashboard_renders_store_and_forecast(qt_app):

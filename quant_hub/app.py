@@ -99,7 +99,8 @@ def create_app(config: AppConfig | None = None,
         core.shutdown()
 
     app.aboutToQuit.connect(on_quit)
-    _logger.info("Quant Hub v%s ready — IBKR disconnected", __version__)
+    _logger.info("Quant Hub v%s ready — %s", __version__,
+                 "IBKR disconnected" if core.config.ibkr_enabled else "IBKR off in settings")
     return app, window
 
 

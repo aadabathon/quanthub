@@ -33,7 +33,8 @@ DRAWER_HEIGHT = 200
 class StatusBar(QFrame):
     toggle_logs = Signal()
 
-    def __init__(self, bus: EventBus, initial: ConnectionState) -> None:
+    def __init__(self, bus: EventBus, initial: ConnectionState,
+                 ibkr_enabled: bool = True) -> None:
         super().__init__()
         self.setObjectName("statusBar")
         self.setFixedHeight(36)
@@ -43,9 +44,12 @@ class StatusBar(QFrame):
 
         self._store = StatusDot("Local store", PALETTE.muted)
         layout.addWidget(self._store)
-        layout.addWidget(divider(vertical=True))
+        separator = divider(vertical=True)
+        layout.addWidget(separator)
         self._ibkr = StatusDot()
         layout.addWidget(self._ibkr)
+        for widget in (separator, self._ibkr):      # IBKR off in settings (D34)
+            widget.setVisible(ibkr_enabled)
         layout.addSpacing(SPACE_L)
         self._latest = label("", "muted")
         self._latest.setTextFormat(Qt.PlainText)

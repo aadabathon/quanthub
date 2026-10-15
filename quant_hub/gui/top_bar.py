@@ -83,7 +83,8 @@ class CommandSearch(QLineEdit):
 
 
 class TopBar(QFrame):
-    def __init__(self, broker: Broker, tasks: TaskRunner, bus: EventBus) -> None:
+    def __init__(self, broker: Broker, tasks: TaskRunner, bus: EventBus,
+                 ibkr_enabled: bool = True) -> None:
         super().__init__()
         self.setObjectName("topBar")
         self.setFixedHeight(TOP_BAR_HEIGHT)
@@ -111,6 +112,9 @@ class TopBar(QFrame):
         layout.addWidget(self._status)
         self._button = button("Connect IBKR", "primary", on_click=self._on_button)
         layout.addWidget(self._button)
+        # IBKR turned off in settings (D34): no connection controls at all.
+        for widget in (self._status, self._button):
+            widget.setVisible(ibkr_enabled)
         self._render(broker.state)
         bus.subscribe(ConnectionEvent, lambda event: self._render(event.state))
 

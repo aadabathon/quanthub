@@ -27,6 +27,12 @@ ending "now" therefore always re-fetches today's sliver (one bar), which
 both refreshes the provisional bar (the store upserts) and keeps FULL_HIT
 honest for every completed session.
 
+Daily bars only: the coverage rule above (complete through yesterday) is
+right for daily bars and nothing else, so any other ``bar_size`` is
+rejected at construction, loudly, instead of recording wrong coverage
+(DATA_SYSTEM_IMPROVEMENTS #7). Weekly and intraday bars need their own
+coverage rules first.
+
 Synthetic data deliberately does **not** flow through here: generated
 experiments are reproducible from their parameters; persistence is for
 externally acquired observations.
@@ -47,6 +53,8 @@ from quant_hub.storage.bar_store import BarStore, InstrumentKey
 
 _logger = logging.getLogger(__name__)
 
+DAILY = "1 day"
+
 
 class CachedSource:
     """See module docstring. Implements the ``DataSource`` protocol."""
@@ -55,9 +63,13 @@ class CachedSource:
         self,
         delegate: BarSource,
         store: BarStore,
-        bar_size: str = "1 day",
+        bar_size: str = DAILY,
         now: Callable[[], datetime] = datetime.now,
     ) -> None:
+        if bar_size != DAILY:
+            raise ValueError(f"CachedSource stores daily bars only, not {bar_size!r}: its "
+                             "coverage runs through yesterday, which is right only for "
+                             "daily bars (module docstring)")
         self.name = delegate.name  # transparent: registers under the provider's name
         self._delegate = delegate
         self._store = store

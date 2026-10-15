@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from quant_hub.broker.ibkr import IBKRBroker
 from quant_hub.broker.market_source import IBKRSource
 from quant_hub.broker.option_chain import IBKROptionChainSource
-from quant_hub.config import AppConfig
+from quant_hub.config import AppConfig, load_config
 from quant_hub.data.sources import SyntheticSource
 from quant_hub.events import EventBus, EventBusLogHandler
 from quant_hub.tasks import TaskRunner
@@ -25,6 +25,7 @@ from quant_hub.services.option_chains import ChainService
 from quant_hub.services.workstation import WorkstationService
 from quant_hub.storage.bar_store import BarStore
 from quant_hub.storage.chain_store import ChainStore
+from quant_hub.storage.schema import prepare_store
 from quant_hub.storage.state_store import ViewStateStore
 
 _logger = logging.getLogger(__name__)
@@ -93,9 +94,22 @@ def setup_logging(bus: EventBus) -> None:
 
 
 def build_core(config: AppConfig | None = None) -> Core:
-    config = config or AppConfig()
+    """Wire the core. With no ``config``, the user's settings file is read
+    over the defaults (``config.load_config``); scripts and tests pass one."""
+    problems: list[str] = []
+    if config is None:
+        config, problems = load_config()
     bus = EventBus()
     setup_logging(bus)
+    for problem in problems:
+        _logger.warning("settings: %s", problem)
+
+    # Before any store opens the file: bring its schema up to date, backing
+    # it up first if anything changes (storage/schema.py, D36).
+    schema = prepare_store(config.db_path)
+    if schema.migrated_from is not None:
+        _logger.info("store schema v%d -> v%d; backup at %s", schema.migrated_from,
+                     schema.version, schema.backup)
 
     broker = IBKRBroker(config, bus)
     store = BarStore(config.db_path)
@@ -106,13 +120,16 @@ def build_core(config: AppConfig | None = None) -> Core:
     # experiments are reproducible from their parameters — persistence is
     # for acquired observations only). No active source: every caller names
     # its source explicitly (D23).
+    # IBKR is an optional provider (D34): turned off in settings, it
+    # registers no sources, and pages offer only the rest.
+    ibkr = config.ibkr_enabled
     market_service = MarketService(
-        sources=[SyntheticSource(), CachedSource(IBKRSource(broker), store)],
+        sources=[SyntheticSource(), *([CachedSource(IBKRSource(broker), store)] if ibkr else [])],
     )
     # Option chains: live providers by name (D34), every fetch saved as a
     # snapshot in the same database (D33), plus "stored" for saved ones.
     chain_store = ChainStore(config.db_path)
-    chains = ChainService([IBKROptionChainSource(broker)], chain_store)
+    chains = ChainService([IBKROptionChainSource(broker)] if ibkr else [], chain_store)
     return Core(
         config=config, bus=bus, broker=broker, store=store, state_store=state_store,
         market_service=market_service, chain_store=chain_store, chains=chains,

@@ -136,6 +136,12 @@ class TestPartialHit:
 
 
 class TestFailuresAndEdges:
+    @pytest.mark.parametrize("bar_size", ["1 week", "1 hour", "1 month"])
+    def test_non_daily_bars_are_rejected(self, fake, store, bar_size):
+        # Coverage runs through yesterday: right for daily bars only (F1).
+        with pytest.raises(ValueError, match="daily bars only"):
+            CachedSource(fake, store, bar_size=bar_size)
+
     def test_fetch_failure_propagates(self, cached, fake):
         fake.fail_next = True
         with pytest.raises(ConnectionError):

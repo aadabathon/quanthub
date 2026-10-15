@@ -56,7 +56,7 @@ class MainWindow(QMainWindow):
         column = QVBoxLayout()
         column.setSpacing(0)
         main.addLayout(column, 1)
-        self._top = TopBar(core.broker, core.tasks, core.bus)
+        self._top = TopBar(core.broker, core.tasks, core.bus, core.config.ibkr_enabled)
         column.addWidget(self._top)
         self._stack = QStackedWidget()
         column.addWidget(self._stack, 1)
@@ -64,7 +64,7 @@ class MainWindow(QMainWindow):
         self._drawer.setVisible(False)
         column.addWidget(self._drawer)
 
-        self.status = StatusBar(core.bus, core.broker.state)
+        self.status = StatusBar(core.bus, core.broker.state, core.config.ibkr_enabled)
         self.status.toggle_logs.connect(self._toggle_logs)
         outer.addWidget(self.status)
 
