@@ -59,17 +59,22 @@ quant_hub/
 │   ├── components.py          Card, KpiTile, MetricTile, PageHeader (+ status
 │   │                          line), SegmentedControl, Select, Field (inline
 │   │                          or captioned)/SelectField + form_grid, StatTable
-│   │                          (TRUE | FIT, signed tones), Badge, Note,
+│   │                          (TRUE | FIT, signed tones), Badge, Note
+│   │                          (critical or info tone),
 │   │                          DataTable (balanced columns), PageStack (sizes
 │   │                          to the visible page), NavRow, EmptyState
 │   ├── charts.py              pyqtgraph, render only: PriceVolumeChart,
 │   │                          Sparkline, FanChart (optional history and
-│   │                          overlays), StackedTimeSeries (Panel/Series, one
-│   │                          crosshair, optional fill), Histogram (markers),
+│   │                          overlays), StackedTimeSeries (Panel/Series/Band,
+│   │                          one crosshair, optional fill, fixed y range,
+│   │                          per-panel readout lines), Histogram (markers),
 │   │                          CurveChart (y vs numeric/log x: profiles, P&L
 │   │                          with signed shading, MC convergence + band,
 │   │                          markers / point-only series), SmileGrid (small
 │   │                          multiples), Heatmap (sequential ramp + color bar)
+│   ├── surface3d.py           3D vol surface (D32): SurfaceMesh → Plotly figure
+│   │                          dict → local plotly.js in Qt WebEngine; draws
+│   │                          only when shown, warm-up on load, Plotly.react
 │   ├── main_window.py         shell + THE PUMP (QTimer, 16 ms)
 │   ├── sidebar.py / top_bar.py / status_bar.py   shell pieces (nav, Ctrl+K
 │   │                          search + IBKR control, status + log drawer)
@@ -77,7 +82,7 @@ quant_hub/
 │                              dashboard.py, markets.py, garch_lab.py,
 │                              simulator.py, options_lab/ (page, underlying,
 │                              pricer, strategy, monte_carlo), volatility_lab.py,
-│                              placeholder.py (planned modules only)
+│                              kalman_lab.py, placeholder.py (planned modules)
 ├── config.py                  AppConfig
 ├── events.py                  EventBus (thread-safe), LogEvent, log handler
 ├── broker/
@@ -118,8 +123,13 @@ quant_hub/
 │   │                          estimate + SE vs the closed form
 │   ├── svi.py                 raw SVI (derivatives, density g(k)), SSVI
 │   │                          surface, spread-weighted SVI fit
-│   └── vol_surface.py         chain → IVs + weights → per-expiry SVI →
-│                              butterfly/calendar checks; synthetic chains
+│   ├── vol_surface.py         chain → IVs + weights → per-expiry SVI →
+│   │                          butterfly/calendar checks; synthetic chains;
+│   │                          surface_mesh (total variance linear in T at
+│   │                          fixed k, checked between expiries)
+│   └── kalman.py              linear Gaussian state space: Joseph-form filter,
+│                              RTS smoother, simulation; local level / local
+│                              linear trend MLE (zero-variance reporting)
 ├── services/
 │   ├── market_service.py      source registry + get_history/get_quote facade
 │   ├── underlying.py          any source → spot (quote, else last close) +
@@ -178,8 +188,10 @@ Markets    = real market observations: explicit source, provenance columns
 Simulator  = controlled stochastic experiments (the GBM/Monte Carlo lab)
 Options Lab= pricing/IV, multi-leg strategies, MC check over one MarketInputs
 GARCH Lab  = conditional-volatility fit: synthetic GARCH or explicit source history
-Vol Lab    = implied-vol surface from an OptionChain; GARCH/realized overlay
-RESEARCH…  = GARCH Lab, Vol Lab, plus placeholders for planned modules
+Vol Lab    = implied-vol surface from an OptionChain; GARCH/realized overlay;
+             heatmap or rotatable 3D surface (D32)
+Kalman Lab = local level / local linear trend on log prices: synthetic or source history
+RESEARCH…  = GARCH Lab, Vol Lab, Kalman Lab, plus placeholders for planned modules
 ```
 
 **No global source state.** ``MarketService.get_history/get_quote`` take a

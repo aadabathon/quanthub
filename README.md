@@ -10,7 +10,10 @@ a fast, modern Qt interface over a layered Python core.
   - GARCH Lab: conditional volatility, synthetic or real history
   - Options Lab: Black–Scholes–Merton, implied vol, multi-leg strategies,
     a Monte Carlo check
-  - Volatility Lab: SVI/SSVI implied-vol surfaces with arbitrage checks
+  - Volatility Lab: SVI/SSVI implied-vol surfaces with arbitrage checks, as
+    a heatmap or a rotatable 3D surface
+  - Kalman Lab: a hidden price level (and trend) filtered from noisy closes,
+    with the smoother and maximum-likelihood fits
 - **Dashboard:** what the local store holds, a market explorer, and a model
   sandbox.
 
@@ -107,6 +110,6 @@ GUI or broker code.
 
 Next: the data side (live IBKR verification, an option-chain adapter feeding
 the Volatility Lab, real positions, a trading dashboard). Planned modules
-with nav placeholders: Kalman/state-space models, Markov regime models,
+with nav placeholders: Markov regime models,
 portfolio analytics and Kelly sizing, strategy research and backtesting.
 See ROADMAP.md.

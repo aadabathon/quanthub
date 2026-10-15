@@ -1,14 +1,17 @@
 # CURRENT_STATE.md
 
 **Update this file whenever meaningful work lands.** Last updated:
-**2026-10-10**: the Qt migration (D31) is complete and the Tk front end is
-retired. Every page runs in the PySide6 + pyqtgraph GUI.
+**2026-10-14**: the Kalman module (K1 model, K2 Kalman Lab page) and the 3D
+vol surface (S3D, Plotly, D32) landed, on top of the completed Qt
+migration (D31). Open items for the owner are listed under Open decisions.
 
 ## Status
 
 v0.5 (the Qt UI). Brokerage connectivity is live-verified against TWS 7496 (2026-08-14;
-see below). `py -3.12 -m pytest -q` → **574 passed** in about 35 s, with no
-network or display needed (the GUI smoke tests run offscreen).
+see below). `py -3.12 -m pytest -q` → **644 passed** in about 60–75 s, with no
+network or display needed (the GUI smoke tests run offscreen). The real 3D
+draw runs in a fresh subprocess and skips, with the reason, when offscreen
+Chromium can't compile WebGL shaders; that happens on some runs.
 
 ### The app
 
@@ -63,10 +66,32 @@ what the desktop shortcut targets. The GUI is `quant_hub/gui/` (Qt, D31) on
 - **Volatility Lab:**
   - experiment card (chain + true SSVI)
   - smile small multiples, term structure with the GARCH/realized overlay,
-    surface heatmap in k/√θ
-  - fit-by-expiry table and arbitrage checks
-- **Planned modules** (Kalman, Markov, Portfolio, Research) show
-  placeholders.
+    and the surface as a heatmap in k/√θ or a rotatable 3D view (D32)
+  - the 3D view (Plotly in Qt WebEngine):
+    - the fitted surface, with the fitted expiries as white lines
+    - the true SSVI as a faint wireframe
+    - quotes with bid–ask whiskers
+    - hover readouts; the camera is kept across refits
+  - 3D timings, measured on an RTX 4060 Ti:
+    - built when the page is first shown (~0.7 s of GUI time, overlapping
+      the fit)
+    - first draw ~0.4 s after choosing 3D, redraws ~0.1 s
+  - when WebGL is missing, the 3D view says so instead of loading forever
+  - fit-by-expiry table and arbitrage checks, now also between expiries
+    (the interpolated mesh)
+- **Kalman Lab (K2):**
+  - synthetic (TRUE vs FIT) or source history
+  - local level or local linear trend
+  - filtered level with its 95% band over the smoothed level (labelled
+    hindsight) and, in synthetic mode, the true level
+  - for the trend model, a drift panel whose axis includes the band, so
+    the drift's real uncertainty shows
+  - 3M / 1Y / ALL chart windows (the fit always uses every close)
+  - standardized-innovation histogram
+  - the local level's EWMA readout: q, K̄ and half-life
+  - an info note when a variance fits to zero
+  - in synthetic mode, the likelihood at the truth beside the fitted one
+- **Planned modules** (Markov, Portfolio, Research) show placeholders.
 - **State:** every page's inputs persist per view through `ViewStateStore`
   (the shapes predate the Qt UI, so old inputs carried over).
 - **Measured speeds:**
@@ -81,12 +106,39 @@ what the desktop shortcut targets. The GUI is `quant_hub/gui/` (Qt, D31) on
 
 ### Models and data
 
+- **Kalman K1 (2026-10-14), `models/kalman.py`** (page: Kalman Lab):
+  - generic linear Gaussian state space with scalar observations:
+    Joseph-form filter, NaN = missing, prediction-error likelihood over an
+    approximately diffuse prior with the first m observed terms excluded,
+    RTS smoother, simulation
+  - local level (closed-form steady-state gain = optimal EWMA weight) and
+    local linear trend
+  - MLE over log(σ²/Var(Δy)) on the shared Nelder–Mead, three starts.
+    Variances driven below e⁻²⁰·Var(Δy) are reported in `zero_variances`.
+    On daily log prices, zero noise is common: the model can't produce
+    positively autocorrelated changes.
+  - The fit uses a scalar-arithmetic likelihood for m ≤ 2 (about 20× faster
+    than numpy per step); tests hold it to the reference filter.
+  - Fits on ten years of daily data: local level ~0.2 s, local linear trend
+    ~1.3 s.
+  - `tests/test_kalman.py` (52 tests) follows the docstring's validation
+    plan: brute-force Gaussian conditioning, the EWMA identity, band
+    coverage and white innovations, a likelihood-ratio recovery check,
+    missing data, bad inputs.
 - **Volatility (Milestone B, D30):**
   - `data/options.py`: the `OptionChain` contract
   - `models/svi.py`: raw SVI (derivatives, density/`g(k)`, Lee bound), the
     SSVI surface, and a spread-weighted fit
   - `models/vol_surface.py`: synthetic OTM chains → IV inversion →
     per-expiry fits → butterfly/calendar checks
+  - `surface_mesh` (S3D): total variance interpolated linearly in T at
+    fixed k
+    - it adds no calendar arbitrage and holds ATM forward variance constant
+      between expiries
+    - g is checked on every interpolated row
+    - it marks k-extrapolated wing points
+    - on the default chain, nodes match the truth to 2e-8, with up to ~1.1
+      vol points of interpolation error between them
   - `services/vol_context.py`: realized vols plus the GARCH forecast
 - **Options (Milestone A, D26/D28/D29):**
   - `models/black_scholes.py`: BSM with dividend yield, vectorized, typed
@@ -113,7 +165,7 @@ what the desktop shortcut targets. The GUI is `quant_hub/gui/` (Qt, D31) on
 
 - **Not yet verified against live TWS:**
   - the Qt UI's IBKR paths: Connect from the top bar, Markets quotes, Sync,
-    and the Options/GARCH/Vol Lab `ibkr` loads
+    and the Options/GARCH/Vol/Kalman Lab `ibkr` loads
   - the Options Lab quote → last-close fallback, which has only been tested
     with a fake source
 - **IBKR disconnected:** market-history loads on `ibkr` fail for any window
@@ -140,17 +192,40 @@ what the desktop shortcut targets. The GUI is `quant_hub/gui/` (Qt, D31) on
 - **GARCH:** Gaussian QMLE only, with no heavy tails, confidence intervals,
   rolling refit or out-of-sample evaluation. Annualization assumes 252
   periods/year.
-- **Deferred by choice:** a GPU 3-D vol surface.
+- **3D surface:** synthetic chains only, like the rest of the Volatility
+  Lab. The 3D draw is verified by screenshots on the owner's GPU and by the
+  subprocess test, which may skip offscreen.
+
+## Open decisions (waiting on the owner)
+
+- **Kalman K2 review:** the Kalman Lab page landed; the owner reviews it.
+  - Live `ibkr` history loads are untested: the screenshots fed stored SPY
+    and NVDA bars to the page directly.
+  - Possible follow-ups, not started:
+    - the trend model's Holt equivalence: its steady-state filter is
+      Holt's linear smoothing with α = K̄₁, β = K̄₂/K̄₁
+    - an exact diffuse initialization
+- **S3D review:** the 3D surface landed (D32); the owner reviews it.
+  - Volatility Lab clipping at 1280 px wide is pre-existing: the
+    Experiment card's first row needs 1160 px. It's flagged as a separate
+    task.
+- **DCF modeler port (owner request 2026-10-14):** bring in the owner's
+  existing DCF tool, which pulls SEC EDGAR data and stores it in SQLite.
+  Deferred by the owner until after the current roadmap. Plan it in its own
+  session then, starting from the existing source folder.
 
 ## Version control / environment
 
-Repo at `C:\Users\adams\Projects\quanthub`; the owner commits. The last
-commit is `f7e4d33 ui stuff`, which holds Milestone B and the Qt migration
-through Q5 with Tk still present; the Tk retirement (Q6) is uncommitted.
+Repo at `C:\Users\adams\Projects\quanthub`; the owner commits and pushes.
+Recent commits:
+- `e750ab9` v0.5 (Tk retired)
+- `9173172` the Kalman derivation
+
 Run everything with `py -3.12`: bare `python` is a 3.11 install without
 pytest. Environment:
 - Windows 11, Python 3.12.6
-- PySide6 6.11, pyqtgraph 0.14, qtawesome 1.4
+- PySide6 6.11 (Qt WebEngine included), pyqtgraph 0.14, qtawesome 1.4,
+  plotly 6.5 (declared, D32; only its bundled plotly.min.js is used)
 - ibapi 9.81.1.post1
 - TWS live on 127.0.0.1:7496 with Read-Only API enabled
 - store at `~/.quant_hub/market_data.db`
@@ -159,8 +234,12 @@ pytest. Environment:
 
 1. ~~Milestones A/B (Options Lab, Volatility Lab)~~ (2026-09-27).
 2. ~~Qt migration Q1–Q6~~ (2026-10-10).
-3. The data side:
+3. ~~Owner-requested, ahead of the data phase: Kalman K1 and K2, and the
+   3D surface (S3D)~~ (2026-10-14).
+4. The data side:
    - live-verify the Qt UI and the labs' `ibkr` loads against TWS
    - then an IBKR option-chain adapter emitting `OptionChain`
    - real positions as `OptionLeg`s
    - the trading dashboard
+5. After the roadmap: the DCF port (SEC EDGAR + SQLite), planned in its own
+   session.

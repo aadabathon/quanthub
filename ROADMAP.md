@@ -103,8 +103,8 @@ milestone was approved before the next.
      and a surface heatmap
    - fit-by-expiry table and checks panel
 
-   A GPU 3-D surface (pyqtgraph.opengl or Plotly in a QWebEngineView)
-   remains a separate, later step.
+   The 3D surface followed as its own step (S3D, 2026-10-14, D32): Plotly
+   in Qt WebEngine, a Heatmap / 3D toggle in the Surface view.
 6. ~~**Q6 — Retire Tk.**~~ Done 2026-10-10:
    - Tk `gui/` and `app.py` deleted
    - `gui_qt/` → `gui/`, `app_qt.py` → `app.py`, `TaskRunner` →
@@ -150,7 +150,8 @@ do), then turn to the data side. Each milestone is approved before the next.
 ## Model candidates after the current phase
 
 - **Kalman filtering** (local-level/trend on log prices), derived and
-  validated on a synthetic state-space world first.
+  validated on a synthetic state-space world first. K1 (model, filter,
+  smoother, MLE) and K2 (the Kalman Lab page) landed 2026-10-14.
 - **Synthetic-data expansion** — mean-reverting (OU), correlated assets,
   regime-switching generators, to feed model validation before real data.
 
