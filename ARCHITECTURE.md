@@ -133,6 +133,9 @@ quant_hub/
 │   │                          butterfly/calendar checks; synthetic chains;
 │   │                          surface_mesh (total variance linear in T at
 │   │                          fixed k, checked between expiries)
+│   ├── market_surface.py      MarketSurface: a fit → (σ, r, q) at any (K, T),
+│   │                          extrapolation flagged; apply_surface fills
+│   │                          strategy legs (sticky strike) (C4)
 │   └── kalman.py              linear Gaussian state space: Joseph-form filter,
 │                              RTS smoother, simulation; local level / local
 │                              linear trend MLE (zero-variance reporting)
@@ -214,7 +217,11 @@ The Options Lab (D28) owns a source selector in its underlying card:
 `manual` inputs, or `services/underlying.load_underlying` on a named source
 (one TaskRunner job: history → realized vol, quote → spot, falling back to
 the last close when the quote is unavailable). Every tab then prices off the
-single resulting ``MarketInputs``. The models never know the source. The
+single resulting ``MarketInputs``. The models never know the source.
+In Surface mode (C4) the card also holds a ``MarketSurface``, fitted from
+the newest saved chain on one TaskRunner job. The Pricer and Strategy tabs
+take each contract's σ, r and q from it (``OptionLeg.vol/rate/
+dividend_yield``), and spot is the chain's own. The
 Simulator keeps the D15 invariant: one TaskRunner job → one immutable
 ``(sim, analysis, mc)`` triple → every chart/stat renders from it.
 

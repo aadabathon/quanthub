@@ -249,10 +249,16 @@ checked; until then, users without IBKR keep the synthetic chain.
     regularizer noisy real chains need (D30).
   - Validated on the synthetic world, whose truth *is* SSVI.
   - The page compares it with independent slices.
-- **C4. Market vol into the Options Lab**
-  - Price and analyse strategies with each strike's IV from the fitted
-    surface, instead of one realized σ.
-  - Provenance stays visible (D23).
+- ~~**C4. Market vol into the Options Lab**~~ Done 2026-10-15
+  (`models/market_surface.py`).
+  - A Flat σ / Surface toggle on the underlying card. Surface prices every
+    contract from the newest saved chain: its own implied vol, and its
+    expiry's parity carry.
+  - Strategy legs keep their surface inputs as spot moves (sticky strike,
+    stated in the docstring).
+  - Provenance stays visible (D23): a SURFACE badge, the chain's source,
+    as-of time and snapshot, and an extrapolation flag on any vol not
+    backed by quotes.
 
 ### M — Markov regimes (v0.7)
 

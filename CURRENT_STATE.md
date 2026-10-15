@@ -1,14 +1,16 @@
 # CURRENT_STATE.md
 
 **Update this file whenever meaningful work lands.** Last updated:
-**2026-10-14**: the Kalman module (K1 model, K2 Kalman Lab page) and the 3D
-vol surface (S3D, Plotly, D32) landed, on top of the completed Qt
-migration (D31). Open items for the owner are listed under Open decisions.
+**2026-10-15**: the option-chain adapter (C1–C4) is complete. Real chains
+reach the Volatility Lab and are saved; the joint SSVI fit is an option
+(D35); the Options Lab can price from the market surface. Before that
+(2026-10-14): the Kalman module and the 3D vol surface (D32), on the Qt UI
+(D31). Open items for the owner are listed under Open decisions.
 
 ## Status
 
 v0.5 (the Qt UI). Brokerage connectivity is live-verified against TWS 7496 (2026-08-14;
-see below). `py -3.12 -m pytest -q` → **644 passed** in about 60–75 s, with no
+see below). `py -3.12 -m pytest -q` → **737 passed** in about 85 s, with no
 network or display needed (the GUI smoke tests run offscreen). The real 3D
 draw runs in a fresh subprocess and skips, with the reason, when offscreen
 Chromium can't compile WebGL shaders; that happens on some runs.
@@ -57,6 +59,8 @@ what the desktop shortcut targets. The GUI is `quant_hub/gui/` (Qt, D31) on
   - Strategy: signed P&L shading, breakevens, days-forward slider, legs
     editor, templates
   - Monte Carlo: log-x convergence funnel, verdict badge
+  - Flat σ / Surface toggle (C4): Surface prices every contract from the
+    newest saved chain's fitted surface; the legs table has a σ column
 - **GARCH Lab:**
   - synthetic or market-history fits
   - stacked returns + conditional vol (true σₜ underneath in synthetic
@@ -343,6 +347,54 @@ pytest. Environment:
      - So independent SVI stays the default (D35).
      - Tests: `tests/test_ssvi_fit.py` (15), including "never worse than
        the truth", plus a GUI toggle test. A fit takes 1.3–2.5 s.
-   - Next: C4, market vol into the Options Lab.
+   - ~~C4: market vol into the Options Lab~~ (2026-10-15),
+     `models/market_surface.py`.
+     - `MarketSurface` turns a fit into (σ, r, q) at any strike and expiry.
+       - Carry: ln(F/S)/T and −ln D/T per fitted expiry, linear in T
+         between expiries and flat outside them.
+       - Vol: total variance linear in T at fixed log-moneyness. Implied
+         vol is held flat before the first and after the last fitted
+         expiry.
+       - Every point says whether it's extrapolated: outside the fitted
+         expiries, or outside a used slice's quoted strikes.
+     - `OptionLeg` gained optional `vol`, `rate` and `dividend_yield`.
+       `apply_surface` fills them (sticky strike). Legs without them use
+       the card's flat inputs, as before.
+     - The underlying card has a Flat σ / Surface toggle.
+       - Surface fits the newest *saved* chain for the symbol
+         (`services/option_chains.load_market_surface`), so it needs no
+         broker. With no saved chain, the error says to fetch one in the
+         Volatility Lab.
+       - Spot becomes the chain's, the one its forwards were measured
+         against. σ, rate and div grey out.
+       - A SURFACE badge, and a subtitle naming the chain's source, as-of
+         time and snapshot. The mode is saved with the page.
+     - Pricer: σ, r and q from the surface at the contract's strike and
+       expiry. The vol tile reads "16.76% surface", plus "· extrapolated"
+       where it applies. Implying σ from a price uses the surface carry.
+     - Strategy: a σ column in the legs table. Extrapolated vols show in
+       amber with a " *" and a tooltip.
+     - Re-centring now keys on the spot as well as the symbol. Strikes
+       rebuild when the symbol changes, or when spot is more than 20% from
+       where they were built (`RECENTRE_MOVE`).
+       - Found live: the saved state said "centred on SPY", but that was
+         synthetic SPY at $385. The real chain's SPY is at $771, so the
+         legs sat in the extrapolated wing at 78–87% vol.
+     - Template strikes are now the rounded centre plus whole listed
+       steps. Rounding each strike on its own had made a 5% butterfly at
+       $771.51 into 735/770/810, its tails $500 apart and max loss ≠ debit.
+       Now 730/770/810.
+     - Live, on the saved IBKR SPY chain:
+       - the SPY 740 put at 92 days is 16.76% surface vol, $10.70
+       - a 30-day 730/770/810 call fly gets 18.6 / 13.3 / 10.5% (the
+         skew), with a $1,964 debit
+       - surface prices land inside the bid–ask for SPX 129 of 149
+         quotes, and SPY 46 of 149 (penny-wide spreads, and SVI's SPY
+         misfit)
+     - Tests: `tests/test_market_surface.py` (14), template symmetry (5),
+       and 3 Options Lab smoke tests (surface pricing, re-centring at
+       another price, the no-saved-chain hint).
+   - The option-chain adapter (C) is complete. Next: M, Markov regimes,
+     after owner approval.
 6. After the roadmap: the DCF port (SEC EDGAR + SQLite), planned in its own
    session.
