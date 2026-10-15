@@ -97,6 +97,7 @@ import numpy as np
 
 from quant_hub.data.options import OptionChain, OptionQuote
 from quant_hub.models.black_scholes import greeks_array, implied_volatility, price_array
+from quant_hub.models.ssvi_fit import JointSSVIFit, fit_joint_ssvi
 from quant_hub.models.svi import MIN_SLICE_QUOTES, SSVISurface, SVIFit, butterfly_g, fit_raw_svi
 
 MIN_HALF_SPREAD = 0.005
@@ -175,6 +176,10 @@ class SurfaceFit:
     skipped_expiries: tuple[float, ...]
     calendar_gaps: tuple[float, ...]
     """``min_k [w_{i+1} - w_i]`` for each adjacent pair of fitted slices."""
+    method: str = "svi"
+    """``"svi"`` (independent raw SVI per expiry) or ``"ssvi"`` (joint)."""
+    joint: JointSSVIFit | None = None
+    """The joint fit's global parameters, when ``method == "ssvi"``."""
 
     @property
     def butterfly_free(self) -> bool:
@@ -275,28 +280,59 @@ def chain_implied_vols(chain: OptionChain, otm_only: bool = True) -> ChainIVs:
     )
 
 
-def fit_surface(chain: OptionChain, otm_only: bool = True) -> SurfaceFit:
-    """Fit raw SVI independently per expiry, then run the arbitrage checks."""
+METHODS = ("svi", "ssvi")
+"""Independent raw SVI per expiry, or one joint SSVI surface (``models/ssvi_fit``)."""
+
+MIN_JOINT_QUOTES = 2
+"""Fewest quotes for an expiry to join the joint fit (it adds one parameter)."""
+
+
+def fit_surface(chain: OptionChain, otm_only: bool = True, method: str = "svi") -> SurfaceFit:
+    """Fit the chain's smiles, then run the arbitrage checks.
+
+    ``method="svi"`` fits raw SVI independently per expiry (5 parameters
+    each). ``method="ssvi"`` fits one SSVI surface through every expiry
+    (N + 3 parameters, free of static arbitrage by construction). Both
+    produce raw-SVI slices, so every view and check is shared and the
+    checks stay genuine tests of the result.
+    """
+    if method not in METHODS:
+        raise ValueError(f"method must be one of {METHODS}, got {method!r}")
     ivs = chain_implied_vols(chain, otm_only)
-    slices: list[SliceFit] = []
+    minimum = MIN_SLICE_QUOTES if method == "svi" else MIN_JOINT_QUOTES
+    fitted: list[float] = []
     skipped: list[float] = []
     for dte in chain.expiries:
+        (fitted if (ivs.usable & (ivs.dte == dte)).sum() >= minimum else skipped).append(dte)
+
+    def observed(dte: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         mask = ivs.usable & (ivs.dte == dte)
-        if mask.sum() < MIN_SLICE_QUOTES:
-            skipped.append(dte)
-            continue
-        years = dte / 365.0
-        k = ivs.k[mask]
-        fit = fit_raw_svi(k, ivs.iv[mask] ** 2 * years, ivs.variance_uncertainty[mask], years)
+        return ivs.k[mask], ivs.iv[mask] ** 2 * dte / 365.0, ivs.variance_uncertainty[mask]
+
+    if method == "ssvi" and fitted:
+        data = [observed(dte) for dte in fitted]
+        joint = fit_joint_ssvi(fitted, *zip(*data))
+        fits = [SVIFit(params=joint.slice(dte), chi2_per_point=joint.slice_chi2_per_point[i],
+                       rmse_vol=joint.slice_rmse_vol[i], n_points=joint.slice_points[i],
+                       converged=joint.converged, iterations=joint.iterations)
+                for i, dte in enumerate(fitted)]
+    else:
+        joint = None
+        fits = [fit_raw_svi(k, w, dw, dte / 365.0)
+                for dte, (k, w, dw) in ((d, observed(d)) for d in fitted)]
+
+    slices: list[SliceFit] = []
+    for dte, fit in zip(fitted, fits):
+        k = observed(dte)[0]
         k_min, k_max = float(k.min()), float(k.max())
         pad = 0.25 * (k_max - k_min)
         grid = np.linspace(k_min - pad, k_max + pad, 201)
         slices.append(SliceFit(
-            dte=dte, years=years, forward=chain.forward(dte), fit=fit, k_min=k_min, k_max=k_max,
-            min_butterfly_g=float(fit.params.butterfly_g(grid).min()),
+            dte=dte, years=dte / 365.0, forward=chain.forward(dte), fit=fit, k_min=k_min,
+            k_max=k_max, min_butterfly_g=float(fit.params.butterfly_g(grid).min()),
         ))
     gaps = tuple(_calendar_gap(a, b) for a, b in zip(slices, slices[1:]))
-    return SurfaceFit(chain, ivs, tuple(slices), tuple(skipped), gaps)
+    return SurfaceFit(chain, ivs, tuple(slices), tuple(skipped), gaps, method, joint)
 
 
 def _calendar_gap(front: SliceFit, back: SliceFit) -> float:

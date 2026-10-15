@@ -23,6 +23,13 @@ shows each expiry's forward and how it was estimated. Short-dated implied
 dividend yields are not shown: they are measured against the stale delayed
 spot, which makes them noise.
 
+**Fit method (C3, D35).** The Fit card toggles between independent raw SVI
+per expiry (the default) and one joint SSVI surface (``models/ssvi_fit``).
+SSVI has fewer parameters, no static arbitrage by construction, and is far
+steadier on noisy chains. But live SPY/SPX smiles lie outside the SSVI
+slice family, so on liquid chains independent SVI fits much better.
+Switching refits the chain already on the page; it never refetches.
+
 The Surface view switches between a heatmap and a rotatable 3D surface
 (``gui/surface3d.py``, Plotly, D32). The same job builds the 3D mesh
 (``vol_surface.surface_mesh``) from the fit. The 3D view embeds Chromium,
@@ -95,7 +102,9 @@ _DEFAULTS = {
     "source": "synthetic", "symbol": "SPY", "lookback": "1825",
     "mode": "Synthetic", "chain_source": "ibkr", "chain_symbol": "SPY",
     "targets": "7,30,60,91,182,365", "chain_strikes": "21", "chain_rate": "4",
+    "fit_method": "SVI",
 }
+_METHOD_KEYS = {"SVI": "svi", "SSVI": "ssvi"}
 _SYNTHETIC, _MARKET = "Synthetic", "Market chain"
 _CARD_SUBTITLES = {
     _SYNTHETIC: "A synthetic chain quoted off a known arbitrage-free SSVI surface, with "
@@ -150,6 +159,7 @@ class VolatilityLabPage(ScrollPage):
         if saved["chain_source"] not in chains.source_names:
             saved["chain_source"] = chains.source_names[0]
         self._mode = _MARKET if saved["mode"] == _MARKET else _SYNTHETIC
+        self._method = saved["fit_method"] if saved["fit_method"] in _METHOD_KEYS else "SVI"
         view = saved.get("tab", _VIEWS[0])
         self._view = view if view in _VIEWS else _VIEWS[0]
         self._surface_mode = _3D if saved.get("surface_mode") == _3D else _HEATMAP
@@ -324,6 +334,12 @@ class VolatilityLabPage(ScrollPage):
 
     def _build_fit_table(self) -> Card:
         card = self._fit_card = Card("Fit by expiry", "ATM vol: SVI fit vs the true surface")
+        self._methods = SegmentedControl(list(_METHOD_KEYS), self._method)
+        self._methods.setToolTip("SVI: each expiry fitted on its own (5 parameters each). "
+                                 "SSVI: one arbitrage-free surface through every expiry "
+                                 "(N + 3 parameters).")
+        self._methods.changed.connect(self._on_method)
+        card.add_action(self._methods)
         self._table = DataTable([("Expiry", "left"), ("SVI", "right"), ("True", "right"),
                                  ("χ² / pt", "right")], row_height=32)
         self._table.balance_columns()
@@ -371,7 +387,8 @@ class VolatilityLabPage(ScrollPage):
         state |= {"source": self._source.current(), "symbol": self._symbol.text(),
                   "lookback": self._lookback.text(), "tab": self._view,
                   "surface_mode": self._surface_mode, "mode": self._mode,
-                  "chain_source": self._chain_source.current()}
+                  "chain_source": self._chain_source.current(),
+                  "fit_method": self._method}
         self._state_store.save(_STATE_KEY, state)
 
     # ----------------------------------------------------------------- jobs
@@ -379,13 +396,16 @@ class VolatilityLabPage(ScrollPage):
         try:
             if self._mode == _MARKET:
                 symbol, source, request = self._read_market_inputs()
-                work = lambda: _market_job(self._chains, symbol, source, request)  # noqa: E731
+                method = _METHOD_KEYS[self._method]
+                work = lambda: _market_job(self._chains, symbol, source, request,  # noqa: E731
+                                           method)
                 status = (f"Fetching {symbol} options from {source}…"
                           + (" The day's first IBKR chain also lists each expiry's strikes "
                              "(about 40 s)." if source == "ibkr" else ""))
             else:
                 truth, spec = self._read_inputs()
-                work = lambda: _fit_job(truth, spec)  # noqa: E731
+                method = _METHOD_KEYS[self._method]
+                work = lambda: _fit_job(truth, spec, method)  # noqa: E731
                 status = "Quoting the chain and fitting SVI…"
         except ValueError as exc:
             self._header.set_status(str(exc), error=True)
@@ -394,6 +414,20 @@ class VolatilityLabPage(ScrollPage):
             widget.setEnabled(False)
         self._header.set_status(status)
         self._tasks.submit(work, on_done=self._on_fit, on_error=self._on_error)
+
+    def _on_method(self, method: str) -> None:
+        self._method = method
+        if self._fit is None:
+            return
+        # Refit the chain already on the page (with its carry): no refetch.
+        chain, truth = self._fit.chain, self._truth
+        carry, snapshot = self._carry, self._snapshot
+        key = _METHOD_KEYS[method]
+        for widget in self._run_buttons():
+            widget.setEnabled(False)
+        self._header.set_status(f"Refitting with {method}…")
+        self._tasks.submit(lambda: _refit_job(chain, truth, key, carry, snapshot),
+                           on_done=self._on_fit, on_error=self._on_error)
 
     def _run_buttons(self) -> list[QWidget]:
         return [w for group in self._groups.values() for w in group.findChildren(QWidget)
@@ -587,8 +621,12 @@ class VolatilityLabPage(ScrollPage):
     def _render_diagnostics(self) -> None:
         fit, truth = self._fit, self._truth
         market = truth is None
-        self._fit_card.set_subtitle("ATM vol: SVI fit vs the provider's model IV" if market
-                                    else "ATM vol: SVI fit vs the true surface")
+        against = "the provider's model IV" if market else "the true surface"
+        joint = fit.joint
+        self._fit_card.set_subtitle(
+            f"Joint SSVI · ρ {joint.params.rho:+.2f} · η {joint.params.eta:.2f} · "
+            f"γ {joint.params.gamma:.2f} · ATM vs {against}" if joint is not None
+            else f"Independent SVI · ATM vs {against}")
         self._table.horizontalHeaderItem(2).setText("IBKR" if market else "True")
         self._table.horizontalHeaderItem(2).setToolTip(
             "Median of the provider's own model IVs for the four quotes nearest the "
@@ -646,20 +684,28 @@ class VolatilityLabPage(ScrollPage):
                            + "χ²/pt ≈ noise² when residuals are pure quote noise.")
 
 
-def _fit_job(truth: SSVISurface, spec: SyntheticChainSpec) -> _Result:
+def _fit_job(truth: SSVISurface, spec: SyntheticChainSpec, method: str) -> _Result:
     """Worker thread: quote, fit, and mesh the surface (or say why it can't)."""
-    fit = fit_surface(synthetic_chain(truth, spec))
+    fit = fit_surface(synthetic_chain(truth, spec), method=method)
     mesh, problem = _mesh(fit, truth)
     return _Result(truth, fit, mesh, problem)
 
 
+def _refit_job(chain, truth: SSVISurface | None, method: str, carry: CarryFit | None,
+               snapshot: int | None) -> _Result:
+    """Worker thread: the same chain (carry included), another fit method."""
+    fit = fit_surface(chain, method=method)
+    mesh, problem = _mesh(fit, truth)
+    return _Result(truth, fit, mesh, problem, carry, snapshot)
+
+
 def _market_job(chains: ChainService, symbol: str, source: str,
-                request: ChainRequest) -> _Result:
+                request: ChainRequest, method: str) -> _Result:
     """Worker thread: fetch (and save) the chain, imply each expiry's carry from
     parity, then fit and mesh exactly as for a synthetic chain."""
     chain, snapshot = chains.get_chain(symbol, source, request)
     carry = implied_carry(chain)
-    fit = fit_surface(carry.chain)
+    fit = fit_surface(carry.chain, method=method)
     mesh, problem = _mesh(fit, None)
     return _Result(None, fit, mesh, problem, carry, snapshot)
 

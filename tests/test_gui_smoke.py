@@ -623,6 +623,22 @@ def test_vol_lab_market_chain_from_stored_snapshot(qt_app):
     assert not lab._carry_card.isVisibleTo(lab)
 
 
+def test_vol_lab_fit_method_toggle_refits_the_same_chain(qt_app):
+    app, window = qt_app
+    lab = _fitted_vol_lab(app, window)
+    assert lab._method == "SVI" and lab._fit.method == "svi"     # the default (D35)
+    chain = lab._fit.chain
+    lab._methods.set_current("SSVI")
+    lab._on_method("SSVI")
+    wait_for(app, lambda: lab._fit.method == "ssvi")
+    assert lab._fit.chain is chain                                # refit, not refetched
+    assert lab._fit_card.subtitle.full_text().startswith("Joint SSVI")
+    assert lab._fit.butterfly_free and lab._fit.calendar_free
+    lab._on_method("SVI")
+    wait_for(app, lambda: lab._fit.method == "svi")
+    assert lab._fit_card.subtitle.full_text().startswith("Independent SVI")
+
+
 def test_vol_lab_stored_without_snapshot_says_so(qt_app):
     app, window = qt_app
     lab = _fitted_vol_lab(app, window)
