@@ -22,6 +22,9 @@ models/         Pure quantitative models. May consume data/ contracts; never
 
 broker/         Infrastructure. The ONLY package allowed to import ibapi.
                 Never storage.
+importers/      File readers (CSV bars today): files into data/ types with
+                pandas + stdlib. No other layer; services store what they
+                read, and the GUI reaches them only through services.
 storage/        SQLite persistence (stdlib sqlite3). Knows data/ only —
                 no broker, no GUI, no services.
 visualization/  Matplotlib figures for scripts and notebooks. Never GUI.
@@ -157,8 +160,14 @@ quant_hub/
 │   │                          forecast fan (the Dashboard's data, D31)
 │   ├── option_chains.py       ChainService: chains by named source, every
 │   │                          live fetch saved; "stored" = latest snapshot
+│   ├── file_import.py         CSV bars validated into the store under
+│   │                          "file" (all or nothing per file); FileSource
+│   │                          serves them; FileImportService for the GUI
 │   ├── sync.py                SyncStatus/SyncPlan: FULL_HIT/PARTIAL_HIT/MISS
 │   └── cached_source.py       CachedSource: BarSource + BarStore → DataSource
+├── importers/bar_csv.py       CSV daily bars: the generic layout, Nasdaq.com
+│                              and Yahoo presets detected by header, raw
+│                              frames by symbol (D37)
 ├── storage/bar_store.py       SQLite schema (instruments/bars/coverage),
 │                              upsert with counts, range queries, coverage
 ├── storage/chain_store.py     option-chain snapshots (option_chains /

@@ -304,7 +304,9 @@ checked; until then, users without IBKR keep the synthetic chain.
     any migration (SQLite online backup API).
   - Non-daily bar sizes rejected at the `CachedSource` boundary
     (DATA_SYSTEM_IMPROVEMENTS #6, #7).
-- **F2. File import: the universal provider (D34)**
+- ~~**F2. File import: the universal provider (D34)**~~ Done 2026-10-15 (D37):
+  `importers/bar_csv.py`, `services/file_import.py`, Import CSV… on the
+  Dashboard.
   - New infrastructure package (layering-tested: `data/` + pandas + stdlib
     only).
   - A CSV `BarSource` with a documented generic layout and column-mapping

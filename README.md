@@ -101,6 +101,28 @@ The store is versioned. Before an update changes its schema, the app copies
 the whole database into `~/.quant_hub/backups/`, and never deletes those
 copies itself.
 
+## Importing data
+
+The Dashboard's Market data card imports CSV files of daily bars (its menu:
+Import CSV…). Imported bars are validated like any other provider's and
+stored under the source `file`, which every page can then use. The generic
+layout:
+
+```text
+date,open,high,low,close,volume
+2024-01-02,472.16,473.67,470.49,472.65,123623700
+```
+
+- Any case and column order; other columns are ignored.
+- `close` is required; the rest are optional.
+- Dates are YYYY-MM-DD.
+- A `symbol` column lets one file hold several symbols. Without one, the
+  file name is the symbol (`SPY.csv`), or the app asks.
+- Rows that fail validation are dropped and reported.
+
+Stooq downloads use this layout as they are. Nasdaq.com and Yahoo Finance
+downloads are recognized by their headers.
+
 ## IBKR setup
 
 Run TWS or IB Gateway with API access enabled (Configure → API → Settings →

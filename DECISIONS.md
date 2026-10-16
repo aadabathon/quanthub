@@ -612,3 +612,34 @@ F1 puts D34's settings and the store's safety in place.
 - **Daily-only cache:** `CachedSource` rejects any bar size but "1 day".
   Its coverage rule (complete through yesterday) is right for daily bars
   only (DATA_SYSTEM_IMPROVEMENTS #7).
+
+## D37 — File import stores once; "file" serves it (2026-10-15)
+
+F2 makes CSV the universal provider (D34). Calls made:
+
+- **Import, then serve from the store.** A file isn't fetched by date
+  range, so it doesn't sit behind `CachedSource`: that would record
+  "no sessions after the file ends" as covered, a lie its sync planning
+  would then trust. `services/file_import.import_bar_file` validates each
+  symbol's bars with the same `validate_ohlcv_frame` as IBKR's and upserts
+  them. `FileSource` (the `file` source) serves them, with no coverage
+  table. A window past a file's end holds fewer bars, and one with none
+  says to import first.
+  - The roadmap said "a CSV `BarSource`". The importer yields the same raw
+    frame a `BarSource` returns, but no `fetch_bars`, which would be
+    ceremony for a file.
+- **One provider name, `file`**, for every import. A re-import replaces
+  bars on the same dates (a corrected file wins). Imported SPY sits beside
+  IBKR's SPY: a different source, never mixed.
+- **All or nothing per file:** every symbol in it must validate before any
+  is stored.
+- **Layouts:** a documented generic layout (`date,open,high,low,close,
+  volume`, optional `symbol`; Stooq's own), and presets detected from the
+  header (Nasdaq.com, Yahoo Finance). Prices are stored as the vendor gives
+  them. Basis is F3's.
+- **Layering:** `importers/` reads files into `data/` types with pandas and
+  stdlib only, and the GUI reaches it only through services.
+- **No live quote** from a file: `FileSource.get_quote` raises
+  `NoMarketDataError`, so the Options Lab falls back to the last close.
+- **Explorer keys:** a symbol stored from more than one source shows as
+  "SPY · file" on the Dashboard, so neither hides the other.

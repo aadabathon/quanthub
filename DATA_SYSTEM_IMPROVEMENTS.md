@@ -74,6 +74,9 @@ not a scramble later.
 
 ### 5. No file/CSV `BarSource` yet, though the seam already exists
 
+**Done in F2 (2026-10-15, D37):** CSV import into the store, served as the
+`file` source.
+
 D20's port/adapter split (`BarSource.fetch_bars` independent of
 `DataSource.get_history`) was explicitly built so "IBKR/CSV future flows
 through the identical pipeline." Nothing implements it for files yet. A

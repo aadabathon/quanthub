@@ -10,7 +10,7 @@ reach the Volatility Lab and are saved; the joint SSVI fit is an option
 ## Status
 
 v0.5 (the Qt UI). Brokerage connectivity is live-verified against TWS 7496 (2026-08-14;
-see below). `py -3.12 -m pytest -q` → **806 passed** in about 105 s, with no
+see below). `py -3.12 -m pytest -q` → **836 passed** in about 105 s, with no
 network or display needed (the GUI smoke tests run offscreen). The real 3D
 draw runs in a fresh subprocess and skips, with the reason, when offscreen
 Chromium can't compile WebGL shaders; that happens on some runs.
@@ -494,6 +494,33 @@ pytest. Environment:
        (DATA_SYSTEM_IMPROVEMENTS #7).
      - Tests: `tests/test_config.py` (15), `tests/test_schema.py` (6), the
        cache guard (3), and 2 smoke tests (startup backup, IBKR off).
-   - Next: F2, file import (CSV bars), after approval.
+   - ~~F2: file import, the universal provider~~ (2026-10-15, D37).
+     - `importers/bar_csv.py` reads the generic layout
+       (`date,open,high,low,close,volume`, optional `symbol`; Stooq's own)
+       and presets detected by header: Nasdaq.com (`$`, MM/DD/YYYY, newest
+       first) and Yahoo Finance (takes `Close`; `Adj Close` waits for F3).
+       - An unreadable date stops the import, naming the row.
+       - `$`, thousands separators and `null` are tolerated.
+     - `services/file_import.py` validates each symbol like IBKR's bars and
+       stores them under source `file`.
+       - All or nothing per file. A re-import replaces the same dates.
+       - `FileSource` serves imports to every page, keeping no coverage.
+       - It has no live quote, so the Options Lab uses the last close.
+     - The Dashboard's Market data menu has Import CSV….
+       - The symbol comes from the file name (`SPY.csv`, `^GSPC.csv`) or
+         is asked for.
+       - The result reads "Imported SPY: 1,296 bars, … (Yahoo Finance
+         layout; 1 row dropped)", and the explorer charts the import.
+       - A symbol stored from two sources shows as "SPY · file", so
+         neither hides the other.
+     - Round trip on your real SPY (1,297 bars):
+       - written as Yahoo and Nasdaq files and imported into a copy, with
+         closes identical to IBKR's
+       - Yahoo's `null` row dropped and reported
+       - a Markov fit on the `file` source finds the same 3 regimes
+     - Tests: `tests/test_bar_csv.py` (13), `tests/test_file_import.py`
+       (15), and a Dashboard smoke test. Layering now covers
+       `importers/`.
+   - Next: F3, adjusted prices, after approval.
 6. After the roadmap: the DCF port (SEC EDGAR + SQLite), planned in its own
    session.
