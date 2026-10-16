@@ -23,9 +23,11 @@ from quant_hub.services.cached_source import CachedSource
 from quant_hub.services.file_import import FileImportService, FileSource
 from quant_hub.services.market_service import MarketService
 from quant_hub.services.option_chains import ChainService
+from quant_hub.services.portfolio import PortfolioService
 from quant_hub.services.workstation import WorkstationService
 from quant_hub.storage.bar_store import BarStore
 from quant_hub.storage.chain_store import ChainStore
+from quant_hub.storage.position_store import PositionStore
 from quant_hub.storage.schema import prepare_store
 from quant_hub.storage.state_store import ViewStateStore
 
@@ -44,6 +46,8 @@ class Core:
     chains: ChainService
     workstation: WorkstationService
     file_import: FileImportService
+    position_store: PositionStore
+    portfolio: PortfolioService
     tasks: TaskRunner
 
     def shutdown(self) -> None:
@@ -55,6 +59,7 @@ class Core:
             ("closing bar store", self.store.close),
             ("closing view-state store", self.state_store.close),
             ("closing chain store", self.chain_store.close),
+            ("closing position store", self.position_store.close),
         ):
             try:
                 step()
@@ -134,9 +139,12 @@ def build_core(config: AppConfig | None = None) -> Core:
     # snapshot in the same database (D33), plus "stored" for saved ones.
     chain_store = ChainStore(config.db_path)
     chains = ChainService([IBKROptionChainSource(broker)] if ibkr else [], chain_store)
+    # Imported positions, kept as dated snapshots in the same database (P2).
+    position_store = PositionStore(config.db_path)
     return Core(
         config=config, bus=bus, broker=broker, store=store, state_store=state_store,
         market_service=market_service, chain_store=chain_store, chains=chains,
         workstation=WorkstationService(store), file_import=FileImportService(store),
-        tasks=TaskRunner(),
+        position_store=position_store,
+        portfolio=PortfolioService(market_service, position_store), tasks=TaskRunner(),
     )

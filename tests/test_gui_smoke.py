@@ -366,6 +366,41 @@ def test_markov_lab_notes(qt_app):
     assert lab._stats[2].value_text("iterations").endswith("(stopped)")
 
 
+# ----------------------------------------------------------------- Portfolio
+def _portfolio(app, window, **state):
+    """The Portfolio page priced from the synthetic source (no IBKR in tests)."""
+    window._core.state_store.save("portfolio", {"source": "synthetic", **state})
+    page = window.show_page("Portfolio")
+    wait_for(app, lambda: page._view is not None, timeout_s=30)
+    return page
+
+
+def test_portfolio_shows_the_example_before_any_import(qt_app):
+    app, window = qt_app
+    page = _portfolio(app, window)
+    view = page._view
+    assert view.snapshot.source == "Example"
+    assert page._finding.isVisibleTo(page) and "example portfolio" in page._finding._text.text()
+    assert page._tiles["var"]._value.full_text().startswith("$")
+    assert page._table.rowCount() == len(view.rows) + 1             # and a cash line
+    shares = [float(page._table.item(r, 4).text().rstrip("%")) for r in range(len(view.rows))]
+    assert shares == sorted(shares, reverse=True)                   # led by risk
+
+
+def test_portfolio_imports_a_fidelity_file_and_splits_accounts(qt_app, tmp_path):
+    from test_positions_csv import FIDELITY
+    app, window = qt_app
+    page = _portfolio(app, window)
+    path = tmp_path / "Portfolio_Positions.csv"
+    path.write_text(FIDELITY, encoding="utf-8")
+    page.import_file(path)
+    wait_for(app, lambda: page._view.snapshot.source == "Fidelity", timeout_s=30)
+    assert page._header._status.full_text().startswith("Imported Portfolio_Positions.csv")
+    assert page._warning.isVisibleTo(page) and "expired" in page._warning._text.text()
+    page._accounts.select.set_current("ROTH IRA")
+    wait_for(app, lambda: page._view.account == "ROTH IRA", timeout_s=30)
+    assert [r.symbol for r in page._view.rows] == ["QQQ"]
+
 # ------------------------------------------------------------------- Markets
 
 def test_markets_synthetic_quotes_add_and_remove(qt_app):

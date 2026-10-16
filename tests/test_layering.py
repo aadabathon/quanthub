@@ -47,7 +47,7 @@ RULES = {
     "gui": ["ibapi", "quant_hub.importers", "quant_hub.broker.ibkr",
             "quant_hub.broker.market_source",
             "quant_hub.broker.option_chain", "quant_hub.storage.bar_store",
-            "quant_hub.storage.chain_store"],
+            "quant_hub.storage.chain_store", "quant_hub.storage.position_store"],
 }
 
 QT_LIBRARIES = ("PySide6", "pyqtgraph", "qtawesome", "qtpy")

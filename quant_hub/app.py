@@ -27,6 +27,7 @@ from quant_hub.gui.pages.markets import MarketsPage
 from quant_hub.gui.pages.markov_lab import MarkovLabPage
 from quant_hub.gui.pages.options_lab import OptionsLabPage
 from quant_hub.gui.pages.placeholder import PlaceholderPage
+from quant_hub.gui.pages.portfolio import PortfolioPage
 from quant_hub.gui.pages.simulator import SimulatorPage
 from quant_hub.gui.pages.volatility_lab import VolatilityLabPage
 from quant_hub.gui.theme import apply_theme
@@ -35,7 +36,6 @@ _logger = logging.getLogger(__name__)
 
 # Planned roadmap modules: (icon, description). Placeholders until built.
 _PLANNED: dict[str, tuple[str, str]] = {
-    "Portfolio": ("ph.chart-pie-slice", "Portfolio analytics, Kelly sizing, growth."),
     "Research": ("ph.file-text", "Strategy research and backtesting."),
 }
 
@@ -62,8 +62,10 @@ def _sections(core: Core) -> PageSections:
         core.market_service, core.tasks, core.state_store))
     markov = ("Markov Lab", "ph.share-network", lambda _shell: MarkovLabPage(
         core.market_service, core.tasks, core.state_store))
+    portfolio = ("Portfolio", "ph.chart-pie-slice", lambda _shell: PortfolioPage(
+        core.portfolio, core.market_service, core.tasks, core.state_store))
     return [
-        (None, [dashboard, markets, simulator, options]),
+        (None, [dashboard, markets, portfolio, simulator, options]),
         ("Research", [garch, vol_lab, kalman, markov, *(_planned(n) for n in _PLANNED)]),
     ]
 

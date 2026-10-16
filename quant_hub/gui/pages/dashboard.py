@@ -76,7 +76,7 @@ _TOOLS = (
      "Volatility Lab"),
     ("ph.trend-up", "Options pricing", "Black–Scholes, greeks, multi-leg strategies",
      "Options Lab"),
-    ("ph.chart-pie-slice", "Portfolio analysis", "Planned · risk, sizing, growth",
+    ("ph.chart-pie-slice", "Portfolio risk", "Your holdings: VaR, drawdown, beta, sizing",
      "Portfolio"),
     ("ph.file-text", "Custom research", "Planned · strategy research & backtests",
      "Research"),
