@@ -73,7 +73,7 @@ def test_ibkr_turned_off_leaves_no_controls_or_sources(tmp_path):
     try:
         window.show()
         core = window._core
-        assert core.market_service.source_names == ["synthetic"]
+        assert core.market_service.source_names == ["synthetic", "file"]
         assert core.chains.source_names == ["stored"]
         assert not window._top._button.isVisibleTo(window)
         assert not window.status._ibkr.isVisibleTo(window)
@@ -94,6 +94,26 @@ def test_dashboard_renders_store_and_forecast(qt_app):
     assert dash._store_table.rowCount() == 2
     assert dash._explorer_stack.currentWidget() is dash._price_chart
     assert "BBB" in dash._sandbox.subtitle.full_text()
+
+
+def test_dashboard_imports_a_csv_beside_the_same_symbol_from_ibkr(qt_app, tmp_path):
+    # F2: the fixture stores AAA and BBB from ibkr; a file of AAA sits beside
+    # them under "file", and the explorer charts the import.
+    app, window = qt_app
+    dash = window.show_page("Dashboard")
+    wait_for(app, lambda: dash._store_table.rowCount() == 2)
+    dates = pd.bdate_range("2024-01-02", periods=60)
+    closes = 20 * np.exp(np.cumsum(np.random.default_rng(5).normal(0, 0.01, len(dates))))
+    path = tmp_path / "aaa.csv"
+    pd.DataFrame({"Date": dates.strftime("%Y-%m-%d"), "Close": closes}).to_csv(path, index=False)
+    dash.import_files([path])
+    wait_for(app, lambda: "Imported AAA" in dash._header._status.full_text())
+    wait_for(app, lambda: dash._store_table.rowCount() == 3)
+    assert "60 bars" in dash._header._status.full_text()
+    wait_for(app, lambda: dash._symbol_box.current() == "AAA · file")
+    history = window._core.market_service.get_history(
+        "AAA", dates[0].to_pydatetime(), dates[-1].to_pydatetime(), source="file")
+    assert len(history.closes) == 60
 
 
 def test_window_and_symbol_changes_rerender(qt_app):

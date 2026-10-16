@@ -20,6 +20,7 @@ from quant_hub.data.sources import SyntheticSource
 from quant_hub.events import EventBus, EventBusLogHandler
 from quant_hub.tasks import TaskRunner
 from quant_hub.services.cached_source import CachedSource
+from quant_hub.services.file_import import FileImportService, FileSource
 from quant_hub.services.market_service import MarketService
 from quant_hub.services.option_chains import ChainService
 from quant_hub.services.workstation import WorkstationService
@@ -42,6 +43,7 @@ class Core:
     chain_store: ChainStore
     chains: ChainService
     workstation: WorkstationService
+    file_import: FileImportService
     tasks: TaskRunner
 
     def shutdown(self) -> None:
@@ -120,11 +122,13 @@ def build_core(config: AppConfig | None = None) -> Core:
     # experiments are reproducible from their parameters — persistence is
     # for acquired observations only). No active source: every caller names
     # its source explicitly (D23).
-    # IBKR is an optional provider (D34): turned off in settings, it
-    # registers no sources, and pages offer only the rest.
+    # Imported files are always a source (D34): "file" serves what was
+    # imported. IBKR is optional: turned off in settings, it registers no
+    # sources, and pages offer only the rest.
     ibkr = config.ibkr_enabled
     market_service = MarketService(
-        sources=[SyntheticSource(), *([CachedSource(IBKRSource(broker), store)] if ibkr else [])],
+        sources=[SyntheticSource(), FileSource(store),
+                 *([CachedSource(IBKRSource(broker), store)] if ibkr else [])],
     )
     # Option chains: live providers by name (D34), every fetch saved as a
     # snapshot in the same database (D33), plus "stored" for saved ones.
@@ -133,5 +137,6 @@ def build_core(config: AppConfig | None = None) -> Core:
     return Core(
         config=config, bus=bus, broker=broker, store=store, state_store=state_store,
         market_service=market_service, chain_store=chain_store, chains=chains,
-        workstation=WorkstationService(store), tasks=TaskRunner(),
+        workstation=WorkstationService(store), file_import=FileImportService(store),
+        tasks=TaskRunner(),
     )

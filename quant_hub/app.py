@@ -47,7 +47,7 @@ def _planned(name: str):
 
 def _sections(core: Core) -> PageSections:
     dashboard = ("Dashboard", "ph.house", lambda shell: DashboardPage(
-        shell, core.workstation, core.tasks, core.state_store, core.config))
+        shell, core.workstation, core.file_import, core.tasks, core.state_store, core.config))
     markets = ("Markets", "ph.chart-bar", lambda shell: MarketsPage(
         shell, core.market_service, core.workstation, core.tasks, core.state_store))
     garch = ("GARCH Lab", "ph.activity", lambda _shell: GARCHLabPage(

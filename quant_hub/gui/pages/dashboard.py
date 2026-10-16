@@ -17,9 +17,18 @@ superseded token are dropped rather than painted over newer ones.
 
 from __future__ import annotations
 
+import logging
 import math
+from collections import Counter
+from pathlib import Path
 
-from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QStackedWidget
+from PySide6.QtWidgets import (
+    QFileDialog,
+    QGridLayout,
+    QHBoxLayout,
+    QInputDialog,
+    QStackedWidget,
+)
 
 from quant_hub.config import AppConfig
 from quant_hub.data.types import PriceHistory
@@ -40,6 +49,12 @@ from quant_hub.gui.components import (
 )
 from quant_hub.gui.pages.base import ScrollPage, Shell
 from quant_hub.gui.theme import PALETTE, SPACE_L, SPACE_M
+from quant_hub.services.file_import import (
+    FILE_SOURCE,
+    FileImportService,
+    ImportedSeries,
+    symbol_from_filename,
+)
 from quant_hub.services.workstation import (
     WINDOWS,
     GBMForecast,
@@ -49,6 +64,8 @@ from quant_hub.services.workstation import (
     gbm_forecast,
 )
 from quant_hub.storage.state_store import ViewStateStore
+
+_logger = logging.getLogger(__name__)
 
 _STATE_KEY = "qt_dashboard"
 _FORECAST_WINDOW = "1Y"
@@ -68,28 +85,36 @@ _TOOLS = (
 
 def _empty_text() -> tuple[str, str]:
     return ("No stored history yet",
-            "Connect IBKR, then use “Sync 1Y history” on the Markets page "
-            "(classic UI) to fill the local store.")
+            "Import a CSV of daily bars from the Market data card's menu, or connect "
+            "IBKR and use “Sync 1Y history” on the Markets page.")
 
 
 class DashboardPage(ScrollPage):
-    def __init__(self, shell: Shell, workstation: WorkstationService, tasks: TaskRunner,
+    def __init__(self, shell: Shell, workstation: WorkstationService,
+                 file_import: FileImportService, tasks: TaskRunner,
                  state_store: ViewStateStore, config: AppConfig) -> None:
         super().__init__()
         self._shell = shell
         self._workstation = workstation
+        self._file_import = file_import
         self._tasks = tasks
         self._state_store = state_store
         self._config = config
         saved = state_store.load(_STATE_KEY)
         self._symbol: str | None = saved.get("symbol") or config.default_symbol
         self._window: str = saved.get("window") if saved.get("window") in WINDOWS else "1Y"
+        self._import_dir: str = saved.get("import_dir") or str(Path.home())
         self._overview: WorkstationOverview | None = None
+        # Series by explorer key: the symbol, or "SPY · file" when the store
+        # holds it from more than one source (IBKR and an imported file).
+        self._series_by_key: dict[str, SeriesSnapshot] = {}
+        self._pick: tuple[str, str] | None = None   # (symbol, source) to chart next
         self._loaded_key: tuple | None = None   # (symbol, n_bars, last) currently charted
         self._token = 0
 
-        self.body.addWidget(PageHeader("Workstation overview",
-                                       "Your markets. Your models. Your edge."))
+        self._header = PageHeader("Workstation overview",
+                                  "Your markets. Your models. Your edge.")
+        self.body.addWidget(self._header)
         self.body.addLayout(self._build_kpis())
 
         top = QHBoxLayout()
@@ -177,7 +202,8 @@ class DashboardPage(ScrollPage):
 
     def _build_store_table(self) -> Card:
         card = Card("Market data", f"Local store: {self._config.db_path}")
-        card.add_action(MenuButton([("Refresh", self.refresh),
+        card.add_action(MenuButton([("Import CSV…", self._choose_files),
+                                    ("Refresh", self.refresh),
                                     ("Go to Markets", lambda: self._shell.navigate("Markets"))]))
         self._store_table = DataTable(
             [("Symbol", "left"), ("Interval", "left"), ("Bars", "right"),
@@ -224,16 +250,73 @@ class DashboardPage(ScrollPage):
         self.refresh()
 
     def on_hide(self) -> None:
-        self._state_store.save(_STATE_KEY, {"symbol": self._symbol, "window": self._window})
+        self._state_store.save(_STATE_KEY, {"symbol": self._symbol, "window": self._window,
+                                            "import_dir": self._import_dir})
+
+    # -------------------------------------------------------------- import
+    def _choose_files(self) -> None:
+        paths, _filter = QFileDialog.getOpenFileNames(
+            self, "Import daily bars from CSV", self._import_dir,
+            "CSV files (*.csv);;All files (*)")
+        if paths:
+            self._import_dir = str(Path(paths[0]).parent)
+            self.import_files([Path(p) for p in paths])
+
+    def import_files(self, paths: list[Path]) -> None:
+        """Import each file under its symbol: the file name when it is one
+        (``SPY.csv``), else asked for. A file with a symbol column names its
+        own, whatever is passed (services/file_import.py)."""
+        jobs = []
+        for path in paths:
+            symbol = symbol_from_filename(path)
+            if symbol is None:
+                symbol, ok = QInputDialog.getText(
+                    self, "Import CSV", f"Which symbol are the bars in {path.name}?")
+                if not ok or not symbol.strip():
+                    continue
+            jobs.append((path, symbol))
+        if not jobs:
+            return
+        self._header.set_status(f"Importing {len(jobs)} file{'s' if len(jobs) != 1 else ''}…")
+
+        def work() -> tuple[list[ImportedSeries], list[str]]:
+            imported, failed = [], []
+            for path, symbol in jobs:
+                try:
+                    imported += self._file_import.import_bars(path, symbol)
+                except Exception as exc:   # per file: one bad file can't sink the rest
+                    _logger.error("import of %s failed: %s", path.name, exc)
+                    failed.append(f"{path.name}: {exc}")
+            return imported, failed
+
+        self._tasks.submit(work, on_done=self._on_imported, on_error=self._on_import_error)
+
+    def _on_imported(self, result: tuple[list[ImportedSeries], list[str]]) -> None:
+        imported, failed = result
+        parts = [f"Imported {s.describe()}" for s in imported] + failed
+        self._header.set_status(" · ".join(parts) or "Nothing imported", error=bool(failed))
+        if imported:
+            self._pick = (imported[0].symbol, FILE_SOURCE)   # chart what was just imported
+            self.refresh()
+
+    def _on_import_error(self, exc: Exception) -> None:
+        self._header.set_status(f"Import failed: {exc}", error=True)
 
     def refresh(self) -> None:
         self._tasks.submit(self._workstation.overview, on_done=self._render_overview,
                            on_error=self._overview_failed)
 
     def select_symbol(self, symbol: str) -> None:
-        """Public: chart ``symbol`` (used by the Ctrl+K search)."""
-        if self._overview is not None and any(s.symbol == symbol for s in self._overview.series):
-            self._symbol_box.set_current(symbol)
+        """Public: chart ``symbol``, an explorer key or a plain symbol (used by
+        the Ctrl+K search)."""
+        key = self._key_for(symbol)
+        if key is not None:
+            self._symbol_box.set_current(key)
+
+    def _key_for(self, wanted: str | None) -> str | None:
+        if wanted in self._series_by_key:
+            return wanted
+        return next((key for key, s in self._series_by_key.items() if s.symbol == wanted), None)
 
     # -------------------------------------------------------------- render
     def _render_overview(self, overview: WorkstationOverview) -> None:
@@ -244,7 +327,12 @@ class DashboardPage(ScrollPage):
         synced = overview.last_synced
         self._kpi_synced.set_value(f"{synced:%b %d, %Y}" if synced else "—")
 
-        self._watchlist.set_rows([self._watch_row(s) for s in series])
+        counts = Counter(s.symbol for s in series)
+        self._series_by_key = {
+            (s.symbol if counts[s.symbol] == 1 else f"{s.symbol} · {s.summary.source}"): s
+            for s in series}
+        self._watchlist.set_rows([self._watch_row(key, s)
+                                  for key, s in self._series_by_key.items()])
         self._store_table.set_rows([
             [s.symbol, s.summary.bar_size, f"{s.summary.n_bars:,}",
              f"{s.summary.first:%Y-%m-%d} → {s.summary.last:%Y-%m-%d}",
@@ -252,14 +340,19 @@ class DashboardPage(ScrollPage):
             for s in series
         ])
         self._shell.publish_commands("symbols", {
-            f"Chart {s.symbol}  ·  stored {s.summary.bar_size}": (
-                lambda sym=s.symbol: self._shell.navigate("Dashboard").select_symbol(sym))
-            for s in series
+            f"Chart {key}  ·  stored {s.summary.bar_size}": (
+                lambda k=key: self._shell.navigate("Dashboard").select_symbol(k))
+            for key, s in self._series_by_key.items()
         })
 
-        symbols = [s.symbol for s in series]
-        wanted = self._symbol if self._symbol in symbols else (symbols[0] if symbols else None)
-        self._symbol_box.set_items(symbols, wanted)
+        keys = list(self._series_by_key)
+        wanted = None
+        if self._pick is not None:
+            wanted = next((key for key, s in self._series_by_key.items()
+                           if (s.symbol, s.summary.source) == self._pick), None)
+            self._pick = None
+        wanted = wanted or self._key_for(self._symbol) or (keys[0] if keys else None)
+        self._symbol_box.set_items(keys, wanted)
 
         if wanted is None:
             self._symbol = None
@@ -273,22 +366,21 @@ class DashboardPage(ScrollPage):
         if key != self._loaded_key:
             self._load_series(forecast=True)
 
-    def _watch_row(self, s: SeriesSnapshot) -> list:
+    def _watch_row(self, key: str, s: SeriesSnapshot) -> list:
         if math.isnan(s.change_1d):
             change = ("—", PALETTE.muted)
         else:
             change = (f"{s.change_1d:+.2%}", PALETTE.good if s.change_1d >= 0 else PALETTE.critical)
         spark = Sparkline(s.spark) if len(s.spark) >= 2 else label("—", "muted")
-        return [s.symbol, f"{s.last_close:,.2f}", spark, change]
+        return [key, f"{s.last_close:,.2f}", spark, change]
 
     def _overview_failed(self, exc: Exception) -> None:
         self._explorer_empty.set_text("Couldn't read the local store", str(exc))
         self._explorer_stack.setCurrentWidget(self._explorer_empty)
 
     # ------------------------------------------------------- series loading
-    def _snapshot(self, symbol: str) -> SeriesSnapshot:
-        assert self._overview is not None
-        return next(s for s in self._overview.series if s.symbol == symbol)
+    def _snapshot(self, key: str) -> SeriesSnapshot:
+        return self._series_by_key[key]
 
     def _on_symbol_chosen(self, symbol: str) -> None:
         if symbol and symbol != self._symbol and self._overview is not None:

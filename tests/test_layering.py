@@ -7,11 +7,14 @@ The rules the whole design rests on:
 * ``services`` -- may use ``data``, ``storage``, and broker *interfaces*;
                   never GUI or ibapi.
 * ``broker``   -- the only package allowed to import ibapi; never GUI/storage.
+* ``importers`` -- read files into ``data`` types (pandas + stdlib); no other
+                  layer. Services validate and store what they read.
 * ``storage``  -- sqlite3 + ``data`` only; never GUI, broker, or ibapi.
 * ``visualization`` -- matplotlib figures for scripts/notebooks; never GUI.
 * ``gui``      -- the Qt front end (D31): never ibapi, the concrete broker or
-                  chain adapter, or the bar/chain stores (it reads market data
-                  and option chains through services).
+                  chain adapter, the bar/chain stores or the file importers
+                  (it reads market data, option chains and imports through
+                  services).
 * Qt libraries (PySide6, pyqtgraph, qtawesome, qtpy) are imported only by
   ``gui`` and the composition root ``app.py``; tkinter by nothing (retired).
 
@@ -34,11 +37,15 @@ RULES = {
                "quant_hub.visualization", "quant_hub.storage"],
     "services": ["ibapi", "quant_hub.gui", "quant_hub.visualization"],
     "broker": ["quant_hub.gui", "quant_hub.visualization", "quant_hub.storage"],
+    # File importers read files into data/ types: pandas and stdlib only.
+    "importers": ["ibapi", "quant_hub.gui", "quant_hub.broker", "quant_hub.services",
+                  "quant_hub.storage", "quant_hub.models", "quant_hub.visualization"],
     "storage": ["ibapi", "quant_hub.gui", "quant_hub.broker", "quant_hub.services",
                 "quant_hub.visualization"],
     "visualization": ["ibapi", "quant_hub.gui", "quant_hub.broker", "quant_hub.services",
                       "quant_hub.storage"],
-    "gui": ["ibapi", "quant_hub.broker.ibkr", "quant_hub.broker.market_source",
+    "gui": ["ibapi", "quant_hub.importers", "quant_hub.broker.ibkr",
+            "quant_hub.broker.market_source",
             "quant_hub.broker.option_chain", "quant_hub.storage.bar_store",
             "quant_hub.storage.chain_store"],
 }
