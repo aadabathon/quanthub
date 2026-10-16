@@ -74,9 +74,11 @@ class FakeBroker:
     def __init__(self, bars):
         self.bars = bars
         self.bar_sizes = []
+        self.what_to_show = []
 
-    def get_history(self, spec, start, end, bar_size="1 day"):
+    def get_history(self, spec, start, end, bar_size="1 day", what_to_show="TRADES"):
         self.bar_sizes.append(bar_size)
+        self.what_to_show.append(what_to_show)
         return self.bars
 
 
@@ -103,6 +105,16 @@ class TestIBKRSourceFetchBars:
         broker = FakeBroker(self.BARS)
         IBKRSource(broker).fetch_bars("SPY", datetime(2024, 1, 1), datetime(2024, 1, 31), "1 week")
         assert broker.bar_sizes == ["1 week"]
+
+    def test_the_basis_picks_ibkrs_price_series(self):
+        # D38: traded is TRADES, adjusted is ADJUSTED_LAST.
+        from quant_hub.data.types import PriceBasis
+        broker = FakeBroker(self.BARS)
+        source = IBKRSource(broker)
+        source.fetch_bars("SPY", datetime(2024, 1, 1), datetime(2024, 1, 31))
+        source.fetch_bars("SPY", datetime(2024, 1, 1), datetime(2024, 1, 31), "1 day",
+                          PriceBasis.ADJUSTED)
+        assert broker.what_to_show == ["TRADES", "ADJUSTED_LAST"]
 
     def test_empty_window_yields_empty_frame(self):
         source = IBKRSource(FakeBroker(self.BARS))

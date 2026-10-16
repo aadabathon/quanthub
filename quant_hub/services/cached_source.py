@@ -33,6 +33,29 @@ rejected at construction, loudly, instead of recording wrong coverage
 (DATA_SYSTEM_IMPROVEMENTS #7). Weekly and intraday bars need their own
 coverage rules first.
 
+Two price bases (D38)
+---------------------
+Traded bars (IBKR's TRADES) are cached as above. Adjusted bars (its
+ADJUSTED_LAST) can't be: every ex-dividend date rescales *all* earlier
+adjusted prices by its factor :math:`f = 1 - D/C_{prev}`, so bars fetched
+on different days are on different scales, and stitching them together
+would put a fake jump at the seam. So adjusted bars are kept whole:
+
+* **Once a day:** the first adjusted request of a calendar day refetches
+  the whole stored span (one request, under a second) and replaces it.
+  Later requests that day fetch only what the traded sync fetched: the
+  same day, the same scale.
+* **The split guard.** Traded prices rewrite history too, at each split,
+  so a cached traded series can straddle one: old bars at the pre-split
+  scale, new ones after. The daily refetch checks for this. Over completed
+  sessions, the ratio :math:`r_t = A_t / P_t` of today's adjusted prices to
+  the stored traded ones must be a dividend step function: at most 1, and
+  rising from one day to the next by at most ``MAX_DIVIDEND_STEP`` (20%: a
+  dividend :math:`D` steps it by :math:`D/(C - D)`), never falling.
+  A stored traded series that fails was written before a split or other
+  corporate action, so it is refetched whole and replaced. A false alarm
+  (a special dividend over 20%) only costs that refetch.
+
 Synthetic data deliberately does **not** flow through here: generated
 experiments are reproducible from their parameters; persistence is for
 externally acquired observations.
@@ -44,16 +67,26 @@ import logging
 from collections.abc import Callable
 from datetime import datetime
 
+import numpy as np
+import pandas as pd
+
 from quant_hub.data.bars import validate_ohlcv_frame
 from quant_hub.data.ranges import ONE_DAY, DateRange, floor_day
 from quant_hub.data.sources import BarSource
-from quant_hub.data.types import PriceHistory, Quote
+from quant_hub.data.types import PriceBasis, PriceHistory, Quote
 from quant_hub.services.sync import SyncStatus, plan_sync
 from quant_hub.storage.bar_store import BarStore, InstrumentKey
 
 _logger = logging.getLogger(__name__)
 
 DAILY = "1 day"
+
+MAX_DIVIDEND_STEP = 0.20
+"""Largest one-day rise in adjusted/traded taken as a dividend (split guard)."""
+
+RATIO_TOLERANCE = 1e-4
+"""Slack in the split guard's checks: IBKR's ratio holds to ~1e-7 between
+ex-dates, and stored prices are rounded to cents."""
 
 
 class CachedSource:
@@ -77,13 +110,14 @@ class CachedSource:
         self._now = now  # injectable for deterministic tests
 
     # -------------------------------------------------------------- DataSource
-    def get_history(self, symbol: str, start: datetime, end: datetime) -> PriceHistory:
+    def get_history(self, symbol: str, start: datetime, end: datetime,
+                    basis: PriceBasis = PriceBasis.TRADED) -> PriceHistory:
         symbol = symbol.upper().strip()
         key = InstrumentKey(symbol=symbol)
         requested = DateRange(start, end)
         _logger.info(
-            "history request: %s %s (%s bars, source %s)",
-            symbol, requested, self._bar_size, self.name,
+            "history request: %s %s (%s %s bars, source %s)",
+            symbol, requested, basis.value, self._bar_size, self.name,
         )
 
         covered = self._store.coverage(key, self.name, self._bar_size)
@@ -92,17 +126,23 @@ class CachedSource:
 
         if plan.status is not SyncStatus.FULL_HIT:
             self._sync_missing(key, plan.missing)
+        # An adjusted series refreshed today follows every traded sync, so it
+        # always spans the traded coverage; otherwise only an adjusted
+        # request refreshes it.
+        if basis is PriceBasis.ADJUSTED or self._adjusted_current(key):
+            self._sync_adjusted(key, plan.missing)
 
-        frame = self._store.query_bars(key, self.name, self._bar_size, start, end)
+        frame = self._store.query_bars(key, self.name, self._bar_size, start, end, basis)
         if len(frame) == 0:
             raise ValueError(
                 f"no {self._bar_size} bars available for {symbol} in {requested}"
             )
-        _logger.info("serving %s: %d bars from local store", symbol, len(frame))
+        _logger.info("serving %s: %d %s bars from local store", symbol, len(frame),
+                     basis.value)
         # Columns the provider never supplied are stored as NULL; drop them
         # rather than hand analytics all-NaN columns.
         frame = frame.dropna(axis=1, how="all")
-        return PriceHistory(symbol=symbol, source=self.name, frame=frame)
+        return PriceHistory(symbol=symbol, source=self.name, frame=frame, basis=basis)
 
     def get_quote(self, symbol: str) -> Quote:
         """Quotes are moments, not history: always pass through, never cached."""
@@ -136,6 +176,53 @@ class CachedSource:
                 covered_until if covered_until else "none (in-progress session)",
             )
 
+    def _adjusted_current(self, key: InstrumentKey) -> bool:
+        refreshed = self._store.refreshed_on(key, self.name, self._bar_size,
+                                             PriceBasis.ADJUSTED)
+        return refreshed is not None and refreshed >= floor_day(self._now())
+
+    def _sync_adjusted(self, key: InstrumentKey, missing: tuple[DateRange, ...]) -> None:
+        """Keep the adjusted series whole and current (module docstring)."""
+        today = floor_day(self._now())
+        if self._adjusted_current(key):
+            for gap in missing:                       # same day, same scale
+                clean = self._fetch(key, gap, PriceBasis.ADJUSTED)
+                self._store.insert_bars(key, self.name, self._bar_size, clean,
+                                        PriceBasis.ADJUSTED)
+            return
+        covered = self._store.coverage(key, self.name, self._bar_size)
+        if not covered:
+            return
+        span = DateRange(covered[0].start, max(covered[-1].end, today))
+        adjusted = self._fetch(key, span, PriceBasis.ADJUSTED)
+        traded = self._store.query_bars(key, self.name, self._bar_size, span.start,
+                                        span.end, PriceBasis.TRADED)
+        if not dividend_steps_only(traded, adjusted, today):
+            _logger.warning(
+                "%s: the stored traded prices don't match today's adjusted ones as "
+                "dividends alone would (a split or other corporate action since they were "
+                "stored); refetching the traded history %s", key.symbol, span)
+            traded = self._fetch(key, span, PriceBasis.TRADED)
+            self._store.replace_bars(key, self.name, self._bar_size, traded,
+                                     PriceBasis.TRADED)
+            if not dividend_steps_only(traded, adjusted, today):
+                _logger.warning("%s: still not a dividend step function after the refetch "
+                                "(a special dividend over %.0f%%?); keeping IBKR's series",
+                                key.symbol, MAX_DIVIDEND_STEP * 100)
+        result = self._store.replace_bars(key, self.name, self._bar_size, adjusted,
+                                          PriceBasis.ADJUSTED)
+        self._store.mark_refreshed(key, self.name, self._bar_size, PriceBasis.ADJUSTED, today)
+        _logger.info("refreshed adjusted %s %s: %d bars", key.symbol, span,
+                     result.inserted + result.replaced)
+
+    def _fetch(self, key: InstrumentKey, window: DateRange, basis: PriceBasis) -> pd.DataFrame:
+        raw = self._delegate.fetch_bars(key.symbol, window.start, window.end, self._bar_size,
+                                        basis)
+        clean, report = validate_ohlcv_frame(raw)
+        log = _logger.info if report.clean else _logger.warning
+        log("received %s %s %s: %s", basis.value, key.symbol, window, report.summary())
+        return clean
+
     def _record_coverage(self, key: InstrumentKey, fetched: DateRange) -> DateRange | None:
         """Record ``fetched`` as covered, capped at yesterday (see module doc)."""
         yesterday = floor_day(self._now()) - ONE_DAY
@@ -144,3 +231,19 @@ class CachedSource:
         capped = DateRange(fetched.start, min(fetched.end, yesterday))
         self._store.add_coverage(key, self.name, self._bar_size, capped)
         return capped
+
+
+def dividend_steps_only(traded: pd.DataFrame, adjusted: pd.DataFrame, today: datetime) -> bool:
+    """Whether adjusted/traded over completed sessions is a dividend step
+    function: at most 1, never falling, and rising by at most
+    ``MAX_DIVIDEND_STEP`` a day (module docstring, the split guard).
+    Today's bar is left out: the stored one is provisional."""
+    common = traded.index.intersection(adjusted.index)
+    common = common[common < today]
+    if len(common) < 2:
+        return True
+    ratio = (adjusted.loc[common, "close"] / traded.loc[common, "close"]).to_numpy()
+    steps = ratio[1:] / ratio[:-1]
+    return bool(np.all(ratio <= 1 + RATIO_TOLERANCE)
+                and np.all(steps >= 1 - RATIO_TOLERANCE)
+                and np.all(steps <= 1 + MAX_DIVIDEND_STEP))

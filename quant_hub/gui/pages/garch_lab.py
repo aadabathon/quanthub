@@ -38,7 +38,7 @@ from quant_hub.gui.components import (
     button,
     form_grid,
 )
-from quant_hub.gui.pages.base import ScrollPage
+from quant_hub.gui.pages.base import PRICE_BASES, ScrollPage, basis_field
 from quant_hub.gui.theme import PALETTE, SIDE_PANEL_WIDTH, SPACE_L, SPACE_M
 from quant_hub.models.garch import (
     GARCH11Fit,
@@ -162,7 +162,9 @@ class GARCHLabPage(ScrollPage):
                                    default_source if default_source in names else names[0], _HALF)
         self._symbol = Field("Symbol", saved.get("symbol", "SPY"), _HALF, uppercase=True)
         self._lookback = Field("Lookback (calendar days)", saved.get("lookback", "1825"), _HALF)
-        market.setLayout(form_grid([self._source, self._symbol, self._lookback], 2))
+        self._basis = basis_field(saved, _HALF)
+        market.setLayout(form_grid([self._source, self._symbol, self._lookback, self._basis],
+                                   2))
         self._groups = {_SYNTHETIC: synthetic, _MARKET: market}
         for group in self._groups.values():
             card.body.addWidget(group)
@@ -191,6 +193,7 @@ class GARCHLabPage(ScrollPage):
     def on_hide(self) -> None:
         self._state_store.save(_STATE_KEY, {
             "mode": _SAVED_MODE[self._mode], "source": self._source.current(),
+            "basis": self._basis.current(),
             "symbol": self._symbol.text(), "lookback": self._lookback.text(),
             "mean": self._mean.text(), "omega": self._omega.text(),
             "alpha": self._alpha.text(), "beta": self._beta.text(),
@@ -226,14 +229,16 @@ class GARCHLabPage(ScrollPage):
         symbol = self._symbol.required_text()
         lookback = self._lookback.number(integer=True, minimum=30)
         source = self._source.current()
+        basis = PRICE_BASES[self._basis.current()]
 
         def work() -> _Run:
             end = datetime.now()
             history = self._market.get_history(symbol, end - timedelta(days=lookback), end,
-                                               source=source)
+                                               source=source, basis=basis)
             returns = history.log_returns()
             return _Run(returns.index, returns.to_numpy(), fit_garch11(returns.to_numpy()), None,
-                        f"{history.symbol} · {history.source} · {len(returns):,} daily log returns")
+                        f"{history.symbol} · {history.source} · {basis.value} · "
+                        f"{len(returns):,} daily log returns")
         return work
 
     def _on_done(self, run: _Run) -> None:

@@ -50,6 +50,10 @@ class TestGenericLayout:
         assert frame["close"].iloc[0] == 1234.5
         assert np.isnan(frame["volume"].iloc[0]) and np.isnan(frame["close"].iloc[1])
 
+    def test_an_adjusted_only_file(self):
+        frame = read("date,adj_close\n2024-01-02,466.71\n").bars[None]
+        assert list(frame.columns) == ["adj_close"]
+
     def test_stooq_files_are_generic(self):
         assert detect_layout(["Date", "Open", "High", "Low", "Close", "Volume"]) is GENERIC
 
@@ -61,7 +65,7 @@ class TestPresets:
                       "2024-01-03,null,null,null,null,null,null\n")
         assert parsed.layout is YAHOO
         frame = parsed.bars[None]
-        assert frame["close"].iloc[0] == 472.65 and "adj close" not in frame.columns
+        assert frame["close"].iloc[0] == 472.65 and frame["adj_close"].iloc[0] == 466.71
         assert np.isnan(frame["close"].iloc[1])               # validation will drop it
 
     def test_nasdaq_dates_dollars_and_order(self):
@@ -78,6 +82,10 @@ class TestProblems:
     def test_unrecognized_columns_say_what_was_found(self):
         with pytest.raises(BarFileError, match=r"unrecognized columns \['day', 'price'\]"):
             read("day,price\n2024-01-02,1\n")
+
+    def test_a_file_needs_a_close_of_some_kind(self):
+        with pytest.raises(BarFileError, match="hold no close"):
+            read("date,open\n2024-01-02,1\n")
 
     def test_an_unreadable_date_names_its_row(self):
         with pytest.raises(BarFileError, match=r"row 3: date '2024-13-01' isn't YYYY-MM-DD"):

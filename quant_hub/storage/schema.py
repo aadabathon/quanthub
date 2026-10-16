@@ -20,11 +20,22 @@ opens the file:
 * **Newer file** (written by a later Quant Hub): it refuses, rather than
   let this version's stores write into a schema they don't understand.
 
-Version 0 is every file from before versioning (it has tables but no
-``schema_migrations``). Version 1 is the schema as of F1. The 0 → 1 step
-changes no table; it only adopts the file, so the first run after F1
-leaves a backup of every existing store. Backups are never deleted
-automatically: they're the only copy of history IBKR won't serve again.
+Versions:
+
+* **0:** every file from before versioning (tables, no ``schema_migrations``).
+* **1** (F1): the 0 → 1 step changes no table. It only adopts the file, so
+  the first run after F1 leaves a backup of every existing store.
+* **2** (F3, D38): bars gain a price ``basis`` in their key, and the
+  ``refreshes`` table appears. SQLite can't change a primary key in place,
+  so the step rebuilds ``bars``: every existing bar is ``traded``, which is
+  what IBKR's TRADES and every earlier import are.
+
+Steps are frozen: each one spells out its own SQL, never the stores'
+current schema, which keeps moving. A test holds a migrated file and a new
+one to the same tables.
+
+Backups are never deleted automatically: they're the only copy of history
+IBKR won't serve again.
 """
 
 from __future__ import annotations
@@ -40,7 +51,7 @@ from quant_hub.storage.bar_store import StorageError
 
 _logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 BACKUP_DIR = "backups"
 
 _TABLE = """
@@ -56,8 +67,52 @@ def _adopt(conn: sqlite3.Connection) -> None:
     """0 -> 1: the pre-versioning tables already are version 1."""
 
 
+_BARS_V2 = """
+CREATE TABLE bars_v2 (
+    instrument_id INTEGER NOT NULL REFERENCES instruments(id),
+    source        TEXT NOT NULL,
+    bar_size      TEXT NOT NULL,
+    basis         TEXT NOT NULL CHECK (basis IN ('traded', 'adjusted')),
+    ts            TEXT NOT NULL,
+    open   REAL CHECK (open   IS NULL OR open  > 0),
+    high   REAL CHECK (high   IS NULL OR high  > 0),
+    low    REAL CHECK (low    IS NULL OR low   > 0),
+    close  REAL NOT NULL CHECK (close > 0),
+    volume REAL CHECK (volume IS NULL OR volume >= 0),
+    CHECK (high IS NULL OR low IS NULL OR high >= low),
+    PRIMARY KEY (instrument_id, source, bar_size, basis, ts)
+) WITHOUT ROWID
+"""
+
+_REFRESHES_V2 = """
+CREATE TABLE IF NOT EXISTS refreshes (
+    instrument_id INTEGER NOT NULL REFERENCES instruments(id),
+    source        TEXT NOT NULL,
+    bar_size      TEXT NOT NULL,
+    basis         TEXT NOT NULL,
+    refreshed_on  TEXT NOT NULL,
+    PRIMARY KEY (instrument_id, source, bar_size, basis)
+) WITHOUT ROWID
+"""
+
+
+def _price_basis(conn: sqlite3.Connection) -> None:
+    """1 -> 2: bars gain a basis in their key; every stored bar is traded."""
+    tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    if "bars" in tables:
+        conn.execute(_BARS_V2)
+        conn.execute(
+            "INSERT INTO bars_v2 (instrument_id, source, bar_size, basis, ts, open, high,"
+            " low, close, volume) SELECT instrument_id, source, bar_size, 'traded', ts,"
+            " open, high, low, close, volume FROM bars")
+        conn.execute("DROP TABLE bars")
+        conn.execute("ALTER TABLE bars_v2 RENAME TO bars")
+    if "instruments" in tables:
+        conn.execute(_REFRESHES_V2)
+
+
 # Step from version v to v + 1, keyed by v.
-_STEPS: dict[int, Callable[[sqlite3.Connection], None]] = {0: _adopt}
+_STEPS: dict[int, Callable[[sqlite3.Connection], None]] = {0: _adopt, 1: _price_basis}
 
 
 @dataclass(frozen=True)

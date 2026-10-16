@@ -10,6 +10,17 @@ Schema: a pandas DataFrame with a sorted, unique ``DatetimeIndex``. The
 ``low`` and ``volume`` are optional -- real bars have them, synthetic close
 paths do not, and inventing fake OHLC structure would be worse than admitting
 its absence.
+
+Every history carries its price ``basis`` (D38), named on every request like
+the source (D23):
+
+* ``TRADED``: prices as they traded, adjusted for splits but not dividends
+  (IBKR's TRADES). Right for levels: charts, spot, strikes.
+* ``ADJUSTED``: adjusted for splits and dividends (IBKR's ADJUSTED_LAST),
+  so returns are total returns. Right for return math.
+
+Both are adjusted backward from the present, so the latest prices are the
+same in each; they differ by a factor that steps at each ex-dividend date.
 """
 
 from __future__ import annotations
@@ -23,6 +34,13 @@ import pandas as pd
 
 REQUIRED_COLUMNS = ("close",)
 OPTIONAL_COLUMNS = ("open", "high", "low", "volume")
+
+
+class PriceBasis(Enum):
+    """What a price series is adjusted for (module docstring, D38)."""
+
+    TRADED = "traded"
+    ADJUSTED = "adjusted"
 
 
 class MarketDataMode(Enum):
@@ -76,10 +94,13 @@ class PriceHistory:
     symbol: str
     source: str
     frame: pd.DataFrame = field(repr=False)
+    basis: PriceBasis = PriceBasis.TRADED
 
     def __post_init__(self) -> None:
         if not self.symbol:
             raise ValueError("PriceHistory.symbol must be non-empty")
+        if not isinstance(self.basis, PriceBasis):
+            raise ValueError("PriceHistory.basis must be a PriceBasis")
 
         frame = self.frame
         if not isinstance(frame.index, pd.DatetimeIndex):

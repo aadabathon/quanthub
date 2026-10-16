@@ -10,6 +10,7 @@ from datetime import datetime
 import pytest
 
 from quant_hub.data.sources import SyntheticSource
+from quant_hub.data.types import PriceBasis
 from quant_hub.services.market_service import MarketService, UnknownSourceError
 
 
@@ -20,9 +21,9 @@ class RecordingSource:
         self.name = name
         self.calls = []
 
-    def get_history(self, symbol, start, end):
-        self.calls.append(("history", symbol))
-        return SyntheticSource().get_history(symbol, start, end)
+    def get_history(self, symbol, start, end, basis=PriceBasis.TRADED):
+        self.calls.append(("history", symbol, basis))
+        return SyntheticSource().get_history(symbol, start, end, basis)
 
     def get_quote(self, symbol):
         self.calls.append(("quote", symbol))
@@ -51,10 +52,12 @@ class TestConstruction:
 class TestRouting:
     def test_history_routes_to_named_source(self):
         service, a, b = make_service()
-        service.get_history(
-            "SPY", datetime(2022, 1, 1), datetime(2023, 1, 1), source="alpha"
+        history = service.get_history(
+            "SPY", datetime(2022, 1, 1), datetime(2023, 1, 1), source="alpha",
+            basis=PriceBasis.ADJUSTED,
         )
-        assert a.calls == [("history", "SPY")]
+        assert a.calls == [("history", "SPY", PriceBasis.ADJUSTED)]   # the basis is passed on
+        assert history.basis is PriceBasis.ADJUSTED
         assert b.calls == []
 
     def test_quote_routes_to_named_source(self):

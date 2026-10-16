@@ -67,7 +67,7 @@ from quant_hub.gui.components import (
     button,
     form_grid,
 )
-from quant_hub.gui.pages.base import ScrollPage
+from quant_hub.gui.pages.base import PRICE_BASES, ScrollPage, basis_field
 from quant_hub.gui.theme import PALETTE, SIDE_PANEL_WIDTH, SPACE_L, SPACE_M
 from quant_hub.models.markov import (
     MIN_OBSERVATIONS,
@@ -310,7 +310,9 @@ class MarkovLabPage(ScrollPage):
                                    default_source if default_source in names else names[0], _HALF)
         self._symbol = Field("Symbol", saved.get("symbol", "SPY"), _HALF, uppercase=True)
         self._lookback = Field("Lookback (calendar days)", saved.get("lookback", "1825"), _HALF)
-        market.setLayout(form_grid([self._source, self._symbol, self._lookback], 2))
+        self._basis = basis_field(saved, _HALF)
+        market.setLayout(form_grid([self._source, self._symbol, self._lookback, self._basis],
+                                   2))
         self._groups = {_SYNTHETIC: synthetic, _MARKET: market}
         for group in self._groups.values():
             card.body.addWidget(group)
@@ -357,7 +359,8 @@ class MarkovLabPage(ScrollPage):
             "mode": self._mode, "count": self._count, "view": self._view,
             "window": self._window, "world": self._world.current(),
             "days": self._days.text(), "seed": self._seed.text(),
-            "source": self._source.current(), "symbol": self._symbol.text(),
+            "source": self._source.current(), "basis": self._basis.current(),
+            "symbol": self._symbol.text(),
             "lookback": self._lookback.text(),
         })
 
@@ -393,19 +396,20 @@ class MarkovLabPage(ScrollPage):
         symbol = self._symbol.required_text()
         lookback = self._lookback.number(integer=True, minimum=150)
         source = self._source.current()
+        basis = PRICE_BASES[self._basis.current()]
         count = _COUNTS[self._count]
 
         def work() -> _Run:
             end = datetime.now()
             history = self._market.get_history(symbol, end - timedelta(days=lookback), end,
-                                               source=source)
+                                               source=source, basis=basis)
             returns = history.log_returns()
             if len(returns) < MIN_OBSERVATIONS:
                 raise ValueError(f"{len(returns)} daily returns; a regime fit needs at least "
                                  f"{MIN_OBSERVATIONS}: lengthen the lookback")
             prices = history.closes.loc[returns.index].to_numpy(dtype=float)
             return _analyse(returns.index, prices, returns.to_numpy(dtype=float), count, None,
-                            f"{history.symbol} · {history.source} · "
+                            f"{history.symbol} · {history.source} · {basis.value} · "
                             f"{len(returns):,} daily returns")
         return work
 

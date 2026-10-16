@@ -9,6 +9,11 @@ Two halves:
   under the provider name ``file``, so a bad file stores nothing. Importing
   again replaces bars on the same dates (a corrected file wins), and every
   dropped or repaired row is logged.
+* The file's columns declare its bases (D38): ``close`` is traded,
+  ``adj_close`` adjusted. With both, the adjusted open, high and low are the
+  traded ones times that day's ``adj_close / close``, the factor IBKR and
+  Yahoo apply to all four prices. A file stores only the bases it holds,
+  and asking for another says so.
 * ``FileSource`` is the ``DataSource`` that pages name ``file``. It serves
   what was imported, from the store. A file isn't fetched by date range, so
   unlike ``CachedSource`` it keeps no coverage: a window past a file's last
@@ -29,7 +34,8 @@ from pathlib import Path
 
 from quant_hub.broker.types import NoMarketDataError
 from quant_hub.data.bars import ValidationReport, validate_ohlcv_frame
-from quant_hub.data.types import PriceHistory, Quote
+from quant_hub.data.sources import BasisUnavailableError
+from quant_hub.data.types import PriceBasis, PriceHistory, Quote
 from quant_hub.importers.bar_csv import BarFileError, read_bar_csv
 from quant_hub.services.cached_source import DAILY
 from quant_hub.storage.bar_store import BarStore, InstrumentKey
@@ -46,6 +52,10 @@ class NoImportedBarsError(LookupError):
     """The store holds no imported bars for that symbol and window."""
 
 
+class ImportedBasisMissingError(NoImportedBarsError, BasisUnavailableError):
+    """Imported, but not on the requested basis."""
+
+
 @dataclass(frozen=True)
 class ImportedSeries:
     """One symbol's import: what the file held and what the store took."""
@@ -57,6 +67,7 @@ class ImportedSeries:
     report: ValidationReport
     first: datetime
     last: datetime
+    bases: tuple[PriceBasis, ...] = (PriceBasis.TRADED,)
 
     @property
     def stored(self) -> int:
@@ -64,8 +75,9 @@ class ImportedSeries:
 
     def describe(self) -> str:
         dropped = len(self.report.dropped)
+        bases = " and ".join(b.value for b in self.bases)
         return (f"{self.symbol}: {self.stored:,} bars, {self.first:%Y-%m-%d} to "
-                f"{self.last:%Y-%m-%d} ({self.layout} layout"
+                f"{self.last:%Y-%m-%d}, {bases} ({self.layout} layout"
                 + (f"; {dropped} row{'s' if dropped != 1 else ''} dropped" if dropped else "")
                 + ")")
 
@@ -89,22 +101,51 @@ def import_bar_file(store: BarStore, path: str | Path,
     validated = []
     for named, raw in parsed.bars.items():
         name = named or _clean_symbol(symbol, path)
-        clean, report = validate_ohlcv_frame(raw)
-        log = _logger.info if report.clean else _logger.warning
-        log("read %s from %s: %s", name, path.name, report.summary())
-        if clean.empty:
-            raise BarFileError(f"{name}: no usable bars in {path.name} ({report.summary()})")
-        validated.append((name, clean, report))
+        series = {}
+        for basis, frame in _by_basis(raw).items():
+            clean, report = validate_ohlcv_frame(frame)
+            log = _logger.info if report.clean else _logger.warning
+            log("read %s %s from %s: %s", basis.value, name, path.name, report.summary())
+            if clean.empty:
+                raise BarFileError(f"{name}: no usable {basis.value} bars in {path.name} "
+                                   f"({report.summary()})")
+            series[basis] = (clean, report)
+        validated.append((name, series))
 
     imported = []
-    for name, clean, report in validated:
-        result = store.insert_bars(InstrumentKey(name), FILE_SOURCE, DAILY, clean)
-        _logger.info("imported %s from %s: %d inserted, %d replaced", name, path.name,
-                     result.inserted, result.replaced)
+    for name, series in validated:
+        results = {basis: store.insert_bars(InstrumentKey(name), FILE_SOURCE, DAILY, clean,
+                                            basis)
+                   for basis, (clean, _report) in series.items()}
+        # Report the first basis the file holds: traded where there is one.
+        basis = next(iter(series))
+        clean, report = series[basis]
+        result = results[basis]
+        _logger.info("imported %s from %s: %d inserted, %d replaced (%s)", name, path.name,
+                     result.inserted, result.replaced,
+                     " and ".join(b.value for b in series))
         imported.append(ImportedSeries(name, parsed.layout.name, result.inserted,
                                        result.replaced, report, clean.index[0].to_pydatetime(),
-                                       clean.index[-1].to_pydatetime()))
+                                       clean.index[-1].to_pydatetime(), tuple(series)))
     return imported
+
+
+def _by_basis(raw):
+    """A file's frame as one frame per basis it holds (module docstring)."""
+    prices = [col for col in ("open", "high", "low") if col in raw.columns]
+    bases = {}
+    if "close" in raw.columns:
+        bases[PriceBasis.TRADED] = raw.drop(columns=["adj_close"], errors="ignore")
+    if "adj_close" in raw.columns:
+        adjusted = raw.drop(columns=["adj_close"]).assign(close=raw["adj_close"])
+        if "close" in raw.columns:
+            factor = raw["adj_close"] / raw["close"]
+            for col in prices:
+                adjusted[col] = raw[col] * factor
+        else:
+            adjusted = adjusted.drop(columns=prices)       # no traded prices to scale
+        bases[PriceBasis.ADJUSTED] = adjusted
+    return bases
 
 
 def _clean_symbol(symbol: str | None, path: Path) -> str:
@@ -135,16 +176,24 @@ class FileSource:
     def __init__(self, store: BarStore) -> None:
         self._store = store
 
-    def get_history(self, symbol: str, start: datetime, end: datetime) -> PriceHistory:
+    def get_history(self, symbol: str, start: datetime, end: datetime,
+                    basis: PriceBasis = PriceBasis.TRADED) -> PriceHistory:
         symbol = symbol.upper().strip()
-        frame = self._store.query_bars(InstrumentKey(symbol), self.name, DAILY, start, end)
+        key = InstrumentKey(symbol)
+        frame = self._store.query_bars(key, self.name, DAILY, start, end, basis)
         if len(frame) == 0:
+            other = next(b for b in PriceBasis if b is not basis)
+            if len(self._store.query_bars(key, self.name, DAILY, start, end, other)):
+                column = "an adj_close" if basis is PriceBasis.ADJUSTED else "a close"
+                raise ImportedBasisMissingError(
+                    f"{symbol} was imported with {other.value} prices only: choose "
+                    f"{other.value.capitalize()}, or import a file with {column} column")
             raise NoImportedBarsError(
                 f"no imported {symbol} bars from {start:%Y-%m-%d} to {end:%Y-%m-%d}: import a "
                 "CSV from the Dashboard's Market data card")
         # Columns the file didn't have are stored as NULL (as in CachedSource).
         return PriceHistory(symbol=symbol, source=self.name,
-                            frame=frame.dropna(axis=1, how="all"))
+                            frame=frame.dropna(axis=1, how="all"), basis=basis)
 
     def get_quote(self, symbol: str) -> Quote:
         raise NoMarketDataError(f"{symbol}: imported files have no live quotes")

@@ -16,8 +16,10 @@ The generic layout
 
 * A header row, names in any case and order; other columns are ignored.
 * ``date`` as YYYY-MM-DD, one row per session.
-* ``close`` is required. ``open``, ``high``, ``low`` and ``volume`` are
-  optional: a close-only file is fine.
+* The columns declare the price basis (D38). ``close`` is the price as
+  traded; ``adj_close`` the close adjusted for dividends too. A file needs
+  at least one. ``open``, ``high``, ``low`` and ``volume`` are optional: a
+  close-only file is fine.
 * An optional ``symbol`` column lets one file hold several symbols. Without
   it, the importer is told the symbol.
 * Prices are plain numbers. A ``$`` and thousands separators are tolerated,
@@ -35,11 +37,11 @@ Vendors whose files differ, recognized by their header:
 * **Nasdaq.com** historical data: ``Date, Close/Last, Volume, Open, High,
   Low``, dates as MM/DD/YYYY, prices with ``$``, newest first.
 * **Yahoo Finance** downloads: the generic names plus ``Adj Close``. Yahoo
-  adjusts ``Close`` for splits and ``Adj Close`` for dividends too; the
-  importer takes ``Close``, and dividend-adjusted prices are F3's business.
+  adjusts ``Close`` for splits and ``Adj Close`` for dividends too, so
+  they are the traded and adjusted bases, like IBKR's.
 
-Prices are stored as the vendor gives them. F3 makes their basis (raw,
-split-adjusted, dividend-adjusted) an explicit part of every import.
+Prices are stored as the vendor gives them, on the basis their columns
+declare.
 
 Detection takes the first layout whose identifying columns are all present,
 most specific first, so a Yahoo file isn't read as merely generic.
@@ -55,7 +57,7 @@ from typing import IO
 import numpy as np
 import pandas as pd
 
-FIELDS = ("open", "high", "low", "close", "volume")
+FIELDS = ("open", "high", "low", "close", "volume", "adj_close")
 _MISSING = {"", "null", "nan", "n/a", "na", "-"}
 
 
@@ -76,11 +78,12 @@ class CsvLayout:
 
 
 _GENERIC_COLUMNS = {"date": "date", "open": "open", "high": "high", "low": "low",
-                    "close": "close", "volume": "volume", "symbol": "symbol"}
+                    "close": "close", "volume": "volume", "symbol": "symbol",
+                    "adj_close": "adj_close"}
 
-GENERIC = CsvLayout("Generic", _GENERIC_COLUMNS, ("date", "close"), "%Y-%m-%d", "YYYY-MM-DD")
-YAHOO = CsvLayout("Yahoo Finance", _GENERIC_COLUMNS, ("date", "close", "adj close"),
-                  "%Y-%m-%d", "YYYY-MM-DD")
+GENERIC = CsvLayout("Generic", _GENERIC_COLUMNS, ("date",), "%Y-%m-%d", "YYYY-MM-DD")
+YAHOO = CsvLayout("Yahoo Finance", {**_GENERIC_COLUMNS, "adj_close": "adj close"},
+                  ("date", "close", "adj close"), "%Y-%m-%d", "YYYY-MM-DD")
 NASDAQ = CsvLayout("Nasdaq.com", {"date": "date", "open": "open", "high": "high",
                                   "low": "low", "close": "close/last", "volume": "volume"},
                    ("date", "close/last"), "%m/%d/%Y", "MM/DD/YYYY")
@@ -122,6 +125,10 @@ def read_bar_csv(source: str | Path | IO[str], layout: CsvLayout | None = None) 
     missing = [name for name in layout.identifying if name not in table.columns]
     if missing:
         raise BarFileError(f"a {layout.name} file needs the columns {missing}")
+    prices = [layout.columns.get(field) for field in ("close", "adj_close")]
+    if not any(name in table.columns for name in prices if name):
+        raise BarFileError(f"columns {list(table.columns)} hold no close: a file needs close "
+                           "(as traded) or adj_close (adjusted for dividends), or both")
     if table.empty:
         raise BarFileError("the file has a header but no rows")
 

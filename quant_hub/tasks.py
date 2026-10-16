@@ -4,7 +4,8 @@ The GUI must never block (services can wait tens of seconds on IBKR) and
 worker threads must never touch widgets. ``TaskRunner`` is the single bridge:
 
     task_runner.submit(
-        lambda: market_service.get_history("SPY", start, end),
+        lambda: market_service.get_history("SPY", start, end, source="ibkr",
+                                           basis=PriceBasis.TRADED),
         on_done=self._show_history,    # called on the GUI thread
         on_error=self._show_error,     # called on the GUI thread
     )

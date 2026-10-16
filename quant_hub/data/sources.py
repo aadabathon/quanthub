@@ -17,7 +17,12 @@ import numpy as np
 import pandas as pd
 
 from quant_hub.data.synthetic import GeometricBrownianMotion
-from quant_hub.data.types import MarketDataMode, PriceHistory, Quote
+from quant_hub.data.types import MarketDataMode, PriceBasis, PriceHistory, Quote
+
+
+class BasisUnavailableError(LookupError):
+    """The source holds the symbol, but not on the requested price basis (an
+    import with traded prices only, say)."""
 
 
 @runtime_checkable
@@ -26,8 +31,10 @@ class DataSource(Protocol):
 
     name: str
 
-    def get_history(self, symbol: str, start: datetime, end: datetime) -> PriceHistory:
-        """Return daily history covering [start, end]. Raises on failure."""
+    def get_history(self, symbol: str, start: datetime, end: datetime,
+                    basis: PriceBasis = PriceBasis.TRADED) -> PriceHistory:
+        """Return daily history covering [start, end] on ``basis`` (D38).
+        Raises on failure."""
         ...
 
     def get_quote(self, symbol: str) -> Quote:
@@ -50,9 +57,10 @@ class BarSource(Protocol):
     name: str
 
     def fetch_bars(
-        self, symbol: str, start: datetime, end: datetime, bar_size: str
+        self, symbol: str, start: datetime, end: datetime, bar_size: str,
+        basis: PriceBasis = PriceBasis.TRADED,
     ) -> pd.DataFrame:
-        """Raw bars covering [start, end]; may be empty. Raises on failure."""
+        """Raw bars covering [start, end] on ``basis``; may be empty. Raises on failure."""
         ...
 
 
@@ -87,7 +95,9 @@ class SyntheticSource:
             seed=seed,
         )
 
-    def get_history(self, symbol: str, start: datetime, end: datetime) -> PriceHistory:
+    def get_history(self, symbol: str, start: datetime, end: datetime,
+                    basis: PriceBasis = PriceBasis.TRADED) -> PriceHistory:
+        """Synthetic paths pay no dividends: both bases are the same path."""
         if start >= end:
             raise ValueError(f"start ({start:%Y-%m-%d}) must be before end ({end:%Y-%m-%d})")
         if start < self._base_date:
@@ -103,7 +113,8 @@ class SyntheticSource:
         window = frame.loc[start:end]
         if len(window) == 0:
             raise ValueError(f"no business days in requested range {start} .. {end}")
-        return PriceHistory(symbol=symbol.upper().strip(), source=self.name, frame=window)
+        return PriceHistory(symbol=symbol.upper().strip(), source=self.name, frame=window,
+                            basis=basis)
 
     def get_quote(self, symbol: str) -> Quote:
         now = datetime.now()

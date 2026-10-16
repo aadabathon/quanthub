@@ -1,7 +1,7 @@
 """SQLite-backed store for historical OHLCV bars and their sync coverage.
 
-Schema (three tables; created idempotently on open)
----------------------------------------------------
+Schema (four tables; created idempotently on open)
+--------------------------------------------------
 ``instruments``
     One row per distinct instrument identity
     ``(symbol, sec_type, exchange, currency)`` — a bar is never identified
@@ -9,7 +9,8 @@ Schema (three tables; created idempotently on open)
     security types or currencies.
 ``bars``
     One row per observation, primary key
-    ``(instrument_id, source, bar_size, ts)``. Uniqueness is enforced *by
+    ``(instrument_id, source, bar_size, basis, ts)``: the same session can
+    be stored as traded and as adjusted (D38). Uniqueness is enforced *by
     the database*, not by Python. ``close`` is required and positive;
     ``open/high/low/volume`` may be NULL (close-only rows are legal, per
     the ``PriceHistory`` schema). Re-inserting an existing key **replaces**
@@ -19,7 +20,12 @@ Schema (three tables; created idempotently on open)
     Date intervals successfully synced per ``(instrument, source,
     bar_size)``. Kept separate from bar existence because weekends and
     holidays make "no bar" ambiguous. Rows are merged into maximal
-    disjoint ranges on every write (see ``data/ranges.py``).
+    disjoint ranges on every write (see ``data/ranges.py``). One coverage
+    serves both bases: the cache keeps adjusted bars over the same span.
+``refreshes``
+    The day a series was last replaced in full, per ``(instrument, source,
+    bar_size, basis)``. Adjusted prices are rescaled at every ex-dividend
+    date, so ``services/cached_source.py`` refetches them whole once a day.
 
 Time representation
 -------------------
@@ -55,6 +61,7 @@ from pathlib import Path
 import pandas as pd
 
 from quant_hub.data.ranges import DateRange, merge_ranges
+from quant_hub.data.types import PriceBasis
 
 _logger = logging.getLogger(__name__)
 
@@ -72,6 +79,7 @@ CREATE TABLE IF NOT EXISTS bars (
     instrument_id INTEGER NOT NULL REFERENCES instruments(id),
     source        TEXT NOT NULL,
     bar_size      TEXT NOT NULL,
+    basis         TEXT NOT NULL CHECK (basis IN ('traded', 'adjusted')),
     ts            TEXT NOT NULL,
     open   REAL CHECK (open   IS NULL OR open  > 0),
     high   REAL CHECK (high   IS NULL OR high  > 0),
@@ -79,7 +87,16 @@ CREATE TABLE IF NOT EXISTS bars (
     close  REAL NOT NULL CHECK (close > 0),
     volume REAL CHECK (volume IS NULL OR volume >= 0),
     CHECK (high IS NULL OR low IS NULL OR high >= low),
-    PRIMARY KEY (instrument_id, source, bar_size, ts)
+    PRIMARY KEY (instrument_id, source, bar_size, basis, ts)
+) WITHOUT ROWID;
+
+CREATE TABLE IF NOT EXISTS refreshes (
+    instrument_id INTEGER NOT NULL REFERENCES instruments(id),
+    source        TEXT NOT NULL,
+    bar_size      TEXT NOT NULL,
+    basis         TEXT NOT NULL,
+    refreshed_on  TEXT NOT NULL,
+    PRIMARY KEY (instrument_id, source, bar_size, basis)
 ) WITHOUT ROWID;
 
 CREATE TABLE IF NOT EXISTS coverage (
@@ -127,7 +144,8 @@ class InsertResult:
 
 @dataclass(frozen=True)
 class StoredSeriesSummary:
-    """One row of the store's contents overview (per symbol/source/bar-size)."""
+    """One row of the store's contents overview (per symbol, source,
+    bar size and basis)."""
 
     symbol: str
     source: str
@@ -135,6 +153,7 @@ class StoredSeriesSummary:
     n_bars: int
     first: datetime
     last: datetime
+    basis: PriceBasis = PriceBasis.TRADED
 
 
 def _iso(moment: datetime) -> str:
@@ -172,40 +191,62 @@ class BarStore:
         source: str,
         bar_size: str,
         frame: pd.DataFrame,
+        basis: PriceBasis = PriceBasis.TRADED,
     ) -> InsertResult:
         """Upsert a validated OHLCV frame. Returns inserted/replaced counts.
 
         Replacement (same primary key) is deliberate: a re-fetched bar is
         the newer observation. The counts exist for the ingestion log.
         """
-        if len(frame) == 0:
-            return InsertResult(inserted=0, replaced=0)
+        return self._write(key, source, bar_size, basis, frame, replace_all=False)
+
+    def replace_bars(
+        self,
+        key: InstrumentKey,
+        source: str,
+        bar_size: str,
+        frame: pd.DataFrame,
+        basis: PriceBasis,
+    ) -> InsertResult:
+        """Make ``frame`` the whole stored series for this basis, in one
+        transaction: for history a corporate action rewrote (D38)."""
+        return self._write(key, source, bar_size, basis, frame, replace_all=True)
+
+    def _write(self, key: InstrumentKey, source: str, bar_size: str, basis: PriceBasis,
+               frame: pd.DataFrame, replace_all: bool) -> InsertResult:
         rows = []
         for ts, row in frame.iterrows():
             values = [
                 None if pd.isna(row.get(col)) else float(row.get(col))
                 for col in _BAR_COLUMNS
             ]
-            rows.append((source, bar_size, _iso(ts.to_pydatetime()), *values))
+            rows.append((source, bar_size, basis.value, _iso(ts.to_pydatetime()), *values))
+        if not rows and not replace_all:
+            return InsertResult(inserted=0, replaced=0)
 
         with self._lock:
             try:
                 with self._conn:
                     instrument_id = self._instrument_id(key)
+                    series = (instrument_id, source, bar_size, basis.value)
                     existing = {
                         ts
                         for (ts,) in self._conn.execute(
                             "SELECT ts FROM bars WHERE instrument_id=? "
-                            "AND source=? AND bar_size=?",
-                            (instrument_id, source, bar_size),
+                            "AND source=? AND bar_size=? AND basis=?",
+                            series,
                         )
                     }
-                    replaced = sum(1 for row in rows if row[2] in existing)
+                    replaced = sum(1 for row in rows if row[3] in existing)
+                    if replace_all:
+                        self._conn.execute(
+                            "DELETE FROM bars WHERE instrument_id=? AND source=?"
+                            " AND bar_size=? AND basis=?", series)
                     self._conn.executemany(
-                        "INSERT INTO bars (instrument_id, source, bar_size, ts,"
+                        "INSERT INTO bars (instrument_id, source, bar_size, basis, ts,"
                         " open, high, low, close, volume)"
-                        f" VALUES ({instrument_id}, ?, ?, ?, ?, ?, ?, ?, ?)"
-                        " ON CONFLICT (instrument_id, source, bar_size, ts)"
+                        f" VALUES ({instrument_id}, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                        " ON CONFLICT (instrument_id, source, bar_size, basis, ts)"
                         " DO UPDATE SET open=excluded.open, high=excluded.high,"
                         " low=excluded.low, close=excluded.close,"
                         " volume=excluded.volume",
@@ -215,6 +256,40 @@ class BarStore:
                 raise StorageError(f"insert failed for {key.symbol}: {exc}") from exc
         return InsertResult(inserted=len(rows) - replaced, replaced=replaced)
 
+    # -------------------------------------------------------------- refreshes
+    def refreshed_on(self, key: InstrumentKey, source: str, bar_size: str,
+                     basis: PriceBasis) -> datetime | None:
+        """The day this series was last replaced in full, or None."""
+        with self._lock:
+            try:
+                row = self._conn.execute(
+                    "SELECT r.refreshed_on FROM refreshes r JOIN instruments i"
+                    " ON i.id = r.instrument_id WHERE i.symbol=? AND i.sec_type=?"
+                    " AND i.exchange=? AND i.currency=? AND r.source=?"
+                    " AND r.bar_size=? AND r.basis=?",
+                    (key.symbol, key.sec_type, key.exchange, key.currency,
+                     source, bar_size, basis.value),
+                ).fetchone()
+            except sqlite3.Error as exc:
+                raise StorageError(f"refresh lookup failed for {key.symbol}: {exc}") from exc
+        return None if row is None else datetime.fromisoformat(row[0])
+
+    def mark_refreshed(self, key: InstrumentKey, source: str, bar_size: str,
+                       basis: PriceBasis, day: datetime) -> None:
+        with self._lock:
+            try:
+                with self._conn:
+                    self._conn.execute(
+                        "INSERT INTO refreshes (instrument_id, source, bar_size, basis,"
+                        " refreshed_on) VALUES (?, ?, ?, ?, ?)"
+                        " ON CONFLICT (instrument_id, source, bar_size, basis)"
+                        " DO UPDATE SET refreshed_on=excluded.refreshed_on",
+                        (self._instrument_id(key), source, bar_size, basis.value,
+                         _iso_date(day)),
+                    )
+            except sqlite3.Error as exc:
+                raise StorageError(f"refresh record failed for {key.symbol}: {exc}") from exc
+
     def query_bars(
         self,
         key: InstrumentKey,
@@ -222,6 +297,7 @@ class BarStore:
         bar_size: str,
         start: datetime,
         end: datetime,
+        basis: PriceBasis = PriceBasis.TRADED,
     ) -> pd.DataFrame:
         """Bars in ``[start, end]`` (inclusive), chronological. May be empty.
 
@@ -237,11 +313,11 @@ class BarStore:
                     " WHERE instrument_id = ("
                     "   SELECT id FROM instruments WHERE symbol=? AND sec_type=?"
                     "   AND exchange=? AND currency=?)"
-                    " AND source=? AND bar_size=? AND ts BETWEEN ? AND ?"
+                    " AND source=? AND bar_size=? AND basis=? AND ts BETWEEN ? AND ?"
                     " ORDER BY ts",
                     (
                         key.symbol, key.sec_type, key.exchange, key.currency,
-                        source, bar_size,
+                        source, bar_size, basis.value,
                         _iso_date(start) + " 00:00:00",
                         _iso_date(end) + " 23:59:59",
                     ),
@@ -260,14 +336,15 @@ class BarStore:
         )
 
     def summary(self) -> list[StoredSeriesSummary]:
-        """What the store holds, one row per (symbol, source, bar_size)."""
+        """What the store holds, one row per (symbol, source, bar_size, basis)."""
         with self._lock:
             try:
                 rows = self._conn.execute(
-                    "SELECT i.symbol, b.source, b.bar_size, COUNT(*),"
+                    "SELECT i.symbol, b.source, b.bar_size, b.basis, COUNT(*),"
                     " MIN(b.ts), MAX(b.ts)"
                     " FROM bars b JOIN instruments i ON i.id = b.instrument_id"
-                    " GROUP BY i.symbol, b.source, b.bar_size ORDER BY i.symbol",
+                    " GROUP BY i.symbol, b.source, b.bar_size, b.basis"
+                    " ORDER BY i.symbol, b.source, b.basis DESC",
                 ).fetchall()
             except sqlite3.Error as exc:
                 raise StorageError(f"summary query failed: {exc}") from exc
@@ -276,8 +353,9 @@ class BarStore:
                 symbol=sym, source=src, bar_size=size, n_bars=int(n),
                 first=datetime.fromisoformat(first),
                 last=datetime.fromisoformat(last),
+                basis=PriceBasis(basis),
             )
-            for sym, src, size, n, first, last in rows
+            for sym, src, size, basis, n, first, last in rows
         ]
 
     # --------------------------------------------------------------- coverage

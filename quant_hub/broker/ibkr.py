@@ -348,8 +348,15 @@ class IBKRBroker:
         start: datetime,
         end: datetime,
         bar_size: str = "1 day",
+        what_to_show: str = "TRADES",
     ) -> list[HistoricalBar]:
-        """Fetch TRADES bars at ``bar_size`` (daily-or-coarser only).
+        """Fetch bars at ``bar_size`` (daily-or-coarser only).
+
+        ``what_to_show`` is ``TRADES`` (as traded, adjusted for splits) or
+        ``ADJUSTED_LAST`` (adjusted for dividends too; TRADES times a factor
+        that steps at each ex-date, 1 at the latest bar). Verified live
+        2026-10-15 (D38). ADJUSTED_LAST needs an end time of "now", which
+        every request here has.
 
         Limitation (D11): the request always ends "now" -- IBKR anchors
         history as a duration back from an end time, and pinning historical
@@ -365,6 +372,8 @@ class IBKRBroker:
                 f"unsupported bar size {bar_size!r}; supported: {_VALID_BAR_SIZES} "
                 "(intraday sizes need a timezone policy first)"
             )
+        if what_to_show not in ("TRADES", "ADJUSTED_LAST"):
+            raise ValueError(f"unsupported price series {what_to_show!r}")
         req_id, pending = self._register_request()
         contract = self._to_contract(spec)
         self._app.reqHistoricalData(
@@ -373,7 +382,7 @@ class IBKRBroker:
             endDateTime="",  # now
             durationStr=duration_string(start, max(end, datetime.now())),
             barSizeSetting=bar_size,
-            whatToShow="TRADES",
+            whatToShow=what_to_show,
             useRTH=1,
             formatDate=1,
             keepUpToDate=False,

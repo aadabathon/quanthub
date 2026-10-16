@@ -111,8 +111,10 @@ def test_dashboard_imports_a_csv_beside_the_same_symbol_from_ibkr(qt_app, tmp_pa
     wait_for(app, lambda: dash._store_table.rowCount() == 3)
     assert "60 bars" in dash._header._status.full_text()
     wait_for(app, lambda: dash._symbol_box.current() == "AAA · file")
+    from quant_hub.data.types import PriceBasis
     history = window._core.market_service.get_history(
-        "AAA", dates[0].to_pydatetime(), dates[-1].to_pydatetime(), source="file")
+        "AAA", dates[0].to_pydatetime(), dates[-1].to_pydatetime(), source="file",
+        basis=PriceBasis.TRADED)
     assert len(history.closes) == 60
 
 
@@ -329,7 +331,18 @@ def test_markov_lab_auto_on_market_history(qt_app):
     assert [p.title.split(" ·")[0] for p in lab._chart._panels] == [
         "Price", "Filtered probabilities"]
     assert "SPY" in lab._chart_card.subtitle.full_text()
+    assert "adjusted" in lab._chart_card.subtitle.full_text()     # the default basis (D38)
     assert lab._transitions.rowCount() == k
+
+
+def test_markov_lab_fits_the_chosen_price_basis(qt_app):
+    app, window = qt_app
+    lab = _markov_lab(app, window, mode="Market history", source="synthetic", symbol="SPY",
+                      lookback="400", basis="Traded")
+    assert lab._basis.current() == "Traded"
+    assert " traded " in lab._chart_card.subtitle.full_text()
+    lab.on_hide()
+    assert window._core.state_store.load("markov_lab")["basis"] == "Traded"
 
 
 def test_markov_lab_notes(qt_app):

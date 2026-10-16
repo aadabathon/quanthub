@@ -54,7 +54,7 @@ from quant_hub.gui.components import (
     button,
     form_grid,
 )
-from quant_hub.gui.pages.base import ScrollPage
+from quant_hub.gui.pages.base import PRICE_BASES, ScrollPage, basis_field
 from quant_hub.gui.theme import PALETTE, SIDE_PANEL_WIDTH, SPACE_L, SPACE_M
 from quant_hub.models.kalman import (
     LocalLevel,
@@ -220,7 +220,9 @@ class KalmanLabPage(ScrollPage):
                                    default_source if default_source in names else names[0], _HALF)
         self._symbol = Field("Symbol", saved.get("symbol", "SPY"), _HALF, uppercase=True)
         self._lookback = Field("Lookback (calendar days)", saved.get("lookback", "1825"), _HALF)
-        market.setLayout(form_grid([self._source, self._symbol, self._lookback], 2))
+        self._basis = basis_field(saved, _HALF)
+        market.setLayout(form_grid([self._source, self._symbol, self._lookback, self._basis],
+                                   2))
         self._groups = {_SYNTHETIC: synthetic, _MARKET: market}
         for group in self._groups.values():
             card.body.addWidget(group)
@@ -263,7 +265,7 @@ class KalmanLabPage(ScrollPage):
     def on_hide(self) -> None:
         self._state_store.save(_STATE_KEY, {
             "mode": self._mode, "model": self._model, "window": self._window,
-            "source": self._source.current(),
+            "source": self._source.current(), "basis": self._basis.current(),
             "symbol": self._symbol.text(), "lookback": self._lookback.text(),
             "level_sd": self._level_sd.text(), "noise_sd": self._noise_sd.text(),
             "slope_sd": self._slope_sd.text(), "days": self._days.text(),
@@ -319,17 +321,19 @@ class KalmanLabPage(ScrollPage):
         symbol = self._symbol.required_text()
         lookback = self._lookback.number(integer=True, minimum=30)
         source = self._source.current()
+        basis = PRICE_BASES[self._basis.current()]
         fitter = self._fitter()
 
         def work() -> _Run:
             end = datetime.now()
             history = self._market.get_history(symbol, end - timedelta(days=lookback), end,
-                                               source=source)
+                                               source=source, basis=basis)
             closes = history.closes
             y = np.log(closes.to_numpy(dtype=float))
             fit = fitter(y)
             return _Run(closes.index, y, fit, rts_smoother(fit.filtered), None, None, None,
-                        f"{history.symbol} · {history.source} · {len(y):,} daily closes")
+                        f"{history.symbol} · {history.source} · {basis.value} · "
+                        f"{len(y):,} daily closes")
         return work
 
     def _on_done(self, run: _Run) -> None:

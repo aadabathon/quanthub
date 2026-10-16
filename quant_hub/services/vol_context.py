@@ -71,7 +71,8 @@ def load_vol_context(
     if lookback_days < 60:
         raise ValueError("lookback must be at least 60 days for a GARCH fit")
     end = now or datetime.now()
-    history = market.get_history(symbol, end - timedelta(days=lookback_days), end, source=source)
+    history = market.get_return_history(symbol, end - timedelta(days=lookback_days), end,
+                                        source=source)               # return math (D38)
     returns = history.log_returns()
     fit = fit_garch11(returns.to_numpy())
     realized = tuple(

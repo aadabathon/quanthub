@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from PySide6.QtCore import QObject, Qt, QTimer
 from PySide6.QtWidgets import QFrame, QScrollArea, QVBoxLayout, QWidget
 
+from quant_hub.data.types import PriceBasis
+from quant_hub.gui.components import SelectField
 from quant_hub.gui.theme import SPACE_L, SPACE_XL
 
 Commands = dict[str, Callable[[], None]]
@@ -21,6 +23,20 @@ Commands = dict[str, Callable[[], None]]
 # that typing "105" doesn't recompute at "1" and "10", short enough to feel
 # immediate. Closed-form work itself is sub-millisecond.
 LIVE_DELAY_MS = 150
+
+
+PRICE_BASES = {"Adjusted": PriceBasis.ADJUSTED, "Traded": PriceBasis.TRADED}
+
+
+def basis_field(saved: dict, width: int) -> SelectField:
+    """The Prices choice on pages that do return math (D38): adjusted unless
+    the saved state says otherwise."""
+    current = saved.get("basis")
+    field = SelectField("Prices", list(PRICE_BASES),
+                        current if current in PRICE_BASES else "Adjusted", width)
+    field.setToolTip("Adjusted: for splits and dividends, so returns are total returns, "
+                     "right for return math. Traded: the prices as they traded.")
+    return field
 
 
 def debounce(owner: QObject, fn: Callable[[], None], ms: int = LIVE_DELAY_MS) -> Callable[[], None]:

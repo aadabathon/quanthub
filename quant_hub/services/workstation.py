@@ -41,7 +41,7 @@ import pandas as pd
 
 from quant_hub.data.stats import TRADING_DAYS_PER_YEAR, GBMEstimate, estimate_gbm
 from quant_hub.data.synthetic import GeometricBrownianMotion
-from quant_hub.data.types import PriceHistory
+from quant_hub.data.types import PriceBasis, PriceHistory
 from quant_hub.storage.bar_store import BarStore, InstrumentKey, StoredSeriesSummary
 
 # Window label -> calendar offset back from the last stored bar (None = all).
@@ -112,7 +112,7 @@ class WorkstationService:
 
     def overview(self, spark_window: str = "1Y") -> WorkstationOverview:
         snapshots = []
-        for summary in self._store.summary():
+        for summary in _one_per_series(self._store.summary()):
             frame = self._frame(summary, spark_window)
             closes = frame["close"].dropna().to_numpy(dtype=float)
             if len(closes) == 0:
@@ -126,7 +126,8 @@ class WorkstationService:
 
     def history(self, summary: StoredSeriesSummary, window: str) -> PriceHistory:
         frame = self._frame(summary, window)
-        return PriceHistory(symbol=summary.symbol, source=summary.source, frame=frame)
+        return PriceHistory(symbol=summary.symbol, source=summary.source, frame=frame,
+                            basis=summary.basis)
 
     def _frame(self, summary: StoredSeriesSummary, window: str) -> pd.DataFrame:
         if window not in WINDOWS:
@@ -135,8 +136,20 @@ class WorkstationService:
         start = summary.first if offset is None else max(summary.first, summary.last - offset)
         return self._store.query_bars(
             InstrumentKey(summary.symbol), summary.source, summary.bar_size,
-            start, summary.last,
+            start, summary.last, summary.basis,
         )
+
+
+def _one_per_series(summaries: list[StoredSeriesSummary]) -> list[StoredSeriesSummary]:
+    """One row per (symbol, source, bar size): the traded basis where it's
+    stored, since the workstation shows price levels (D38); the adjusted
+    one only for an import that holds nothing else."""
+    chosen: dict[tuple[str, str, str], StoredSeriesSummary] = {}
+    for summary in summaries:
+        key = (summary.symbol, summary.source, summary.bar_size)
+        if key not in chosen or summary.basis is PriceBasis.TRADED:
+            chosen[key] = summary
+    return list(chosen.values())
 
 
 def gbm_forecast(

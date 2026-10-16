@@ -50,6 +50,7 @@ class Broker(Protocol):
         start: datetime,
         end: datetime,
         bar_size: str = "1 day",
+        what_to_show: str = "TRADES",
     ) -> list[HistoricalBar]: ...
 
     def get_market_quote(self, spec: ContractSpec) -> QuoteResult: ...

@@ -25,7 +25,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import QHBoxLayout, QLineEdit, QStackedWidget, QVBoxLayout, QWidget
 
-from quant_hub.data.types import MarketDataMode, Quote
+from quant_hub.data.types import MarketDataMode, PriceBasis, Quote
 from quant_hub.tasks import TaskRunner
 from quant_hub.gui.charts import Sparkline
 from quant_hub.gui.components import (
@@ -396,7 +396,8 @@ class MarketsPage(ScrollPage):
         self._header.set_status(f"Syncing {symbol} daily history from {source}…")
 
         def work() -> str:
-            history = self._market.get_history(symbol, start, end, source=source)
+            history = self._market.get_history(symbol, start, end, source=source,
+                                               basis=PriceBasis.TRADED)
             return (f"{symbol}: {len(history):,} bars available "
                     f"{history.start:%Y-%m-%d} → {history.end:%Y-%m-%d} ({source})")
 

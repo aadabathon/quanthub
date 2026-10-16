@@ -13,7 +13,7 @@ import pandas as pd
 
 from quant_hub.broker.base import Broker
 from quant_hub.broker.types import ContractSpec, HistoricalBar
-from quant_hub.data.types import PriceHistory, Quote
+from quant_hub.data.types import PriceBasis, PriceHistory, Quote
 
 #: IBKR reports historical volume for US stocks in lots of 100 shares
 #: (verified against live TWS 2026-08-14: SPY daily volume arrived as
@@ -43,6 +43,9 @@ def bars_to_frame(bars: list[HistoricalBar]) -> pd.DataFrame:
     return frame
 
 
+_WHAT_TO_SHOW = {PriceBasis.TRADED: "TRADES", PriceBasis.ADJUSTED: "ADJUSTED_LAST"}
+
+
 class IBKRSource:
     """IBKR as a data provider: implements both ``DataSource`` (validated
     ``PriceHistory`` for direct consumers) and ``BarSource`` (raw frames,
@@ -54,27 +57,33 @@ class IBKRSource:
         self._broker = broker
 
     def fetch_bars(
-        self, symbol: str, start: datetime, end: datetime, bar_size: str = "1 day"
+        self, symbol: str, start: datetime, end: datetime, bar_size: str = "1 day",
+        basis: PriceBasis = PriceBasis.TRADED,
     ) -> pd.DataFrame:
-        """Raw OHLCV bars in [start, end]; empty if the window has no sessions."""
+        """Raw OHLCV bars in [start, end]; empty if the window has no sessions.
+
+        Traded prices are IBKR's TRADES; adjusted ones its ADJUSTED_LAST (D38).
+        """
         symbol = symbol.upper().strip()
         bars = self._broker.get_history(
-            ContractSpec(symbol=symbol), start, end, bar_size=bar_size
+            ContractSpec(symbol=symbol), start, end, bar_size=bar_size,
+            what_to_show=_WHAT_TO_SHOW[basis],
         )
         frame = bars_to_frame(bars)
         frame["volume"] *= VOLUME_LOT_SIZE  # broker lots -> shares
         # The broker may over-fetch (durations round up, D11); trim to the window.
         return frame.loc[start:end]
 
-    def get_history(self, symbol: str, start: datetime, end: datetime) -> PriceHistory:
+    def get_history(self, symbol: str, start: datetime, end: datetime,
+                    basis: PriceBasis = PriceBasis.TRADED) -> PriceHistory:
         symbol = symbol.upper().strip()
-        frame = self.fetch_bars(symbol, start, end)
+        frame = self.fetch_bars(symbol, start, end, basis=basis)
         if len(frame) == 0:
             raise ValueError(
                 f"IBKR returned no daily bars for {symbol} in "
                 f"{start:%Y-%m-%d}..{end:%Y-%m-%d}"
             )
-        return PriceHistory(symbol=symbol, source=self.name, frame=frame)
+        return PriceHistory(symbol=symbol, source=self.name, frame=frame, basis=basis)
 
     def get_quote(self, symbol: str) -> Quote:
         symbol = symbol.upper().strip()

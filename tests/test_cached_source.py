@@ -212,3 +212,157 @@ class TestPersistenceAcrossRestart:
             assert history.closes.tolist() == expected.tolist()
         finally:
             second_store.close()
+
+
+# ----------------------------------------------------- adjusted prices (F3)
+from datetime import timedelta  # noqa: E402
+
+import numpy as np  # noqa: E402
+
+from quant_hub.data.types import PriceBasis  # noqa: E402
+from quant_hub.services.cached_source import dividend_steps_only  # noqa: E402
+
+
+class IBKRLikeFake:
+    """Traded and adjusted bars the way IBKR serves them (D38), as of the
+    fake's own ``today``.
+
+    * ``continuous`` is the price path on today's scale for every date.
+    * A split (``split_on``, ``split_ratio``) leaves pre-split dates at
+      ``ratio`` times that scale until ``today`` reaches the split date: from
+      then on, IBKR serves all history split-adjusted.
+    * Adjusted prices multiply every bar before each ex-date ``t`` (up to
+      ``today``) by f_t = 1 - D_t / C_{t-1}, the traded close the day before.
+    """
+
+    name = "fake"
+
+    def __init__(self, dividends, split_on=None, split_ratio=1.0):
+        self.continuous = master_frame()
+        self.dividends = {pd.Timestamp(day): amount for day, amount in dividends.items()}
+        self.split_on = pd.Timestamp(split_on) if split_on else None
+        self.split_ratio = split_ratio
+        self.today = NOW
+        self.calls: list[tuple[PriceBasis, datetime, datetime]] = []
+
+    def traded(self) -> pd.DataFrame:
+        frame = self.continuous.loc[: self.today].copy()
+        if self.split_on is not None and self.today < self.split_on:
+            prices = ["open", "high", "low", "close"]
+            frame.loc[frame.index < self.split_on, prices] *= self.split_ratio
+        return frame
+
+    def adjusted(self) -> pd.DataFrame:
+        traded = self.traded()
+        factor = pd.Series(1.0, index=traded.index)
+        for ex_date, amount in self.dividends.items():
+            if ex_date > self.today or ex_date not in traded.index:
+                continue
+            previous_close = traded["close"].loc[: ex_date - timedelta(days=1)].iloc[-1]
+            factor[traded.index < ex_date] *= 1 - amount / previous_close
+        frame = traded.copy()
+        for col in ("open", "high", "low", "close"):
+            frame[col] *= factor
+        return frame
+
+    def fetch_bars(self, symbol, start, end, bar_size, basis=PriceBasis.TRADED):
+        self.calls.append((basis, start, end))
+        frame = self.adjusted() if basis is PriceBasis.ADJUSTED else self.traded()
+        return frame.loc[start:end]
+
+    def adjusted_calls(self):
+        return [c for c in self.calls if c[0] is PriceBasis.ADJUSTED]
+
+
+class TestAdjustedPrices:
+    def make(self, fake, store, today):
+        fake.today = today
+        return CachedSource(fake, store, bar_size="1 day", now=lambda: today)
+
+    def test_a_dividend_shows_as_total_return(self, store):
+        fake = IBKRLikeFake({"2024-02-01": 1.5})
+        cached = self.make(fake, store, datetime(2024, 3, 10))
+        history = cached.get_history("SPY", datetime(2024, 1, 2), datetime(2024, 3, 8),
+                                     PriceBasis.ADJUSTED)
+        assert history.basis is PriceBasis.ADJUSTED
+        a = history.closes
+        p = fake.traded()["close"]
+        ex, before = pd.Timestamp("2024-02-01"), pd.Timestamp("2024-01-31")
+        # IBKR's convention: A_t / A_{t-1} = C_t / (C_{t-1} - D) on the ex-date,
+        # the traded return with the dividend added back.
+        assert a[ex] / a[before] == pytest.approx(p[ex] / (p[before] - 1.5), rel=1e-12)
+        assert a[ex] / a[before] - 1 == pytest.approx((p[ex] + 1.5) / p[before] - 1, abs=1e-3)
+        # Away from ex-dates, both bases give the same returns, and today's
+        # prices are the same in each.
+        assert a.iloc[-1] == pytest.approx(p.loc[a.index[-1]])
+        day = pd.Timestamp("2024-02-15")
+        assert a.pct_change()[day] == pytest.approx(p.pct_change()[day])
+
+    def test_adjusted_is_refetched_whole_once_a_day(self, store):
+        fake = IBKRLikeFake({"2024-02-01": 1.5, "2024-03-15": 2.0})
+        window = (datetime(2024, 1, 2), datetime(2024, 3, 8))
+        first = datetime(2024, 3, 10)
+        self.make(fake, store, first).get_history("SPY", *window, PriceBasis.ADJUSTED)
+        assert len(fake.adjusted_calls()) == 1            # the whole span, once
+        self.make(fake, store, first).get_history("SPY", *window, PriceBasis.ADJUSTED)
+        assert len(fake.adjusted_calls()) == 1            # same day: nothing new
+        # Ten days on, a new ex-date has rescaled every earlier adjusted price.
+        later = self.make(fake, store, datetime(2024, 3, 20))
+        history = later.get_history("SPY", datetime(2024, 1, 2), datetime(2024, 3, 19),
+                                    PriceBasis.ADJUSTED)
+        assert len(fake.adjusted_calls()) == 2
+        assert fake.adjusted_calls()[-1][1] == datetime(2024, 1, 2)   # whole span again
+        expected = fake.adjusted()["close"].loc[history.closes.index]
+        np.testing.assert_allclose(history.closes, expected, rtol=1e-12)   # no seam
+
+    def test_a_split_after_caching_is_caught_and_the_traded_history_refetched(
+            self, store, caplog):
+        fake = IBKRLikeFake({"2024-02-01": 1.5}, split_on="2024-02-15", split_ratio=2.0)
+        # Cached before the split: early bars at twice today's scale.
+        self.make(fake, store, datetime(2024, 2, 10)).get_history(
+            "SPY", datetime(2024, 1, 2), datetime(2024, 2, 9))
+        after = self.make(fake, store, datetime(2024, 3, 10))
+        traded = after.get_history("SPY", datetime(2024, 1, 2), datetime(2024, 3, 8))
+        assert traded.closes.pct_change().min() < -0.4    # the fake -50% day, before the guard
+        after.get_history("SPY", datetime(2024, 1, 2), datetime(2024, 3, 8), PriceBasis.ADJUSTED)
+        assert "corporate action" in caplog.text
+        repaired = after.get_history("SPY", datetime(2024, 1, 2), datetime(2024, 3, 8))
+        np.testing.assert_allclose(
+            repaired.closes, fake.traded()["close"].loc[repaired.closes.index], rtol=1e-12)
+        assert repaired.closes.pct_change().abs().max() < 0.05
+
+    def test_a_traded_sync_keeps_a_current_adjusted_series_whole(self, store):
+        fake = IBKRLikeFake({"2024-02-01": 1.5})
+        today = datetime(2024, 3, 10)
+        self.make(fake, store, today).get_history(
+            "SPY", datetime(2024, 2, 1), datetime(2024, 3, 8), PriceBasis.ADJUSTED)
+        # Same day, a traded request reaches further back...
+        self.make(fake, store, today).get_history(
+            "SPY", datetime(2024, 1, 2), datetime(2024, 3, 8))
+        # ...and the adjusted series reaches back with it.
+        adjusted = self.make(fake, store, today).get_history(
+            "SPY", datetime(2024, 1, 2), datetime(2024, 3, 8), PriceBasis.ADJUSTED)
+        assert adjusted.start == datetime(2024, 1, 2)
+
+
+class TestDividendStepGuard:
+    INDEX = pd.bdate_range("2024-01-01", periods=6)
+    TODAY = datetime(2024, 1, 20)
+
+    def frames(self, ratio):
+        traded = pd.DataFrame({"close": 100.0}, index=self.INDEX)
+        return traded, traded.assign(close=100.0 * np.asarray(ratio))
+
+    @pytest.mark.parametrize("ratio, ok", [
+        ([0.98, 0.98, 0.99, 0.99, 1.0, 1.0], True),     # two dividends
+        ([0.5, 0.5, 0.5, 1.0, 1.0, 1.0], False),        # a 2:1 split since caching
+        ([1.0, 1.0, 0.9, 0.9, 0.9, 0.9], False),        # falling: a reverse split
+        ([1.02, 1.02, 1.02, 1.02, 1.02, 1.02], False),  # adjusted above traded
+    ])
+    def test_steps(self, ratio, ok):
+        assert dividend_steps_only(*self.frames(ratio), self.TODAY) is ok
+
+    def test_todays_provisional_bar_is_ignored(self):
+        traded, adjusted = self.frames([1.0] * 6)
+        adjusted.iloc[-1, 0] = 140.0                     # moved since it was stored
+        assert dividend_steps_only(traded, adjusted, self.INDEX[-1].to_pydatetime())

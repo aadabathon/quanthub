@@ -8,10 +8,12 @@ import pytest
 
 from quant_hub.broker.types import BrokerError
 from quant_hub.data.sources import DataSource, SyntheticSource
+from quant_hub.data.types import PriceBasis
 from quant_hub.importers.bar_csv import BarFileError
 from quant_hub.services.file_import import (
     FILE_SOURCE,
     FileSource,
+    ImportedBasisMissingError,
     NoImportedBarsError,
     import_bar_file,
     symbol_from_filename,
@@ -77,7 +79,7 @@ def test_bad_rows_are_dropped_and_reported(tmp_path, store):
 def test_a_bad_symbol_in_a_file_stores_nothing(tmp_path, store):
     path = csv(tmp_path, "both.csv", ["SPY,2024-01-02,470", "QQQ,2024-01-02,-1"],
                header="symbol,date,close")
-    with pytest.raises(BarFileError, match="QQQ: no usable bars"):
+    with pytest.raises(BarFileError, match="QQQ: no usable traded bars"):
         import_bar_file(store, path)
     assert store.summary() == []                                  # SPY wasn't stored either
 
@@ -115,3 +117,56 @@ def test_no_live_quote_so_the_underlying_uses_the_last_close(tmp_path, store):
 ])
 def test_symbols_from_file_names(name, symbol):
     assert symbol_from_filename(name) == symbol
+
+
+
+# ------------------------------------------------------------ bases (F3, D38)
+def yahoo_file(tmp_path, n=30):
+    rows = []
+    for i, day in enumerate(pd.bdate_range("2024-01-02", periods=n)):
+        close = 100.0 + i
+        factor = 0.98 if i < 10 else 1.0               # one dividend, ex on day 10
+        rows.append(f"{day:%Y-%m-%d},{close:.2f},{close + 1:.2f},{close - 1:.2f},{close:.2f},"
+                    f"{close * factor:.6f},1000")
+    return csv(tmp_path, "SPY.csv", rows, header="Date,Open,High,Low,Close,Adj Close,Volume")
+
+
+def test_a_yahoo_file_stores_both_bases(tmp_path, store):
+    (series,) = import_bar_file(store, yahoo_file(tmp_path), "SPY")
+    assert series.bases == (PriceBasis.TRADED, PriceBasis.ADJUSTED)
+    assert "traded and adjusted" in series.describe()
+    source = FileSource(store)
+    traded = source.get_history("SPY", JAN, DEC, PriceBasis.TRADED)
+    adjusted = source.get_history("SPY", JAN, DEC, PriceBasis.ADJUSTED)
+    assert adjusted.basis is PriceBasis.ADJUSTED
+    first = traded.frame.index[0]
+    assert adjusted.frame.loc[first, "close"] == pytest.approx(0.98 * traded.frame.loc[first,
+                                                                                     "close"])
+    # Open, high and low carry the same day's factor; volume doesn't.
+    assert adjusted.frame.loc[first, "high"] == pytest.approx(0.98 * traded.frame.loc[first,
+                                                                                    "high"])
+    assert adjusted.frame.loc[first, "volume"] == traded.frame.loc[first, "volume"]
+    assert adjusted.closes.iloc[-1] == traded.closes.iloc[-1]
+
+
+def test_an_adjusted_only_file_and_the_basis_it_lacks(tmp_path, store):
+    path = csv(tmp_path, "SPY.csv", ["2024-01-02,466.7", "2024-01-03,468.1"],
+               header="date,adj_close")
+    (series,) = import_bar_file(store, path, "SPY")
+    assert series.bases == (PriceBasis.ADJUSTED,)
+    source = FileSource(store)
+    assert len(source.get_history("SPY", JAN, DEC, PriceBasis.ADJUSTED).closes) == 2
+    with pytest.raises(ImportedBasisMissingError, match="adjusted prices only: choose Adjusted"):
+        source.get_history("SPY", JAN, DEC, PriceBasis.TRADED)
+
+
+def test_return_math_falls_back_to_traded_where_an_import_has_no_adjusted(tmp_path, store):
+    import_bar_file(store, csv(tmp_path, "SPY.csv", daily_rows(40)), "SPY")
+    with pytest.raises(ImportedBasisMissingError, match="an adj_close column"):
+        FileSource(store).get_history("SPY", JAN, DEC, PriceBasis.ADJUSTED)
+    market = MarketService(sources=[SyntheticSource(), FileSource(store)])
+    history = market.get_return_history("SPY", JAN, DEC, source=FILE_SOURCE)
+    assert history.basis is PriceBasis.TRADED
+    # A source with no such symbol at all is still an error.
+    with pytest.raises(NoImportedBarsError):
+        market.get_return_history("QQQ", JAN, DEC, source=FILE_SOURCE)

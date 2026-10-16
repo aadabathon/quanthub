@@ -69,7 +69,11 @@ def load_underlying(
     if lookback_days < 2:
         raise ValueError("lookback must be at least 2 days")
     end = now or datetime.now()
-    history = market.get_history(symbol, end - timedelta(days=lookback_days), end, source=source)
+    # Adjusted where the source has it: realized vol is return math, and
+    # dividends aren't moves (D38). The last close, the spot fallback, is the
+    # same on either basis.
+    history = market.get_return_history(symbol, end - timedelta(days=lookback_days), end,
+                                        source=source)
     log_returns = history.log_returns()
     if len(log_returns) < MIN_RETURNS:
         raise ValueError(
