@@ -313,12 +313,16 @@ checked; until then, users without IBKR keep the synthetic chain.
     presets (DATA_SYSTEM_IMPROVEMENTS #5).
   - Imported bars go through the same validation and store as IBKR's, under
     their own provider name.
-- **F3. Adjusted prices (D33)**
-  - IBKR `ADJUSTED_LAST` fetched and stored.
-  - A file import declares its basis.
+- ~~**F3. Adjusted prices (D33)**~~ Done 2026-10-16 (D38).
+  - IBKR `ADJUSTED_LAST` fetched and stored, whole, once a day. A split
+    guard repairs traded history that straddles a split.
+  - A file declares its basis by column (`close`, `adj_close`).
   - The basis is named on every call, like the source (D23).
-  - Tests: a split shows as a gap in raw bars and is continuous in adjusted
-    bars; total return over a dividend matches.
+  - Tests: total return over a dividend matches IBKR's convention; a split
+    after caching is caught and repaired, continuous. IBKR's TRADES is
+    split-adjusted already, so the planned "gap in raw bars" test doesn't
+    apply.
+  - Data foundations (F) are complete.
 
 ### P — Portfolio (v0.8)
 

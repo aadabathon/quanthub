@@ -109,12 +109,14 @@ stored under the source `file`, which every page can then use. The generic
 layout:
 
 ```text
-date,open,high,low,close,volume
-2024-01-02,472.16,473.67,470.49,472.65,123623700
+date,open,high,low,close,volume,adj_close
+2024-01-02,472.16,473.67,470.49,472.65,123623700,466.71
 ```
 
 - Any case and column order; other columns are ignored.
-- `close` is required; the rest are optional.
+- `close` is the price as traded; `adj_close`, adjusted for dividends too.
+  A file needs at least one, and stores the bases it has. `open`, `high`,
+  `low` and `volume` are optional.
 - Dates are YYYY-MM-DD.
 - A `symbol` column lets one file hold several symbols. Without one, the
   file name is the symbol (`SPY.csv`), or the app asks.
@@ -122,6 +124,15 @@ date,open,high,low,close,volume
 
 Stooq downloads use this layout as they are. Nasdaq.com and Yahoo Finance
 downloads are recognized by their headers.
+
+## Price bases
+
+Every series is either **traded** (as it traded, split-adjusted) or
+**adjusted** (for dividends too, so returns are total returns). The GARCH,
+Kalman and Markov Labs have a Prices choice, Adjusted by default. Price
+displays use traded prices. From IBKR, adjusted prices are refetched whole
+once a day, since every dividend rescales the past. A split after the cache
+stored a symbol is detected and repaired.
 
 ## IBKR setup
 

@@ -20,6 +20,10 @@ milestone. Cross-references: [ROADMAP.md](ROADMAP.md),
 
 ### 1. Corporate actions are an open question, not just an untested edge
 
+**Settled in F3 (2026-10-16, D38).** A correction to what follows: IBKR's
+TRADES bars come split-adjusted, not unadjusted (measured live). Both bases
+are now stored, and a split after caching is detected and repaired.
+
 `data/bars.py` and `storage/bar_store.py` treat every bar as a plain
 observation. Nothing in the schema or docs says whether stored closes are
 split/dividend-adjusted. IBKR's `reqHistoricalData` returns **unadjusted**

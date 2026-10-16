@@ -302,6 +302,13 @@ Key properties (decisions D17–D21):
   are rejected at the broker boundary until a timezone policy exists (D19),
   and the analytics annualization (252/yr) assumes daily anyway.
   `CachedSource` accepts daily bars only: its coverage rule is a daily one.
+- **Price bases** (D38): every request names traded or adjusted. Traded
+  bars cache as above. Adjusted ones are refetched whole on the first
+  adjusted request of a day, since every ex-date rescales the past. That
+  daily refetch runs the split guard (adjusted/traded must be a dividend
+  step function), which refetches traded history that straddles a split.
+  `bars` keys on the basis (schema v2), and `refreshes` records each
+  series' last full refetch.
 - **Schema and backups** (D36): `build_core` runs
   `storage/schema.prepare_store` before any store opens the file. It reads
   the version from `schema_migrations`, copies the whole file into

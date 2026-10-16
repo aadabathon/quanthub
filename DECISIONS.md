@@ -643,3 +643,47 @@ F2 makes CSV the universal provider (D34). Calls made:
   `NoMarketDataError`, so the Options Lab falls back to the last close.
 - **Explorer keys:** a symbol stored from more than one source shows as
   "SPY · file" on the Dashboard, so neither hides the other.
+
+## D38 — Two price bases, traded and adjusted (2026-10-16)
+
+F3 settles D33 point 5. A spike against TWS (`spikes/spike_adjusted.py`,
+2026-10-15) changed the plan's premise:
+
+- **IBKR's TRADES is already split-adjusted.** NVDA runs through its 10:1
+  split. No IBKR series is raw, so "a split shows as a gap in raw bars"
+  can't be tested on IBKR data, and DATA_SYSTEM_IMPROVEMENTS #1 had it
+  wrong.
+- **ADJUSTED_LAST is TRADES times a step factor.** It moves only on
+  ex-dividend dates, by f = 1 − D/C_prev. The implied dividends match the
+  real ones: SPY March 2025, $1.6959 against $1.6956. All four prices carry
+  the factor; volume doesn't. The latest prices are equal in both.
+- **Both rewrite history.** A dividend rescales every earlier adjusted
+  price, and a split every earlier traded one. An append-only cache would
+  mix scales and invent jumps.
+
+Decided (the owner approved the proposal):
+
+- **`PriceBasis.TRADED` / `ADJUSTED`.** `MarketService.get_history`
+  requires the basis, as it does the source (D23). Every `PriceHistory`
+  carries it, and adapters default to traded.
+- **Storage:** the bars key includes the basis (schema v2, the first
+  migration that changes a table; the backup runs first). Existing bars
+  became traded.
+- **Adjusted, cached whole:** the first adjusted request of a calendar day
+  refetches the whole stored span and replaces it. Later syncs that day,
+  traded or adjusted, fetch only what they add.
+- **The split guard:** over completed sessions, adjusted/traded must be at
+  most 1, never falling, and rise by at most 20% a day.
+  - A stored traded series that fails straddles a split, so it is
+    refetched whole and replaced, and logged.
+  - A false alarm (a special dividend over 20%) costs one refetch.
+- **Files declare their basis by column:** `close` is traded and
+  `adj_close` adjusted (Yahoo's `Adj Close`). With both, the adjusted open,
+  high and low use the day's adj/close factor. A request for a basis a file
+  lacks says so.
+- **Pages:**
+  - GARCH, Kalman and Markov have a Prices choice (Adjusted by default).
+  - The Options Lab's realized vol and the Volatility Lab's overlay use
+    `get_return_history`: adjusted, or traded where an import has no
+    adjusted prices, the history saying which.
+  - Markets and the Dashboard show traded levels.

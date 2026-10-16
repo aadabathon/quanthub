@@ -10,7 +10,7 @@ reach the Volatility Lab and are saved; the joint SSVI fit is an option
 ## Status
 
 v0.5 (the Qt UI). Brokerage connectivity is live-verified against TWS 7496 (2026-08-14;
-see below). `py -3.12 -m pytest -q` → **836 passed** in about 105 s, with no
+see below). `py -3.12 -m pytest -q` → **854 passed** in about 105 s, with no
 network or display needed (the GUI smoke tests run offscreen). The real 3D
 draw runs in a fresh subprocess and skips, with the reason, when offscreen
 Chromium can't compile WebGL shaders; that happens on some runs.
@@ -521,6 +521,42 @@ pytest. Environment:
      - Tests: `tests/test_bar_csv.py` (13), `tests/test_file_import.py`
        (15), and a Dashboard smoke test. Layering now covers
        `importers/`.
-   - Next: F3, adjusted prices, after approval.
+   - ~~F3: adjusted prices~~ (2026-10-16, D38).
+     - Spike against TWS (`spikes/spike_adjusted.py`):
+       - TRADES is already split-adjusted.
+       - ADJUSTED_LAST is TRADES times a factor that steps at ex-dates,
+         f = 1 − D/C_prev. The implied SPY dividend is $1.6959 against
+         $1.6956.
+       - The latest prices are equal in both.
+     - `PriceBasis` (traded / adjusted).
+       - `MarketService.get_history` requires it, and every
+         `PriceHistory` carries it.
+       - `get_return_history` gives adjusted, or traded where an import has
+         no adjusted prices, for pages with no Prices choice.
+     - Schema v2: the bars key includes the basis; a `refreshes` table.
+       Your store copy migrated v1 → v2 with a backup, all 5,313 bars
+       traded.
+     - `CachedSource`:
+       - Adjusted bars are refetched whole once a day; later syncs that day
+         add only what they fetch.
+       - The split guard repairs traded history straddling a split.
+     - Files declare their basis by column: `close` traded, `adj_close`
+       adjusted (Yahoo's both).
+     - GARCH, Kalman and Markov have a Prices choice (Adjusted). Realized
+       vol and the vol overlay use adjusted; Markets and the Dashboard show
+       traded.
+     - Tests: in `tests/test_cached_source.py`, an IBKR-like fake checks:
+       - total return over a dividend
+       - the daily refetch with no seam
+       - a split after caching, repaired
+       - same-day alignment
+       - the guard's cases
+
+       Also the migration (a migrated file equals a new one), file bases,
+       the fallback, the IBKR series choice, and the Prices smoke test.
+     - **Not yet live through the cache:** TWS was closed at the end
+       (2026-10-16, 00:43). The spike ran live the day before.
+   - Data foundations (F) are complete. Next: P, Portfolio, after
+     approval.
 6. After the roadmap: the DCF port (SEC EDGAR + SQLite), planned in its own
    session.
