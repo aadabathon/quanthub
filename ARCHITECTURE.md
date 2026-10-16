@@ -22,7 +22,7 @@ models/         Pure quantitative models. May consume data/ contracts; never
 
 broker/         Infrastructure. The ONLY package allowed to import ibapi.
                 Never storage.
-importers/      File readers (CSV bars today): files into data/ types with
+importers/      File readers (CSV bars and positions): files into data/ types with
                 pandas + stdlib. No other layer; services store what they
                 read, and the GUI reaches them only through services.
 storage/        SQLite persistence (stdlib sqlite3). Knows data/ only —
@@ -109,6 +109,8 @@ quant_hub/
 │   ├── sources.py             DataSource + BarSource protocols, SyntheticSource
 │   ├── bars.py                canonical OHLCV validation for ACQUIRED data
 │   │                          (structural raise vs row-drop + report)
+│   ├── positions.py           Position/OptionContract/PositionSnapshot: what an
+│   │                          account holds, broker-agnostic (D39)
 │   ├── options.py             OptionQuote/OptionChain: the chain contract
 │   │                          (synthetic today, IBKR adapter later)
 │   ├── ranges.py              DateRange (closed session-date intervals),
@@ -147,6 +149,10 @@ quant_hub/
 │   ├── kalman.py              linear Gaussian state space: Joseph-form filter,
 │   │                          RTS smoother, simulation; local level / local
 │   │                          linear trend MLE (zero-variance reporting)
+│   ├── portfolio.py           portfolio risk: vol, Euler risk contributions,
+│   │                          beta, historical (options repriced) and
+│   │                          Gaussian VaR/ES, drawdown of today's mix,
+│   │                          N_eff, Kelly with its error (D39)
 │   └── markov.py              Gaussian HMM on returns: scaled filter, Kim
 │                              smoother, Viterbi, multi-start EM with a
 │                              variance floor, BIC over K, forecasts (M1)
@@ -160,6 +166,9 @@ quant_hub/
 │   │                          forecast fan (the Dashboard's data, D31)
 │   ├── option_chains.py       ChainService: chains by named source, every
 │   │                          live fetch saved; "stored" = latest snapshot
+│   ├── portfolio.py           PortfolioService: positions imports kept,
+│   │                          holdings valued, options priced, risk run;
+│   │                          gaps named; the example portfolio
 │   ├── file_import.py         CSV bars validated into the store under
 │   │                          "file" (all or nothing per file); FileSource
 │   │                          serves them; FileImportService for the GUI
@@ -168,6 +177,9 @@ quant_hub/
 ├── importers/bar_csv.py       CSV daily bars: the generic layout, Nasdaq.com
 │                              and Yahoo presets detected by header, raw
 │                              frames by symbol (D37)
+├── importers/positions_csv.py positions CSV: generic layout + Fidelity
+│                              preset, option symbols parsed (D39)
+├── storage/position_store.py  imported position snapshots, kept (D39)
 ├── storage/bar_store.py       SQLite schema (instruments/bars/coverage),
 │                              upsert with counts, range queries, coverage
 ├── storage/chain_store.py     option-chain snapshots (option_chains /
@@ -226,6 +238,8 @@ Vol Lab    = implied-vol surface from an OptionChain; GARCH/realized overlay;
 Kalman Lab = local level / local linear trend on log prices: synthetic or source history
 Markov Lab = hidden volatility regimes in returns (Gaussian HMM, BIC over 1–3):
              synthetic worlds or source history
+Portfolio  = imported positions (or the example): risk first: VaR/ES, risk
+             contributions, beta, the replayed drawdown, Kelly with its error
 RESEARCH…  = GARCH Lab, Vol Lab, Kalman Lab, Markov Lab, plus placeholders
 ```
 

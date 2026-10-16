@@ -10,7 +10,7 @@ reach the Volatility Lab and are saved; the joint SSVI fit is an option
 ## Status
 
 v0.5 (the Qt UI). Brokerage connectivity is live-verified against TWS 7496 (2026-08-14;
-see below). `py -3.12 -m pytest -q` → **854 passed** in about 105 s, with no
+see below). `py -3.12 -m pytest -q` → **895 passed** in about 115 s, with no
 network or display needed (the GUI smoke tests run offscreen). The real 3D
 draw runs in a fresh subprocess and skips, with the reason, when offscreen
 Chromium can't compile WebGL shaders; that happens on some runs.
@@ -556,7 +556,49 @@ pytest. Environment:
        the fallback, the IBKR series choice, and the Prices smoke test.
      - **Not yet live through the cache:** TWS was closed at the end
        (2026-10-16, 00:43). The spike ran live the day before.
-   - Data foundations (F) are complete. Next: P, Portfolio, after
-     approval.
+   - Data foundations (F) are complete.
+   - ~~P: Portfolio, shipped lean~~ (2026-10-16, D39), risk first, for a
+     stock and ETF portfolio that uses options sparingly.
+     - `data/positions.py`: `Position`, `OptionContract`,
+       `PositionSnapshot`.
+     - `importers/positions_csv.py`: the generic layout and the Fidelity
+       preset.
+       - It handles `$` values, `SPAXX**` as cash, the Pending Activity
+         row, options like `-AAPL260116C250`, and the disclaimer footer.
+       - The "Date downloaded" line dates the snapshot.
+     - `storage/position_store.py` keeps every import as a dated snapshot.
+     - `models/portfolio.py`, derivation in its docstring:
+       - vol and Euler risk contributions, beta;
+       - historical VaR/ES (options repriced in full) and Gaussian VaR/ES;
+       - the drawdown of today's mix replayed over the lookback;
+       - N_eff;
+       - Kelly f* with its error 1/(σ√T).
+     - `services/portfolio.py`:
+       - Weights come from the export's own values.
+       - Options are priced at the file's underlying price and the
+         underlying's realized vol.
+       - Holdings without history, and expired options, are named, with the
+         share of equity left unmodelled.
+       - A $100,000 example portfolio covers the time before any import.
+     - The Portfolio page:
+       - six risk tiles;
+       - holdings sorted by risk share against weight (amber where risk
+         outruns value);
+       - today's mix replayed against the benchmark, with its drawdown;
+       - the one-day P&L histogram with VaR marks and the Gaussian curve;
+       - sizing (mean, vol drag, Kelly ± error, N_eff);
+       - Import positions…, and an account selector.
+     - Tests:
+       - `tests/test_portfolio.py` (19): the identities, the closed forms,
+         VaR exceeded on 5% of 40,000 fresh days, covariance recovery, and
+         the put repriced on a crash
+       - `tests/test_positions_csv.py` (13)
+       - `tests/test_portfolio_service.py` (8)
+       - 2 smoke tests
+     - **Not yet checked against a real Fidelity export.** The preset
+       follows Fidelity's known format; one file of yours will confirm it.
+   - Deferred to v1.1: the optimizers and frontier, Ledoit–Wolf, IBKR
+     positions, the rebalance ticket.
+   - Next: R, research and backtesting, after approval.
 6. After the roadmap: the DCF port (SEC EDGAR + SQLite), planned in its own
    session.

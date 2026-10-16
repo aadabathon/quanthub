@@ -687,3 +687,43 @@ Decided (the owner approved the proposal):
     `get_return_history`: adjusted, or traded where an import has no
     adjusted prices, the history saying which.
   - Markets and the Dashboard show traded levels.
+
+## D39 — Portfolio for v1: risk first, lean (2026-10-16)
+
+The owner holds stocks and ETFs at Fidelity and uses options sparingly. They
+asked for a fundamental-style portfolio page that leads with risk, broad
+enough for any trader, shipped soon. So P is cut lean.
+
+- **In v1:**
+  - Positions from CSV: a generic layout, and a Fidelity preset, kept as
+    dated snapshots.
+  - A risk model (`models/portfolio.py`, derivation in its docstring):
+    - vol, and Euler risk contributions (each holding's share of the risk
+      beside its share of the value);
+    - beta;
+    - historical and Gaussian one-day VaR and ES;
+    - the drawdown of today's mix over the lookback;
+    - the effective number of holdings;
+    - Kelly leverage with its standard error.
+  - The Portfolio page, led by those numbers, and an example portfolio
+    before any import (D34).
+- **Deferred to v1.1:**
+  - allocation optimizers (minimum variance, tangency, long-only) and the
+    efficient frontier;
+  - Ledoit–Wolf shrinkage;
+  - IBKR read-only positions;
+  - the what-if rebalance ticket.
+- **Calls:**
+  - **Weights come from the export's own values,** so they're the account's
+    as of the file. The source's last close is the fallback.
+  - **Options count by delta** in the covariance, beta, Gaussian VaR and
+    drawdown, and are repriced in full in the one-day historical replay. That
+    way a protective put's convexity shows where it matters most.
+  - **An option's spot is the file's price for its underlying** when the
+    file has one, so a snapshot is self-consistent.
+  - **Holdings whose history won't load are left out of the risk model and
+    named,** with their share of equity. Expired options are named too.
+  - **Kelly is shown with its standard error,** 1/(σ√T): from a year or two
+    of history it's noise, and saying so is the feature.
+  - **Returns are adjusted** (D38), with traded as the fallback where an
+    import has no adjusted prices, which is noted.

@@ -326,6 +326,11 @@ checked; until then, users without IBKR keep the synthetic chain.
 
 ### P — Portfolio (v0.8)
 
+Shipped lean on 2026-10-16 (D39): positions import (Fidelity and generic),
+the risk model, and the Portfolio page, risk first. Below is the full plan;
+the optimizers, frontier, Ledoit–Wolf, IBKR positions and the rebalance
+ticket wait for v1.1.
+
 - **P1. `models/portfolio.py`**
   - Alignment and estimation:
     - multi-asset return alignment

@@ -125,6 +125,32 @@ date,open,high,low,close,volume,adj_close
 Stooq downloads use this layout as they are. Nasdaq.com and Yahoo Finance
 downloads are recognized by their headers.
 
+## Portfolio
+
+The Portfolio page imports a broker's positions CSV (Import positions…)
+and shows its risk.
+
+- **Headline:** volatility, one-day VaR and expected shortfall (historical
+  and Gaussian), beta to a benchmark, and the worst drawdown today's mix
+  would have had over the lookback.
+- **Holdings table:** each holding's share of the value beside its share of
+  the risk, sorted by risk.
+- **Sizing:** Kelly leverage, shown with its standard error.
+
+Fidelity's Portfolio Positions download is read as it is. Any other broker
+works through the generic layout:
+
+```text
+symbol,quantity,price,cost_basis,account
+AAPL,50,227.52,7500,Brokerage
+-AAPL260116C250,-1,4.15,,Brokerage
+CASH,1250,,,Brokerage
+```
+
+- Options are `ROOT YYMMDD C|P STRIKE`, contracts negative when short.
+- Imports are kept as dated snapshots.
+- Before any import, the page shows a $100,000 example portfolio.
+
 ## Price bases
 
 Every series is either **traded** (as it traded, split-adjusted) or
