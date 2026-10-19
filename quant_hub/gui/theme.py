@@ -223,6 +223,9 @@ QPushButton::menu-indicator {{ width: 0px; image: none; }}
 QLineEdit, QComboBox {{ background: {p.surface}; border: 1px solid {p.border_strong};
     border-radius: {RADIUS_S}px; padding: 6px 10px; selection-background-color: {p.accent}; }}
 QLineEdit:focus, QComboBox:focus {{ border-color: {p.accent}; }}
+QPlainTextEdit[role="editor"] {{ background: {p.surface}; color: {p.text};
+    border: 1px solid {p.border_strong}; border-radius: {RADIUS_S}px; padding: 8px; }}
+QPlainTextEdit[role="editor"]:focus {{ border-color: {p.accent}; }}
 QLineEdit#search {{ background: {p.surface}; padding-left: 6px; }}
 QLineEdit:disabled {{ color: {p.muted}; background: {p.page}; border-color: {p.border}; }}
 QLineEdit[invalid="true"] {{ border-color: {p.critical}; }}

@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMenu,
+    QPlainTextEdit,
     QPushButton,
     QSizePolicy,
     QTableWidget,
@@ -154,11 +155,13 @@ class Card(QFrame):
             titles.setSpacing(2)
             titles.addWidget(label(title, "cardTitle"))
             self.subtitle = ElidedLabel(subtitle or "", "cardSubtitle")
-            self.subtitle.setVisible(bool(subtitle))
             titles.addWidget(self.subtitle)
             header.addLayout(titles, 1)
             header.addLayout(self._actions)
             outer.addLayout(header)
+            # Attach the layout first: showing a parentless label creates
+            # a temporary desktop window (and a flashing taskbar entry).
+            self.subtitle.setVisible(bool(subtitle))
 
         self.body = QVBoxLayout()
         self.body.setSpacing(SPACE_S)
@@ -555,6 +558,17 @@ class EmptyState(QWidget):
 
 
 # --------------------------------------------------------------------- forms
+
+class TextArea(QPlainTextEdit):
+    """Plain-text notes editor; presentation stays in the shared theme."""
+
+    def __init__(self, text: str = "", placeholder: str = "") -> None:
+        super().__init__()
+        set_role(self, "editor")
+        self.setPlainText(text)
+        self.setPlaceholderText(placeholder)
+        self.setMinimumHeight(96)
+
 
 class Field(QWidget):
     """Caption above an input. Numbers parse through ``number()``, which marks

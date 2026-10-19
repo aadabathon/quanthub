@@ -370,7 +370,18 @@ ticket wait for v1.1.
 
 ### R — Research and backtesting (v0.9)
 
-- **R1. `models/backtest.py` (decision 7)**
+Screen/workflow proposal: [RESEARCH_DESIGN.md](RESEARCH_DESIGN.md)
+(2026-10-18). Experiments and Saved runs implement R1–R3 below. The owner
+also wants their papers available in Research; the lean local paper catalog
+ships with v1.0. R1 landed on 2026-10-18 (D41). The owner's “ship v1”
+instruction authorized R2, R3, the catalog and stabilization on 2026-10-19
+(D42).
+
+- ~~**R1. `models/backtest.py` (decision 7)**~~ Done 2026-10-18 (D41),
+  with `models/backtest_stats.py`. Exact self-financing transaction costs,
+  vectorized accounting including weight drift, causal walk-forward
+  callbacks, and IID-labelled Sharpe inference. Validated against an
+  independent share/cash ledger and synthetic statistical nulls.
   - Positions come from information up to t and earn returns t → t+1.
   - Explicit cost model: half-spread plus commission, charged per unit
     turnover.
@@ -382,7 +393,7 @@ ticket wait for v1.1.
     - look-ahead: scrambling the future can't change past positions
     - cost identities
     - hand-computed cases
-- **R2. Strategy library and synthetic worlds**
+- ~~**R2. Strategy library and synthetic worlds**~~ Done 2026-10-19 (D42).
   - Strategies are pure `signal(history, params) → positions` functions:
     - Kalman trend / level deviation
     - GARCH vol targeting
@@ -393,7 +404,7 @@ ticket wait for v1.1.
     - a world with a planted edge, which a strategy should find
     - a null random walk, where the deflated Sharpe must flag the best of
       many strategies as noise
-- **R3. Research page and research log**
+- ~~**R3. Research page and research log**~~ Done 2026-10-19 (D42).
   - universe, strategy and parameters, run on the TaskRunner
   - equity vs benchmark, drawdown, rolling Sharpe
   - a trades table
@@ -403,6 +414,12 @@ ticket wait for v1.1.
     research is reproducible
 
 ### v1.0 — stabilization
+
+Implementation, broker-free workflow, native Research layout checks, full
+regression suite, documentation and version 1.0.0 completed 2026-10-19.
+External acceptance still pending: a real Fidelity export and a fresh
+adjusted-history/cache workflow with TWS open. These are explicit release
+verification limits, not claims of completed live checks.
 
 - Live-verify the end-to-end workflows as a routine:
   - sync
@@ -428,6 +445,9 @@ ticket wait for v1.1.
 - Possible web deployment of selected tools (out of scope until the owner
   raises it).
 - After the roadmap: the owner's DCF modeler port (SEC EDGAR + SQLite).
+- Research library growth: the local catalog, reading notes and experiment
+  links ship in v1; full-text search and annotations can follow. See
+  [RESEARCH_DESIGN.md](RESEARCH_DESIGN.md).
 
 ## Intended stack flow (architecture already accommodates this)
 

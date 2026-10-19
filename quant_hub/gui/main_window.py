@@ -80,13 +80,21 @@ class MainWindow(QMainWindow):
         self.show_page(next(iter(self._factories)))
 
     # -- navigation -----------------------------------------------------
-    def show_page(self, name: str) -> Page:
-        """Raise (lazily creating) the named page; returns it."""
+    def prepare_page(self, name: str) -> Page:
+        """Build and attach a page without selecting it or running on_show.
+
+        Usually called on navigation. The composition root also prepares
+        the WebEngine page before the native window is first shown.
+        """
         if name not in self._pages:
             page = self._factories[name](self._shell)
             self._stack.addWidget(page)
             self._pages[name] = page
-        page = self._pages[name]
+        return self._pages[name]
+
+    def show_page(self, name: str) -> Page:
+        """Raise (lazily creating) the named page; returns it."""
+        page = self.prepare_page(name)
         if name != self._active:
             if self._active is not None:
                 self._pages[self._active].on_hide()

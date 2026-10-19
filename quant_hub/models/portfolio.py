@@ -271,6 +271,31 @@ class RiskReport:
         return self.var_gaussian[confidence] * math.sqrt(MONTH_DAYS)
 
 
+def scale_to_risk(budget: np.ndarray, covariance: np.ndarray, daily_target: float,
+                  gross_cap: float = 1.0) -> np.ndarray:
+    r"""Scale a fixed budget without changing its relative allocations.
+
+    Since vol(f b) = |f| sqrt(b' Sigma b), the target requires
+    f = daily_target / sqrt(b' Sigma b). The exposure constraint requires
+    f <= gross_cap / sum(abs(b)); take the smaller. Zero budget or zero
+    estimated variance returns cash. Sigma must be finite symmetric PSD.
+    This primitive estimates neither expected returns nor an optimum.
+    """
+    b, cov = np.asarray(budget, dtype=float), np.asarray(covariance, dtype=float)
+    if b.ndim != 1 or cov.shape != (len(b), len(b)) or not np.all(np.isfinite(b)):
+        raise ValueError("budget and covariance dimensions must agree and be finite")
+    if not np.all(np.isfinite(cov)) or not np.allclose(cov, cov.T, atol=1e-12):
+        raise ValueError("covariance must be finite and symmetric")
+    if np.linalg.eigvalsh(cov).min(initial=0) < -1e-12:
+        raise ValueError("covariance must be positive semidefinite")
+    if not np.isfinite(daily_target) or daily_target <= 0 or not np.isfinite(gross_cap) or gross_cap <= 0:
+        raise ValueError("risk target and gross cap must be finite and positive")
+    variance, gross = float(b @ cov @ b), float(np.abs(b).sum())
+    if variance <= 0 or gross == 0:
+        return np.zeros_like(b)
+    return b * min(daily_target / np.sqrt(variance), gross_cap / gross)
+
+
 def simple_returns(closes: dict[str, pd.Series]) -> pd.DataFrame:
     """Daily simple returns, on the days every series has a close."""
     frame = pd.DataFrame(closes).dropna(how="any").sort_index()

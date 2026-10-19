@@ -26,24 +26,13 @@ from quant_hub.gui.pages.kalman_lab import KalmanLabPage
 from quant_hub.gui.pages.markets import MarketsPage
 from quant_hub.gui.pages.markov_lab import MarkovLabPage
 from quant_hub.gui.pages.options_lab import OptionsLabPage
-from quant_hub.gui.pages.placeholder import PlaceholderPage
+from quant_hub.gui.pages.research import ResearchPage
 from quant_hub.gui.pages.portfolio import PortfolioPage
 from quant_hub.gui.pages.simulator import SimulatorPage
 from quant_hub.gui.pages.volatility_lab import VolatilityLabPage
 from quant_hub.gui.theme import apply_theme
 
 _logger = logging.getLogger(__name__)
-
-# Planned roadmap modules: (icon, description). Placeholders until built.
-_PLANNED: dict[str, tuple[str, str]] = {
-    "Research": ("ph.file-text", "Strategy research and backtesting."),
-}
-
-
-def _planned(name: str):
-    icon_name, description = _PLANNED[name]
-    return (name, icon_name, lambda _shell: PlaceholderPage(name, icon_name, description))
-
 
 def _sections(core: Core) -> PageSections:
     dashboard = ("Dashboard", "ph.house", lambda shell: DashboardPage(
@@ -64,9 +53,11 @@ def _sections(core: Core) -> PageSections:
         core.market_service, core.tasks, core.state_store))
     portfolio = ("Portfolio", "ph.chart-pie-slice", lambda _shell: PortfolioPage(
         core.portfolio, core.market_service, core.tasks, core.state_store))
+    research = ("Research", "ph.file-text", lambda _shell: ResearchPage(
+        core.research, core.market_service, core.tasks, core.state_store))
     return [
         (None, [dashboard, markets, portfolio, simulator, options]),
-        ("Research", [garch, vol_lab, kalman, markov, *(_planned(n) for n in _PLANNED)]),
+        ("Research", [garch, vol_lab, kalman, markov, research]),
     ]
 
 
@@ -80,6 +71,11 @@ def create_app(config: AppConfig | None = None,
     core = build_core(config)
 
     window = MainWindow(core, _sections(core))
+    # Qt recreates an already-visible native window when its first
+    # WebEngine widget is attached. Prepare that page while still hidden
+    # so the window uses the right graphics surface from its first frame.
+    # This does not call on_show: no chain fetch or fit starts at launch.
+    window.prepare_page("Volatility Lab")
     window.status.set_store_state("Local store ready", ok=True)
     # Open at most of the screen (a workstation), capped so very large
     # monitors still get a window rather than a wall, and centered.

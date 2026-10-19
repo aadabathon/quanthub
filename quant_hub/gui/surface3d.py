@@ -13,9 +13,10 @@ How it loads:
   ``Plotly.react`` with the new figure, which redraws in place and keeps
   the camera (``uirevision``); that is tens of milliseconds, not a reload.
 * Chromium starts in other processes, so the GUI thread only pays for
-  constructing the view (~0.7 s the first time in a process). Pages build
-  this widget ahead of need to hide that (the Volatility Lab does it when
-  first shown). An update sent before the page has loaded waits for it.
+  constructing the view (~0.7 s the first time in a process). The app
+  builds the Volatility Lab and this widget before showing the main window,
+  so Qt chooses its graphics surface without recreating a visible window.
+  An update sent before the page has loaded waits for it.
 * The first 3D draw in a page also pays ~2.5 s of one-time WebGL and JIT
   setup. The page draws a throwaway plot as it loads, while still hidden,
   so the first real draw takes ~0.2 s and later ones ~0.1 s (measured on

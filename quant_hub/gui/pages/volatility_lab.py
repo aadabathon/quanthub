@@ -33,8 +33,10 @@ Switching refits the chain already on the page; it never refetches.
 The Surface view switches between a heatmap and a rotatable 3D surface
 (``gui/surface3d.py``, Plotly, D32). The same job builds the 3D mesh
 (``vol_surface.surface_mesh``) from the fit. The 3D view embeds Chromium,
-whose first construction costs ~0.7 s of GUI time, so the page builds it as
-soon as it is first shown, while the fit is still running.
+whose first construction costs ~0.7 s of GUI time. The composition root
+prepares this page and its browser before showing the main window: adding
+the first WebEngine widget later makes Qt recreate the native window.
+Only the widgets are prepared; the fit still starts on the first visit.
 """
 
 from __future__ import annotations
@@ -43,7 +45,7 @@ import logging
 from dataclasses import dataclass
 
 import numpy as np
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QHBoxLayout, QStackedWidget, QVBoxLayout, QWidget
 
 from quant_hub.data.stats import TRADING_DAYS_PER_YEAR
@@ -185,6 +187,7 @@ class VolatilityLabPage(ScrollPage):
         column.addWidget(self._build_checks())
         column.addStretch(1)
         main.addWidget(side)
+        self._ensure_surface3d()
 
     # ------------------------------------------------------------ building
     def _build_experiment(self, saved: dict) -> Card:
@@ -377,10 +380,6 @@ class VolatilityLabPage(ScrollPage):
     def on_show(self) -> None:
         if self._fit is None:
             self._run()
-        if self._surface3d is None:
-            # Build the 3D view now, while the fit runs in the background,
-            # so choosing 3D later doesn't stall (module docstring).
-            QTimer.singleShot(50, self._ensure_surface3d)
 
     def on_hide(self) -> None:
         state = {key: field.text() for key, field in self._fields.items()}

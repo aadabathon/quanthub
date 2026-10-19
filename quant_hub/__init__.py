@@ -17,4 +17,4 @@ Cross-cutting: ``events`` (thread-safe bus), ``tasks`` (worker thread),
 ``tests/test_layering.py`` enforces the import rules.
 """
 
-__version__ = "0.5.0"
+__version__ = "1.0.0"

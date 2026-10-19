@@ -51,7 +51,7 @@ from quant_hub.storage.bar_store import StorageError
 
 _logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 BACKUP_DIR = "backups"
 
 _TABLE = """
@@ -112,7 +112,16 @@ def _price_basis(conn: sqlite3.Connection) -> None:
 
 
 # Step from version v to v + 1, keyed by v.
-_STEPS: dict[int, Callable[[sqlite3.Connection], None]] = {0: _adopt, 1: _price_basis}
+def _research(conn: sqlite3.Connection) -> None:
+    """2 -> 3: append-only experiments and a local paper catalog."""
+    from quant_hub.storage.research_store import V3_TABLES
+    for statement in V3_TABLES:
+        conn.execute(statement)
+
+
+_STEPS: dict[int, Callable[[sqlite3.Connection], None]] = {
+    0: _adopt, 1: _price_basis, 2: _research,
+}
 
 
 @dataclass(frozen=True)

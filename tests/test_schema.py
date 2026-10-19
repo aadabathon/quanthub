@@ -91,7 +91,8 @@ def test_a_file_from_before_versioning_is_backed_up_then_adopted(tmp_path):
                                "'schema_migrations'") == []
     assert rows(db, "SELECT version, applied_at, backup FROM schema_migrations") == [
         (1, "2026-10-15T19:30:05", str(result.backup)),
-        (2, "2026-10-15T19:30:05", str(result.backup))]
+        (2, "2026-10-15T19:30:05", str(result.backup)),
+        (3, "2026-10-15T19:30:05", str(result.backup))]
     assert rows(db, "SELECT COUNT(*) FROM bars") == [(count,)]
     # Up to date now: the next start changes nothing and copies nothing.
     again = prepare_store(db, clock)
@@ -149,7 +150,7 @@ def test_version_1_gains_the_price_basis_with_every_bar_traded(tmp_path):
     db = tmp_path / "market_data.db"
     count = seeded_store(db, version=1)
     result = prepare_store(db, clock)
-    assert (result.migrated_from, result.version) == (1, 2)
+    assert (result.migrated_from, result.version) == (1, SCHEMA_VERSION)
     assert result.backup.name == "market_data.v1.20261015-193005.db"
     assert rows(result.backup, "SELECT COUNT(*) FROM bars") == [(count,)]
     assert rows(db, "SELECT basis, COUNT(*) FROM bars GROUP BY basis") == [("traded", count)]

@@ -137,6 +137,115 @@ def test_every_page_builds(qt_app):
         assert window._stack.currentWidget() is page
 
 
+def test_research_runs_saves_reopens_and_retains_the_whole_grid(qt_app):
+    app, window = qt_app
+    page = window.show_page("Research")
+    for key, value in {"train_size": "60", "lookback": "10", "observations": "180"}.items():
+        page._fields[key].set_text(value)
+    page._run()
+    wait_for(app, lambda: page._run_result is not None)
+    original = page._run_result
+    assert original.payload["summary"]["observations"] == 119
+    assert page._chart_stack.currentWidget() is page._chart
+    assert page._fits.rowCount() > 0 and page._trades.rowCount() > 0
+    page._notes.setPlainText("Reject pending an untouched holdout")
+    page._save_conclusion()
+    wait_for(app, lambda: page._header._status.full_text() == "Research notes saved")
+    page._tab("Saved runs")
+    wait_for(app, lambda: len(page._history._shown) == 1)
+    page.open_run(original.id)
+    wait_for(app, lambda: not page._busy)
+    assert page._notes.toPlainText().startswith("Reject")
+    assert page._stack.currentIndex() == 0
+    page._grid_lookbacks.set_text("5, 10")
+    page._grid_thresholds.set_text("0, 0.02")
+    page._independent.set_text("3")
+    page._sweep()
+    wait_for(app, lambda: not page._busy)
+    assert "sweep" in page._run_result.payload
+    assert page._detail.currentIndex() == 2
+    assert "not an untouched" in page._selection.text()
+    assert len(window._core.research.list_runs()) == 6
+
+
+def test_research_library_imports_notes_and_links_to_experiments(qt_app, tmp_path):
+    app, window = qt_app
+    page = window.show_page("Research")
+    for key, value in {"train_size": "60", "lookback": "10", "observations": "180"}.items():
+        page._fields[key].set_text(value)
+    page._run()
+    wait_for(app, lambda: page._run_result is not None)
+    page._tab("Papers")
+    library = page._library
+    wait_for(app, lambda: len(library._papers) == 5)
+    library._search.set_text("Fama")
+    assert len(library._shown) == 1
+    library._select(0)
+    library._notes.setPlainText("Replicate the factor construction")
+    library._link()
+    wait_for(app, lambda: not library._busy)
+    assert library._selected["run_ids"] == [page._run_result.id]
+    assert library._selected["notes"] == "Replicate the factor construction"
+    library._open_link()
+    wait_for(app, lambda: not page._busy)
+    assert page._stack.currentIndex() == 0
+    path = tmp_path / "Research fixture.pdf"
+    path.write_bytes(b"%PDF-1.4\n% fixture")
+    library.import_paths([str(path)])
+    wait_for(app, lambda: not library._busy)
+    wait_for(app, lambda: len(library._papers) == 6)
+    assert any(p["title"] == "Research fixture" and p["pdf"] for p in library._papers)
+
+
+def test_startup_and_first_visits_do_not_show_temporary_windows(tmp_path, monkeypatch):
+    from PySide6.QtCore import QEvent, QObject
+    from PySide6.QtWidgets import QApplication, QWidget
+    from quant_hub.gui.pages.volatility_lab import VolatilityLabPage
+
+    # Observe Show events, not just allWindows() after construction: the
+    # unwanted subtitle windows lasted only a few milliseconds.
+    shown = []
+
+    class WindowShows(QObject):
+        def eventFilter(self, widget, event):
+            if event.type() == QEvent.Show and isinstance(widget, QWidget) and widget.isWindow():
+                shown.append(type(widget).__name__)
+            return False
+
+    runs = []
+    run = VolatilityLabPage._run
+
+    def record_run(page):
+        runs.append(True)
+        run(page)
+
+    monkeypatch.setattr(VolatilityLabPage, "_run", record_run)
+    app = QApplication.instance() or QApplication(["test"])
+    observer = WindowShows()
+    app.installEventFilter(observer)
+    window = None
+    try:
+        app, window = create_app(AppConfig(db_path=tmp_path / "startup.db", ibkr_enabled=False))
+        window.show()
+        app.processEvents()
+        assert window._active == "Dashboard"
+        assert runs == []     # preparing the browser must not start acquisition or a fit
+        native_id = window.winId()
+        # Vol first, so its fit finishes before the other labs queue work.
+        lab = window.show_page("Volatility Lab")
+        wait_for(app, lambda: lab._fit is not None)
+        assert runs == [True]
+        for name in window._factories:
+            window.show_page(name)
+            app.processEvents()
+            assert window.winId() == native_id
+        assert shown == ["MainWindow"]
+    finally:
+        app.removeEventFilter(observer)
+        if window is not None:
+            _close(app, window)
+
+
 def test_command_search_navigates(qt_app):
     app, window = qt_app
     dash = window.show_page("Dashboard")
@@ -785,6 +894,7 @@ from quant_hub.config import AppConfig
 
 app, window = create_app(AppConfig(db_path=Path(sys.argv[1])), argv=["test"])
 window.show()
+native_id = window.winId()
 lab = window.show_page("Volatility Lab")
 deadline = time.perf_counter() + 90
 def wait(condition):
@@ -799,6 +909,7 @@ surface = lab._surface3d
 drawn = []
 surface.rendered.connect(lambda: drawn.append(True))
 wait(lambda: drawn or not surface._loading._title.text().startswith("Loading"))
+assert window.winId() == native_id, "first 3D view recreated the main window"
 outcome = "drawn" if drawn else surface._loading._body.text()
 print("RESULT: " + " ".join(outcome.split()))
 app.aboutToQuit.emit()

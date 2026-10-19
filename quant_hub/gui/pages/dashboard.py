@@ -78,7 +78,7 @@ _TOOLS = (
      "Options Lab"),
     ("ph.chart-pie-slice", "Portfolio risk", "Your holdings: VaR, drawdown, beta, sizing",
      "Portfolio"),
-    ("ph.file-text", "Custom research", "Planned · strategy research & backtests",
+    ("ph.file-text", "Custom research", "Experiments, backtests & paper library",
      "Research"),
 )
 

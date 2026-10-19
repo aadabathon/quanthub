@@ -1162,7 +1162,8 @@ class Heatmap(QWidget):
     validated sequential ramp, with a color bar and a hover readout."""
 
     def __init__(self, x_name: str = "x", x_fmt: str = "{:+.2f}",
-                 value_fmt: str = "{:.2%}") -> None:
+                 value_fmt: str = "{:.2%}", value_axis: str = "percent",
+                 value_name: str = "IV") -> None:
         super().__init__()
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -1174,10 +1175,11 @@ class Heatmap(QWidget):
         self._canvas.ci.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self._canvas, 1)
         self._x_name, self._x_fmt, self._value_fmt = x_name, x_fmt, value_fmt
+        self._value_name = value_name
         self._plot = self._canvas.addPlot(row=0, col=0)
         _view_only(self._plot)
         self._bar = self._canvas.addPlot(row=0, col=1,
-                                         axisItems={"right": _ValueAxis("right", "percent")})
+                                         axisItems={"right": _ValueAxis("right", value_axis)})
         _view_only(self._bar)
         self._bar.hideAxis("left")
         self._bar.hideAxis("bottom")
@@ -1229,7 +1231,7 @@ class Heatmap(QWidget):
             return
         point = self._plot.vb.mapSceneToView(pos)
         r = int(np.clip(round(point.y()), 0, len(self._rows) - 1))
-        j = int(np.clip(np.searchsorted(self._x, point.x()), 0, len(self._x) - 1))
+        j = int(np.argmin(np.abs(self._x - point.x())))
         dx = (self._x[-1] - self._x[0]) / max(len(self._x) - 1, 1)
         x0, x1, y0, y1 = self._x[j] - dx / 2, self._x[j] + dx / 2, r - 0.5, r + 0.5
         self._cell.setData([x0, x1, x1, x0, x0], [y0, y0, y1, y1, y0])
@@ -1254,4 +1256,4 @@ class Heatmap(QWidget):
         self._readout.setText(
             f"<b style='{strong}'>{self._rows[r]}</b>{sep}{self._x_name} "
             f"<b style='{strong}'>{self._x_fmt.format(self._x[j])}</b>{sep}"
-            f"IV <b style='{strong}'>{self._value_fmt.format(self._values[r, j])}</b>")
+            f"{self._value_name} <b style='{strong}'>{self._value_fmt.format(self._values[r, j])}</b>")

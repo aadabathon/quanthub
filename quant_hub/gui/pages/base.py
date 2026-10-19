@@ -1,8 +1,9 @@
 """Page base classes and the narrow interface pages get to the shell.
 
-Pages are created lazily on first navigation and stay alive, so their state
-survives switching (as in the Tk ``View``). ``on_show``/``on_hide`` bracket
-visibility: refresh on show, persist on hide.
+Pages are normally created on first navigation and stay alive, so their
+state survives switching (as in the Tk ``View``). The Volatility Lab is
+prepared before the main window is shown for WebEngine's graphics setup
+(D40). ``on_show``/``on_hide`` bracket visits: refresh on show, persist on hide.
 """
 
 from __future__ import annotations

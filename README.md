@@ -1,4 +1,4 @@
-# Quant Hub
+# Quant Hub 1.0
 
 A personal quantitative research and trading workstation: a desktop app with
 a fast, modern Qt interface over a layered Python core.
@@ -14,6 +14,13 @@ a fast, modern Qt interface over a layered Python core.
     a heatmap or a rotatable 3D surface
   - Kalman Lab: a hidden price level (and trend) filtered from noisy closes,
     with the smoother and maximum-likelihood fits
+  - Markov Lab: Gaussian regimes, filtered versus hindsight states and forecasts
+- **Research:** six daily strategies with rolling training/refits, explicit
+  costs and risk sizing, matched benchmarks, sweeps with IID deflated Sharpe,
+  and exact saved inputs/decisions. A local paper library keeps PDFs, notes
+  and links to experiments.
+- **Portfolio:** imported positions, option-aware risk, historical/Gaussian
+  VaR and expected shortfall, risk contributions and Kelly uncertainty.
 - **Dashboard:** what the local store holds, a market explorer, and a model
   sandbox.
 
@@ -21,13 +28,26 @@ Synthetic labs know the true process, so they show TRUE vs ESTIMATE
 side by side. Brokerage access is read-only by design: there is no order
 code anywhere.
 
-## Running
+## Getting started without a broker
+
+On Windows, install Python 3.12, open a terminal in this directory, and run:
 
 ```bash
-pip install -e ".[dev,ibkr]"   # from this directory; drop [ibkr] to skip TWS support
-python -m quant_hub            # or the quant-hub launcher (windowed)
-pytest -q                      # no display or network required
+py -3.12 -m pip install -e ".[dev]"
+py -3.12 -m quant_hub          # or the quant-hub launcher (windowed)
+py -3.12 -m pytest -q          # no display or network required
 ```
+
+The synthetic labs and Research controls work immediately. In Research,
+press **Run** for a random-walk control; choose **Planted trend** and a short
+momentum lookback to test whether a rule can find a known mechanism. These
+are simulated worlds, not forecasts. Use Dashboard → Import CSV… for your
+own daily histories, then select `file` and its price basis in Research.
+
+The first launch creates `~/.quant_hub/settings.toml`. Set `enabled = false`
+under `[ibkr]` to hide broker controls. Brokerage support is optional:
+install it with `py -3.12 -m pip install -e ".[dev,ibkr]"` and follow IBKR
+setup below. There is no automatic connection or reconnection.
 
 ## Architecture
 
@@ -151,6 +171,64 @@ CASH,1250,,,Brokerage
 - Imports are kept as dated snapshots.
 - Before any import, the page shows a $100,000 example portfolio.
 
+## Research workspace
+
+**Experiments** contains Data, Rule and Costs forms. Training prices precede
+each test block; reported returns exclude warm-up. Momentum, mean reversion,
+Kalman trend/level, GARCH volatility targeting and Markov calm-regime rules
+use equal asset budgets with a volatility target and a long/cash exposure
+cap. Model rules refit on rolling training windows and use forward filters.
+The benchmark enters an equal-weight buy-and-hold basket on the same dates,
+with the same costs; its exposure is 100%, independent of the risk target.
+
+Equity, drawdown, rolling Sharpe, exposure, trade notionals, fees and fit
+windows are inspectable. The threshold's meaning is explained for each
+rule. Sweeps vary the signal/risk window and threshold (GARCH uses individual
+experiments). All trials and the sweep manifest are saved. DSR assumes IID
+returns and an explicitly chosen effective independent-trial count. A
+selected test window is **not an untouched holdout**, and earlier searches
+outside that grid still count when assessing evidence.
+
+**Saved runs** replays the exact captured prices and target weights, without
+fetching newer bars or refitting. Each run retains its configuration,
+provenance, fitted parameters, software source fingerprint, statistics and
+editable conclusion. Reopen warns when the implementation has changed.
+The close-t execution convention is idealized; impact, taxes, borrow costs
+and serial-dependence corrections are outside v1.
+
+**Papers** supports PDF import, source-only references, metadata, topic,
+reading status, searchable notes and links to experiments. Five foundational
+references seed the catalog; their PDFs are not bundled. Import your own
+files or attach a PDF to an existing reference. Imported copies live in
+`market_data.papers/` beside the SQLite store, named by content hash. Back up
+both the database and that folder; schema backups copy the database only.
+Attach PDF… can repair a missing file without replacing its notes.
+
+The pure engine is also available from Python:
+
+Target weights use decision dates and earn the following session's
+return. Costs include entry and drift-driven rebalancing, paid from equity.
+
+```python
+import pandas as pd
+from quant_hub.models.backtest import BacktestConfig, backtest
+from quant_hub.models.backtest_stats import performance_summary
+
+dates = pd.bdate_range("2025-01-02", periods=4)
+prices = pd.DataFrame({"ASSET": [100, 110, 99, 105]}, index=dates)
+targets = pd.DataFrame({"ASSET": [0.0, 1.0, 1.0]}, index=dates[:-1])
+run = backtest(prices, targets, BacktestConfig(half_spread_bps=2, commission_bps=1))
+report = performance_summary(run.net_returns, turnover=run.turnover)
+# The first 10% jump was observed before entering: the strategy does not earn it.
+print(run.equity)
+```
+
+`walk_forward_targets` passes only training history to fitting and history
+through the decision date to prediction. Sharpe inference explicitly assumes
+independent returns; deflated Sharpe also requires the recorded trial
+Sharpes and an explicit independent-trial count. The accounting and
+statistical derivations are in the two modules' docstrings (D41).
+
 ## Price bases
 
 Every series is either **traded** (as it traded, split-adjusted) or
@@ -160,7 +238,7 @@ displays use traded prices. From IBKR, adjusted prices are refetched whole
 once a day, since every dividend rescales the past. A split after the cache
 stored a symbol is detected and repaired.
 
-## IBKR setup
+## Optional IBKR setup
 
 Run TWS or IB Gateway with API access enabled (Configure → API → Settings →
 "Enable ActiveX and Socket Clients"). The default settings target live TWS
@@ -182,8 +260,8 @@ GUI or broker code.
 
 ## Roadmap
 
-Next: the data side (live IBKR verification, an option-chain adapter feeding
-the Volatility Lab, real positions, a trading dashboard). Planned modules
-with nav placeholders: Markov regime models,
-portfolio analytics and Kelly sizing, strategy research and backtesting.
-See ROADMAP.md.
+The v1 research foundation is implemented. Remaining external acceptance
+checks are a real Fidelity positions export and a fresh end-to-end adjusted
+history/cache run against TWS. Portfolio optimizers, streaming, option
+strategy backtests and richer personalization remain later work. See
+[ROADMAP.md](ROADMAP.md) and [CURRENT_STATE.md](CURRENT_STATE.md).

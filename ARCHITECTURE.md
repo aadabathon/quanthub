@@ -89,8 +89,8 @@ quant_hub/
 │                              dashboard.py, markets.py, garch_lab.py,
 │                              simulator.py, options_lab/ (page, underlying,
 │                              pricer, strategy, monte_carlo), volatility_lab.py,
-│                              kalman_lab.py, markov_lab.py, placeholder.py
-│                              (planned modules)
+│                              kalman_lab.py, markov_lab.py,
+│                              research/ (page, history, library)
 ├── config.py                  AppConfig
 ├── events.py                  EventBus (thread-safe), LogEvent, log handler
 ├── broker/
@@ -123,6 +123,11 @@ quant_hub/
 │                              drawdown/moments, GBM estimation (μ̂, σ̂),
 │                              ReturnStats + SeriesAnalysis bundles
 ├── models/
+│   ├── backtest.py            daily self-financing portfolio accounting,
+│   │                          explicit decision/earning dates, drift-aware
+│   │                          turnover, causal walk-forward callbacks (R1)
+│   ├── backtest_stats.py      net-return metrics, Sharpe + IID standard error,
+│   │                          probabilistic and deflated Sharpe (D41)
 │   ├── optimize.py            shared NumPy-only Nelder–Mead minimizer
 │   │                          (MinimizeResult); callers reparameterize
 │   ├── garch.py               stationary GARCH(1,1): simulation, Gaussian
@@ -153,6 +158,9 @@ quant_hub/
 │   │                          beta, historical (options repriced) and
 │   │                          Gaussian VaR/ES, drawdown of today's mix,
 │   │                          N_eff, Kelly with its error (D39)
+│   ├── strategies.py          six causal daily rules, rolling fits and
+│   │                          capped portfolio risk sizing (D42)
+│   ├── research_worlds.py     seeded null, trend and reversion controls
 │   └── markov.py              Gaussian HMM on returns: scaled filter, Kim
 │                              smoother, Viterbi, multi-start EM with a
 │                              variance floor, BIC over K, forecasts (M1)
@@ -169,6 +177,8 @@ quant_hub/
 │   ├── portfolio.py           PortfolioService: positions imports kept,
 │   │                          holdings valued, options priced, risk run;
 │   │                          gaps named; the example portfolio
+│   ├── research.py            exact experiment snapshots/replay, matched
+│   │                          tests, sweep manifests and paper imports (D42)
 │   ├── file_import.py         CSV bars validated into the store under
 │   │                          "file" (all or nothing per file); FileSource
 │   │                          serves them; FileImportService for the GUI
@@ -180,6 +190,8 @@ quant_hub/
 ├── importers/positions_csv.py positions CSV: generic layout + Fidelity
 │                              preset, option symbols parsed (D39)
 ├── storage/position_store.py  imported position snapshots, kept (D39)
+├── storage/research_store.py  immutable research payloads, mutable notes
+│                              and paper metadata; local PDF copies (D42)
 ├── storage/bar_store.py       SQLite schema (instruments/bars/coverage),
 │                              upsert with counts, range queries, coverage
 ├── storage/chain_store.py     option-chain snapshots (option_chains /
@@ -240,7 +252,7 @@ Markov Lab = hidden volatility regimes in returns (Gaussian HMM, BIC over 1–3)
              synthetic worlds or source history
 Portfolio  = imported positions (or the example): risk first: VaR/ES, risk
              contributions, beta, the replayed drawdown, Kelly with its error
-RESEARCH…  = GARCH Lab, Vol Lab, Kalman Lab, Markov Lab, plus placeholders
+RESEARCH…  = GARCH Lab, Vol Lab, Kalman Lab, Markov Lab, Research
 ```
 
 **No global source state.** ``MarketService.get_history/get_quote`` take a
@@ -359,8 +371,11 @@ Key properties (decisions D17–D21):
 - **Status colors** (good/warning/critical) mean *state* — connection
   health, signed values, check results — and are never chart series
   colors. State is always color + text (or sign), never color alone.
-- **Lifecycle.** Pages are created lazily and stay alive; `on_show`
-  refreshes, `on_hide` persists via `ViewStateStore`. Pages reach the shell
+- **Lifecycle.** Pages normally build on first navigation and stay alive.
+  The Volatility Lab and its WebEngine widget are prepared before the main
+  window is shown (D40), so Qt establishes its graphics surface up front.
+  Preparation does not run jobs: `on_show` refreshes on visits, and
+  `on_hide` persists via `ViewStateStore`. Pages reach the shell
   only through `Shell` (`navigate`, `publish_commands` for Ctrl+K).
 - **Async results carry a token** when the user can supersede a request
   (e.g. switching symbols); stale results are dropped, not painted.
@@ -376,6 +391,9 @@ Key properties (decisions D17–D21):
 - **Replacing widgets.** Hide a widget before replacing it (`DataTable`
   does this for cell widgets): Qt deletes replaced widgets only on the next
   event-loop pass, and until then they paint over their replacement.
+- **Showing widgets.** Attach children to their parent before calling
+  `show` or `setVisible(True)`. A parentless widget is a desktop window;
+  even a brief show during construction flashes a taskbar entry.
 - **Live recalculation.** Closed-form pages recompute as you type through
   `pages.base.debounce` (150 ms after the last keystroke); Enter commits at
   once. Anything that blocks or simulates stays on the TaskRunner and is

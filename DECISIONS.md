@@ -727,3 +727,101 @@ enough for any trader, shipped soon. So P is cut lean.
     of history it's noise, and saying so is the feature.
   - **Returns are adjusted** (D38), with traded as the fallback where an
     import has no adjusted prices, which is noted.
+
+## D40 — Prepare WebEngine before showing the main window (2026-10-18)
+
+Supersedes D32's timing of browser construction. On Windows, attaching the
+first WebEngine widget to an already-visible window made Qt hide, destroy
+and recreate the native window (~110 ms in the diagnostic run). The process
+kept running, but the first Volatility Lab visit looked like a restart.
+
+- `create_app` prepares the Volatility Lab, including `Surface3D`, before
+  returning the main window for its first `show()`.
+- `MainWindow.prepare_page` only constructs and attaches. It does not
+  select the page or call `on_show`: chain acquisition and fitting still
+  begin on the first visit, through the existing TaskRunner.
+- The browser's construction cost moves to launch. Other pages still
+  build on navigation; no extra browser or dummy graphics widget is needed.
+- A separate first-visit flash came from `Card` showing its subtitle before
+  parenting it. The layout now attaches the label before setting visibility.
+
+## D41 — R1: self-financing daily research accounting (2026-10-18)
+
+The owner authorized the next Research increment. R1 implements the engine
+and its statistics; R2's strategies and R3's page remain later milestones.
+Derivations precede the implementations in `models/backtest.py` and
+`models/backtest_stats.py`.
+
+- Targets are decisions at close t, held for t → t+1 (D33). The supplied
+  target matrix is indexed by every close except the last; realized
+  returns are indexed by the following closes. Closing-price execution is
+  an idealized research convention. The final portfolio is marked, not
+  automatically liquidated.
+- Targets are fractions of equity **after transaction costs**. The exact
+  self-financing scalar fee equation is solved across all dates together.
+  Pre-trade weights include market drift, so maintaining a constant target
+  can require a rebalance. Entry costs count; cash finances the remainder.
+- Costs are half-spread plus commission in basis points per absolute
+  notional traded. Turnover counts buys and sells, with no factor of 1/2.
+  Cash uses an effective annual rate; borrowing uses that same rate.
+  Default targets are nonnegative with gross exposure at most one. Shorts
+  and higher gross exposure require explicit configuration. Insolvency and
+  unaffordable liquidation fail the run; there are no margin/borrow models.
+- Walk-forward fitting receives only its training slice. Predictions
+  receive history through their decision close, with no future bars.
+  The model callbacks are plain Python functions. Training/test block
+  lengths count close observations; test blocks are disjoint and warm-up
+  exposure is zero.
+- Performance uses realized net simple returns. Sharpe SE/PSR/DSR use an
+  asymptotic independent-observation approximation and say so in the API;
+  they do not correct for serial dependence. Sortino uses the lower
+  partial second moment over all observations.
+- DSR requires all recorded trial Sharpes plus an explicit integer count
+  of effectively independent trials. The engine does not infer independent
+  trials from grid size or manufacture missing trial history.
+- No new dependencies. The modules are source-agnostic, pure, and usable
+  from scripts and tests. Data provenance and immutable run snapshots are
+  R3's persistence responsibility.
+
+## D42 — v1 Research workspace and local evidence (2026-10-19)
+
+The owner's “ship v1” authorized finishing R2/R3, the lean paper catalog
+and stabilization without further milestone stops. No new dependencies.
+
+- Daily long/cash hypotheses: momentum, rolling log-price reversion,
+  Kalman slope/level deviation, GARCH risk targeting and Markov calm-state
+  filtering. Each model fits training prices strictly before its test
+  block. Kalman test filters continue the training terminal state; Markov
+  uses a fixed-parameter forward pass, never smoothed/Viterbi positions.
+- Portfolio sizing uses homogeneity: scale a fixed equal-budget signal to
+  the daily volatility target, bounded by gross exposure. Zero estimated
+  variance means cash. GARCH log-return forecasts are transformed using
+  the conditional lognormal variance before simple-return risk sizing.
+- Test-only reporting, with a matched equal-weight buy-and-hold basket
+  entered on the same close and charged the same costs. Training is for
+  parameter estimation, not a second claimed performance sample. The
+  initial entry is charged, and final holdings are marked without an exit.
+- Immutable SQLite run payloads retain exact prices, decisions, fits,
+  costs, results, hypothesis, seeds, source/basis and SHA-256 of source
+  implementation (including uncommitted changes). Reopening verifies the
+  evidence hash and replays accounting without data fetches or refitting;
+  changed source is disclosed. Notes are separately editable. Schema v3
+  adds two tables and uses the existing backup-before-migration mechanism.
+- Grids vary lookback/risk window and threshold on common test dates;
+  GARCH is run individually because it has no signal threshold. Every
+  completed trial is stored, including losers; a manifest records the
+  chosen trial and explicit effective independent-trial assumption. DSR
+  is conditional on that recorded grid, assumes IID, and does not claim
+  an untouched holdout or account for omitted earlier searches.
+- A local paper catalog holds references and imported content-hash PDF
+  copies beside the store, reading notes/status and experiment links.
+  Five verified foundational source references seed it; no copyrighted PDF
+  collection is bundled. SQLite and the PDF directory must both be backed
+  up; schema backups intentionally remain database-only.
+- Data loading, fitting, sweeps, replay, substantive saves and PDF import
+  all run on the existing single TaskRunner. Widgets and launch-to-reader
+  callbacks stay on the GUI thread. Per-view form state follows the
+  existing small synchronous hide-time convention.
+- Version 1.0.0 identifies the implemented research foundation. External
+  acceptance of a real Fidelity export and a fresh adjusted-cache TWS run
+  remains explicitly unverified; TWS was not open during this session.

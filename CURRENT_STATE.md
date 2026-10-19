@@ -1,19 +1,49 @@
 # CURRENT_STATE.md
 
 **Update this file whenever meaningful work lands.** Last updated:
-**2026-10-15**: the option-chain adapter (C1–C4) is complete. Real chains
-reach the Volatility Lab and are saved; the joint SSVI fit is an option
-(D35); the Options Lab can price from the market surface. Before that
-(2026-10-14): the Kalman module and the 3D vol surface (D32), on the Qt UI
-(D31). Open items for the owner are listed under Open decisions.
+**2026-10-19**: v1.0.0 Research foundation implemented (D42): six causal
+strategies, seeded controls, risk sizing, the Research page, immutable saved
+evidence and a local PDF/reference library. All completed experiments and
+sweep trials are saved; reopening replays captured decisions and data.
+The owner's “ship v1” authorized completing the remaining milestones.
+R1's exact self-financing engine and IID-labelled statistics remain the
+accounting foundation (D41). Also: first-visit window flashes fixed (D40).
+Card subtitles are
+parented before being shown; the Volatility Lab and its browser are prepared
+before the main window appears, with fitting still deferred to the visit.
+Before that: Portfolio shipped lean (D39), data foundations are complete
+(D36–D38), and the option-chain and Markov modules are complete.
+Remaining live acceptance limits are listed below; they are not silently
+treated as verified.
 
 ## Status
 
-v0.5 (the Qt UI). Brokerage connectivity is live-verified against TWS 7496 (2026-08-14;
-see below). `py -3.12 -m pytest -q` → **895 passed** in about 115 s, with no
+v1.0.0. Brokerage connectivity was live-verified against TWS 7496 (2026-08-14;
+see below). `py -3.12 -m pytest -q` → **993 passed, 1 skipped** in about
+136 s (2026-10-19), with no
 network or display needed (the GUI smoke tests run offscreen). The real 3D
 draw runs in a fresh subprocess and skips, with the reason, when offscreen
 Chromium can't compile WebGL shaders; that happens on some runs.
+
+Final follow-up after extracting rolling Sharpe into the pure statistics
+module: **86 passed, 1 skipped** (statistics, all GUI smoke tests, layering;
+65.5 s). The v1.0.0 wheel built and its Research modules imported from an
+extracted wheel independently of the checkout. Normal startup against the
+owner's configured store succeeded; brokerage remained disconnected.
+Final Research/Dashboard checks after broadening the implementation
+fingerprint and removing the last planned-feature label: **15 passed**.
+
+R1 checkpoint (2026-10-18): **68 new tests** cover accounting/causality and statistical
+calibration; those plus the four layering checks passed independently.
+The full suite, including the 3D draw on that run, passed. One existing
+pandas date-inference warning comes from the malformed-date validation test.
+
+Navigation fix verification (2026-10-18, D40): GUI smoke tests plus layering
+checks **52 passed, 1 skipped** (offscreen WebGL). On Windows with a copied
+store, startup, first visits to Volatility Lab and Options Lab, and the
+actual 3D surface draw kept one native window, with no temporary subtitle
+windows. The new regression observes transient Show events during startup
+and every page's first visit, and checks that preparation starts no fit.
 
 ### The app
 
@@ -77,8 +107,8 @@ what the desktop shortcut targets. The GUI is `quant_hub/gui/` (Qt, D31) on
     - quotes with bid–ask whiskers
     - hover readouts; the camera is kept across refits
   - 3D timings, measured on an RTX 4060 Ti:
-    - built when the page is first shown (~0.7 s of GUI time, overlapping
-      the fit)
+    - built before the main window is shown (D40); its ~0.7 s of GUI
+      construction time is paid at launch, and fitting starts on the visit
     - first draw ~0.4 s after choosing 3D, redraws ~0.1 s
   - when WebGL is missing, the 3D view says so instead of loading forever
   - fit-by-expiry table and arbitrage checks, now also between expiries
@@ -112,7 +142,14 @@ what the desktop shortcut targets. The GUI is `quant_hub/gui/` (Qt, D31) on
     and in the long run
   - notes for non-convergence, a regime on the variance floor, and BIC
     choosing a different count than the synthetic truth
-- **Planned modules** (Portfolio, Research) show placeholders.
+- **Research v1:** Experiments, Saved runs and Papers replace the final
+  placeholder. Six long/cash rules use rolling training windows and forward
+  filters; only test returns are reported. Source, basis, seed, exact prices,
+  targets, fits, costs, statistics and implementation fingerprint are saved.
+  Notes remain editable separately. Parameter grids retain every trial and
+  a selection manifest; IID DSR requires an explicit independent-trial count.
+  The local paper catalog supports PDF copies, source references, search,
+  reading status, notes and links to experiments. No PDFs are bundled.
 - **State:** every page's inputs persist per view through `ViewStateStore`
   (the shapes predate the Qt UI, so old inputs carried over).
 - **Measured speeds:**
@@ -228,14 +265,19 @@ what the desktop shortcut targets. The GUI is `quant_hub/gui/` (Qt, D31) on
   it's pip-generated and covered by `.gitignore`.
 - **Market data (prior M4 limits):** fetches end "now", daily bars only,
   STK/USD only, no retry/backoff.
-- **GARCH:** Gaussian QMLE only, with no heavy tails, confidence intervals,
-  rolling refit or out-of-sample evaluation. Annualization assumes 252
-  periods/year.
-- **3D surface:** synthetic chains only, like the rest of the Volatility
-  Lab. The 3D draw is verified by screenshots on the owner's GPU and by the
-  subprocess test, which may skip offscreen.
+- **GARCH Lab:** Gaussian QMLE only, with no heavy tails or confidence
+  intervals. Research provides rolling refits and out-of-sample evaluation
+  separately. Annualization assumes 252 periods/year.
+- **3D surface:** synthetic and stored/live market chain fits use the same
+  mesh. The draw is verified by screenshots on the owner's GPU and by the
+  subprocess test, which may skip on offscreen WebGL failures.
 
 ## Open decisions (waiting on the owner)
+
+- **Research after v1:** [RESEARCH_DESIGN.md](RESEARCH_DESIGN.md) retains the
+  broader direction: personalized portfolio decisions, comparison across
+  matching runs, richer literature search and annotations. The foundation
+  is implemented; those extensions remain later work.
 
 - **Kalman K2 review:** the Kalman Lab page landed; the owner reviews it.
   - Live `ibkr` history loads are untested: the screenshots fed stored SPY
@@ -245,9 +287,8 @@ what the desktop shortcut targets. The GUI is `quant_hub/gui/` (Qt, D31) on
       Holt's linear smoothing with α = K̄₁, β = K̄₂/K̄₁
     - an exact diffuse initialization
 - **S3D review:** the 3D surface landed (D32); the owner reviews it.
-  - Volatility Lab clipping at 1280 px wide is pre-existing: the
-    Experiment card's first row needs 1160 px. It's flagged as a separate
-    task.
+  - The earlier 1280-pixel input clipping was fixed when market chains
+    shipped (C2, entry below); it is no longer an open task.
 - **DCF modeler port (owner request 2026-10-14):** bring in the owner's
   existing DCF tool, which pulls SEC EDGAR data and stores it in SQLite.
   Deferred by the owner until after the current roadmap. Plan it in its own
@@ -599,6 +640,41 @@ pytest. Environment:
        follows Fidelity's known format; one file of yours will confirm it.
    - Deferred to v1.1: the optimizers and frontier, Ledoit–Wolf, IBKR
      positions, the rebalance ticket.
-   - Next: R, research and backtesting, after approval.
+   - ~~R1: daily backtest engine and statistics~~ (2026-10-18, D41).
+     - `models/backtest.py`: vectorized self-financing costs, drift-aware
+       rebalancing, decision-at-t → return-at-t+1, cash and explicit limits.
+     - `models/backtest_stats.py`: CAGR, simple-return vol, Sharpe with its
+       IID SE, Sortino, drawdown, turnover, PSR and DSR.
+     - Walk-forward callbacks receive only training/current history.
+     - Tests check a separate share/cash ledger, hand cost identities,
+       future perturbation, Gaussian SE/coverage and many-trial nulls.
+     - Sharpe inference assumes independent returns; there is no serial
+       dependence correction. DSR needs the real trial history and an
+       explicit independent-trial count.
+   - ~~R2/R3 and lean paper library~~ (2026-10-19, D42).
+     - `models/strategies.py`: momentum, mean reversion, Kalman trend/level,
+       GARCH volatility and Markov calm filtering. Fits exclude their test
+       block; all position decisions use known observations only.
+     - `portfolio.scale_to_risk`: homogeneous volatility sizing with a
+       gross exposure cap. GARCH's Gaussian log-return variance is converted
+       to simple-return variance before sizing.
+     - `models/research_worlds.py`: null martingale prices, AR(1) log-return
+       trend and mean-reverting log levels. Explicit scenario parameters.
+     - `services/research.py` and `storage/research_store.py`: exact data,
+       targets, fits and results; fingerprints and replay; SQLite v3 backed
+       up before migration. All complete sweep trials plus manifest kept.
+     - `gui/pages/research/`: experiments, results, trades, fit windows,
+       sweep heatmap/DSR, saved-run notes, PDF/reference catalog and links.
+     - Native screenshots checked at 1280×800 and 1720×1040 on an isolated
+       store. GUI smoke checks cover runs, replay, notes, grids, PDF imports
+       and paper/experiment links. All six rules pass future-perturbation
+       invariance; model parameter JSON round trips and GARCH timing checked.
+     - **External acceptance remains:** a real Fidelity positions export;
+       fresh adjusted-history/cache verification with TWS open. No TWS
+       window was available in this release session. No new live pass is
+       claimed. Research is daily, long/cash, idealized close execution;
+       costs omit impact/taxes/borrow and Sharpe inference assumes IID.
+     - Back up both the SQLite file and sibling `market_data.papers/`.
+       Automatic schema backups copy the database, not the PDF folder.
 6. After the roadmap: the DCF port (SEC EDGAR + SQLite), planned in its own
    session.
