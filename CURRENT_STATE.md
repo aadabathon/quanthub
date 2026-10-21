@@ -1,6 +1,10 @@
 # CURRENT_STATE.md
 
 **Update this file whenever meaningful work lands.** Last updated:
+**2026-10-20**: the personal workstation phase was approved (D43,
+[WORKSTATION_PLAN.md](WORKSTATION_PLAN.md)). W0 has started: the
+`REGIME.md` template, and a dry run for the real Fidelity export. No app
+code has changed. Before that,
 **2026-10-19**: v1.0.0 Research foundation implemented (D42): six causal
 strategies, seeded controls, risk sizing, the Research page, immutable saved
 evidence and a local PDF/reference library. All completed experiments and
@@ -289,10 +293,12 @@ what the desktop shortcut targets. The GUI is `quant_hub/gui/` (Qt, D31) on
 - **S3D review:** the 3D surface landed (D32); the owner reviews it.
   - The earlier 1280-pixel input clipping was fixed when market chains
     shipped (C2, entry below); it is no longer an open task.
-- **DCF modeler port (owner request 2026-10-14):** bring in the owner's
-  existing DCF tool, which pulls SEC EDGAR data and stores it in SQLite.
-  Deferred by the owner until after the current roadmap. Plan it in its own
-  session then, starting from the existing source folder.
+- **DCF modeler port (owner request 2026-10-14):** planned 2026-10-20 as
+  W4–W6 of the personal workstation phase (D43).
+  - The tool is `C:\Users\adams\Projects\Fin-SW\DCF_proj` (`dcfmodeler`
+    0.2.0; 28 offline tests pass).
+  - Correction: it doesn't store anything. It fetches live through
+    edgartools, and SQLite was only the plan.
 
 ## Version control / environment
 
@@ -676,5 +682,29 @@ pytest. Environment:
        costs omit impact/taxes/borrow and Sharpe inference assumes IID.
      - Back up both the SQLite file and sibling `market_data.papers/`.
        Automatic schema backups copy the database, not the PDF folder.
-6. After the roadmap: the DCF port (SEC EDGAR + SQLite), planned in its own
-   session.
+6. **The personal workstation phase** (approved 2026-10-20, D43), W0 → W7:
+   see ROADMAP.md.
+   - W0 in progress:
+     - The `REGIME.md` template is drafted; the owner fills in the values.
+     - A dry run for positions files (`spikes/fidelity_check.py`, local and
+       untracked) reads the export with the app's importer, stores nothing,
+       and reconciles it.
+     - **Real exports checked (2026-10-21).** Four owner exports (Jun 1,
+       Jun 29, Jul 27, Oct 21) turned out to be Fidelity's Positions-view
+       layout (D43). The D39 preset read them as generic: cash came in as
+       stocks, and the date was the import time.
+     - A second preset now reads them, with 6 new tests on a made-up file
+       of the same shape. Full suite: 1,002 passed (126 s), with the
+       known pandas date-inference warning.
+     - All four now parse with every row accounted for.
+       - Jun 29's value matches Fidelity's Totals row to the cent.
+       - Jun 1's cost basis matches to the cent, but its value is a few
+         hundred dollars above Fidelity's Totals: unexplained, and it
+         isn't a missing row.
+     - **Not yet done:**
+       - the in-app import, with TWS open
+       - the fresh adjusted-cache check: the store has no adjusted bars
+         yet, and no bars at all for five of the holdings
+       - checking the import's total against Fidelity's site
+     - Note: the page analyses the most recently *imported* snapshot, so
+       import older exports first.

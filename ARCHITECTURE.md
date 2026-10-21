@@ -188,7 +188,9 @@ quant_hub/
 │                              and Yahoo presets detected by header, raw
 │                              frames by symbol (D37)
 ├── importers/positions_csv.py positions CSV: generic layout + Fidelity
-│                              preset, option symbols parsed (D39)
+│                              presets (Portfolio Positions; Positions view,
+│                              no account column, D43), option symbols parsed
+│                              (D39)
 ├── storage/position_store.py  imported position snapshots, kept (D39)
 ├── storage/research_store.py  immutable research payloads, mutable notes
 │                              and paper metadata; local PDF copies (D42)
