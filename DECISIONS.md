@@ -825,3 +825,64 @@ and stabilization without further milestone stops. No new dependencies.
 - Version 1.0.0 identifies the implemented research foundation. External
   acceptance of a real Fidelity export and a fresh adjusted-cache TWS run
   remains explicitly unverified; TWS was not open during this session.
+
+## D43 — The personal workstation phase (2026-10-20)
+
+The owner asked to bring their own trading regime and their DCF modeler
+into the app, scoped to "something I would personally use over other
+software tooling". They approved
+[WORKSTATION_PLAN.md](WORKSTATION_PLAN.md) as proposed: milestones W0 →
+W7 (ROADMAP.md).
+
+- **The regime is a portfolio thesis:**
+  - a core beta stream plus hedge and return streams orthogonal to it,
+    minimizing vol to maximize CAGR
+  - expressed through options and a long-term portfolio, on daily data,
+    so D19 stands
+  - the owner's numbers live in `REGIME.md`, a template in the repo; their
+    own copy can stay in the gitignored `personal/`
+- **Still read-only (D12, unchanged).** The owner raised deploying algos,
+  then scoped it out. Execution would need its own decision amending D12,
+  with paper trading first. This phase only reads accounts.
+- **The DCF modeler is ported, not wrapped.**
+  - edgartools, yfinance and openpyxl are dropped.
+  - SEC data comes through the stdlib from SEC's `companyfacts` API. SEC's
+    fair-access terms apply: a declared User-Agent from the settings file,
+    at most 10 requests a second. That makes SEC the first online provider
+    D34 allowed once terms were checked.
+  - Prices come from the existing named sources (D23). Export is CSV only.
+- **Amends D34:** fundamentals become a fifth port, with its shape in
+  `data/`.
+- **Amends D39:** IBKR read-only positions and aggregate option greeks
+  move into this phase (W1, W3). Optimizers, the frontier, Ledoit–Wolf and
+  the rebalance ticket stay deferred.
+- **W0 finding (2026-10-21): the owner's real exports are another
+  Fidelity layout.** They come from the Positions view, not the Portfolio
+  Positions download the D39 preset was built for:
+  - The layout: a preamble with the view's name and "as of" date; `Last` /
+    `Value` / `Basis` columns; cash as `Cash (SPAXX)`; sometimes a `Totals`
+    row.
+  - There's no account column, so the rows of two accounts can't be told
+    apart. Every row belongs to the view's account ("All Accounts"), and
+    the risk model sums a symbol's rows, which is right for one combined
+    portfolio.
+  - A second preset reads it. Per-account risk needs the Portfolio
+    Positions download, or one export per account.
+  - One import may now hold several files as one snapshot
+    (`data.positions.combine_snapshots`). The rules keep it one moment and
+    count nothing twice:
+    - the same as-of day
+    - each account from one file only
+    - every row with an account
+    - no All Accounts export beside the accounts it already holds
+  - The snapshot keeps the date only, as the other preset does (D19's
+    naive dates).
+  - The layout's option rows are unverified: no export so far held an
+    option.
+- **Settled at their milestones:**
+  - regression conventions (W2)
+  - growth conventions (W3)
+  - the DCF conventions the plan raised (W4): reverse-DCF roots, the
+    terminal cash flow, the valuation date, net debt
+  - the name and layering rule of the online-provider package (W5)
+  - rule-set versioning (W7)

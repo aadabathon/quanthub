@@ -228,16 +228,22 @@ class PortfolioPage(ScrollPage):
 
     # -------------------------------------------------------------- import
     def _choose_file(self) -> None:
-        path, _filter = QFileDialog.getOpenFileName(
-            self, "Import positions", self._import_dir, "CSV files (*.csv);;All files (*)")
-        if path:
-            self._import_dir = str(Path(path).parent)
-            self.import_file(Path(path))
+        paths, _filter = QFileDialog.getOpenFileNames(
+            self, "Import positions: one export, or one per account from the same day",
+            self._import_dir, "CSV files (*.csv);;All files (*)")
+        if paths:
+            self._import_dir = str(Path(paths[0]).parent)
+            self.import_files([Path(p) for p in paths])
 
     def import_file(self, path: Path) -> None:
         """Import a positions CSV, then analyse it."""
-        self._header.set_status(f"Importing {path.name}…")
-        self._tasks.submit(lambda: self._portfolio.import_positions(path),
+        self.import_files([path])
+
+    def import_files(self, paths: list[Path]) -> None:
+        """Import positions CSVs as one snapshot (one account each, same day),
+        then analyse it."""
+        self._header.set_status(f"Importing {' + '.join(p.name for p in paths)}…")
+        self._tasks.submit(lambda: self._portfolio.import_positions(paths),
                            on_done=self._on_imported, on_error=self._on_error)
 
     def _on_imported(self, result) -> None:

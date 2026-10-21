@@ -1,6 +1,7 @@
 """Portfolio: positions imported and kept, and their risk (P2, P3).
 
-* ``PortfolioService.import_positions`` reads a broker's positions CSV
+* ``PortfolioService.import_positions`` reads a broker's positions CSV, or
+  one per account from the same day, into one snapshot
   (``importers/positions_csv.py``) and keeps it (``storage/position_store``).
 * ``example_snapshot`` is a small stock and ETF portfolio, so the page works
   before anything is imported (D34).
@@ -29,6 +30,7 @@ from __future__ import annotations
 
 import logging
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -38,7 +40,7 @@ import pandas as pd
 
 from quant_hub.data.positions import Holding, Position, PositionSnapshot
 from quant_hub.data.types import PriceBasis
-from quant_hub.importers.positions_csv import read_positions_csv
+from quant_hub.importers.positions_csv import read_positions_files
 from quant_hub.models.portfolio import (
     TRADING_DAYS,
     Exposures,
@@ -99,8 +101,12 @@ class PortfolioService:
         self._market = market
         self._store = store
 
-    def import_positions(self, path: str | Path) -> tuple[int, PositionSnapshot]:
-        snapshot = read_positions_csv(path)
+    def import_positions(self, paths: str | Path | Sequence[str | Path]
+                         ) -> tuple[int, PositionSnapshot]:
+        """Read one positions file, or several of the same day (one account
+        each) into one snapshot, and keep it."""
+        files = [paths] if isinstance(paths, (str, Path)) else list(paths)
+        snapshot = read_positions_files(files)
         return self._store.save(snapshot), snapshot
 
     def snapshots(self) -> list[PositionSnapshotSummary]:

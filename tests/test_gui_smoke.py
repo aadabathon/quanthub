@@ -510,6 +510,22 @@ def test_portfolio_imports_a_fidelity_file_and_splits_accounts(qt_app, tmp_path)
     wait_for(app, lambda: page._view.account == "ROTH IRA", timeout_s=30)
     assert [r.symbol for r in page._view.rows] == ["QQQ"]
 
+
+def test_portfolio_imports_one_export_per_account_together(qt_app, tmp_path):
+    from test_positions_csv import view_export
+    app, window = qt_app
+    page = _portfolio(app, window)
+    paths = []
+    for name, account in (("ind.csv", "Individual"), ("roth.csv", "ROTH IRA")):
+        paths.append(tmp_path / name)
+        paths[-1].write_text(view_export(account), encoding="utf-8")
+    page.import_files(paths)
+    wait_for(app, lambda: page._view.snapshot.name == "ind.csv + roth.csv", timeout_s=30)
+    assert page._header._status.full_text().startswith("Imported ind.csv + roth.csv")
+    assert "in 2 accounts" in page._header._status.full_text()
+    page._accounts.select.set_current("ROTH IRA")
+    wait_for(app, lambda: page._view.account == "ROTH IRA", timeout_s=30)
+
 # ------------------------------------------------------------------- Markets
 
 def test_markets_synthetic_quotes_add_and_remove(qt_app):

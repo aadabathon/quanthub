@@ -21,6 +21,7 @@ Conventions:
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from enum import Enum
@@ -115,3 +116,37 @@ class PositionSnapshot:
         if account is None:
             return self.positions
         return tuple(p for p in self.positions if p.account == account)
+
+
+def combine_snapshots(snapshots: Sequence[PositionSnapshot]) -> PositionSnapshot:
+    """One snapshot from several imports of the same day, e.g. one export per
+    account (W0).
+
+    A snapshot is one moment, so every part must share its as-of date. Each
+    account may come from one part only, or its holdings would count twice;
+    and every row needs an account, or rows from different files would blur
+    into one. A single snapshot is returned as it is.
+    """
+    if not snapshots:
+        raise ValueError("no snapshots to combine")
+    if len(snapshots) == 1:
+        return snapshots[0]
+    days = sorted({s.as_of.date() for s in snapshots})
+    if len(days) > 1:
+        raise ValueError(f"the files are from different days ({', '.join(map(str, days))}): "
+                         "a snapshot is one moment")
+    owner: dict[str, str] = {}
+    for snapshot in snapshots:
+        if any(not p.account for p in snapshot.positions):
+            raise ValueError(f"{snapshot.name or 'a file'} has rows without an account, so they "
+                             "can't be kept apart from the other files'")
+        for account in snapshot.accounts:
+            if account in owner:
+                raise ValueError(f"account {account!r} is in both {owner[account]} and "
+                                 f"{snapshot.name}")
+            owner[account] = snapshot.name
+    return PositionSnapshot(
+        tuple(p for s in snapshots for p in s.positions),
+        max(s.as_of for s in snapshots),
+        " + ".join(dict.fromkeys(s.source for s in snapshots)),
+        " + ".join(s.name for s in snapshots))

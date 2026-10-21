@@ -157,8 +157,16 @@ and shows its risk.
   the risk, sorted by risk.
 - **Sizing:** Kelly leverage, shown with its standard error.
 
-Fidelity's Portfolio Positions download is read as it is. Any other broker
-works through the generic layout:
+Fidelity's downloads are read as they are:
+- the Portfolio Positions download, one account per row
+- the Positions view's download, which has no account column, so all its
+  rows count as the view's account (e.g. "All Accounts")
+
+To keep accounts apart, export each account from the Positions view and
+select all of the day's files in one import: they become one snapshot,
+with the accounts in the account selector.
+
+Any other broker works through the generic layout:
 
 ```text
 symbol,quantity,price,cost_basis,account

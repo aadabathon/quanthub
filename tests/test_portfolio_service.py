@@ -113,6 +113,20 @@ class TestAnalyse:
         assert {r.symbol for r in view.rows} == {"AAPL", "VTI", "QQQ"}
         assert any("expired" in note for note in view.left_out)      # its Jan 2026 call
 
+    def test_one_export_per_account_is_one_snapshot(self, service, tmp_path):
+        from test_positions_csv import view_export
+        paths = []
+        for account in ("Individual", "ROTH IRA"):
+            path = tmp_path / f"{account}.csv"
+            path.write_text(view_export(account), encoding="utf-8")
+            paths.append(path)
+        snapshot_id, snap = service.import_positions(paths)
+        assert [s.id for s in service.snapshots()] == [snapshot_id]   # one import, kept once
+        assert snap.accounts == ("Individual", "ROTH IRA")
+        both = service.analyse(snap, None, "synthetic", "SPY", 730, 0.04, now=NOW)
+        roth = service.analyse(snap, "ROTH IRA", "synthetic", "SPY", 730, 0.04, now=NOW)
+        assert both.equity == pytest.approx(2 * roth.equity)           # identical made-up files
+
 
 def test_the_example_is_a_hundred_thousand_dollars():
     market = MarketService(sources=[SyntheticSource()])

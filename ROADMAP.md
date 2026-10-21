@@ -327,9 +327,10 @@ checked; until then, users without IBKR keep the synthetic chain.
 ### P — Portfolio (v0.8)
 
 Shipped lean on 2026-10-16 (D39): positions import (Fidelity and generic),
-the risk model, and the Portfolio page, risk first. Below is the full plan;
-the optimizers, frontier, Ledoit–Wolf, IBKR positions and the rebalance
-ticket wait for v1.1.
+the risk model, and the Portfolio page, risk first. Below is the full plan.
+IBKR positions and aggregate option greeks moved into the personal
+workstation phase (W1, W3; D43). The optimizers, frontier, Ledoit–Wolf and
+the rebalance ticket stay deferred.
 
 - **P1. `models/portfolio.py`**
   - Alignment and estimation:
@@ -444,10 +445,44 @@ verification limits, not claims of completed live checks.
 - Parallel universe backfill (revisits D9).
 - Possible web deployment of selected tools (out of scope until the owner
   raises it).
-- After the roadmap: the owner's DCF modeler port (SEC EDGAR + SQLite).
+- ~~After the roadmap: the owner's DCF modeler port~~ Moved into the
+  personal workstation phase (W4–W6, D43).
 - Research library growth: the local catalog, reading notes and experiment
   links ship in v1; full-text search and annotations can follow. See
   [RESEARCH_DESIGN.md](RESEARCH_DESIGN.md).
+
+## Next phase — the personal workstation (approved 2026-10-20, D43)
+
+Owner direction: fold their own regime and their DCF modeler into the app.
+The test: something they'd use instead of other tools. The regime is a
+portfolio thesis: a core beta stream plus hedge and return streams
+orthogonal to it, sized for CAGR. It runs on options and a long-term
+portfolio, daily data only. Still read-only (D12): no execution in this
+phase. Proposal and math: [WORKSTATION_PLAN.md](WORKSTATION_PLAN.md).
+
+Order W0 → W7, each approved before the next:
+- **W0. Your real accounts** (closes v1.0):
+  - the real Fidelity export
+  - the fresh adjusted-cache TWS check
+  - `REGIME.md` filled in
+- **W1. IBKR read-only positions**, once the account exists.
+- **W2. Regressions:** α, β and R² with HAC standard errors, rolling β,
+  residual correlation. The derivation is written for review
+  (`models/regression.py`, 2026-10-21).
+- **W3. Streams and growth:**
+  - the growth hurdle ∂g/∂wᵢ = (μᵢ − r) − Cov(Rᵢ, R_p)
+  - optimal and fractional sizing ± SE
+  - hedge ratios and aggregate greeks
+- **W4. DCF core** (`models/dcf.py`): the owner's engine ported, plus the
+  Gordon identity and reverse DCF with every root.
+- **W5. SEC fundamentals:** stdlib `companyfacts` (no edgartools), facts
+  stored as filed.
+- **W6. Valuation page:** EV bridge, sensitivity, reverse DCF, margin of
+  safety, a screen, saved valuations.
+- **W7. The regime:** versioned rule sets and the daily Review page with
+  its journal.
+
+Versions: W1–W3 → v1.1, W4–W6 → v1.2, W7 → v1.3.
 
 ## Intended stack flow (architecture already accommodates this)
 
