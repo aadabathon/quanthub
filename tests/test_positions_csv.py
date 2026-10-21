@@ -10,6 +10,7 @@ from quant_hub.importers.positions_csv import (
     PositionFileError,
     parse_option_symbol,
     read_positions_csv,
+    read_positions_files,
 )
 
 FIDELITY = '''Account Number,Account Name,Symbol,Description,Quantity,Last Price,Last Price Change,Current Value,Today's Gain/Loss Dollar,Today's Gain/Loss Percent,Total Gain/Loss Dollar,Total Gain/Loss Percent,Percent Of Account,Cost Basis Total,Average Cost Basis,Type
@@ -131,6 +132,55 @@ class TestFidelityPositionsView:
         assert snapshot.name == "10-21-26_port.csv"
         assert snapshot.source == "Fidelity positions view"
         assert snapshot.as_of == datetime(2026, 10, 21) and len(snapshot.positions) == 6
+
+
+def view_export(account: str, day: str = "10/21/2026") -> str:
+    """The Positions view's download for one account (made-up holdings)."""
+    return FIDELITY_VIEW.replace("All Accounts", account).replace("10/21/2026", day)
+
+
+class TestOneExportPerAccount:
+    @pytest.fixture
+    def files(self, tmp_path):
+        def write(name: str, text: str):
+            path = tmp_path / name
+            path.write_text(text, encoding="utf-8")
+            return path
+        return write
+
+    def test_two_accounts_become_one_snapshot(self, files):
+        snapshot = read_positions_files([files("ind.csv", view_export("Individual")),
+                                         files("roth.csv", view_export("ROTH IRA"))])
+        assert snapshot.accounts == ("Individual", "ROTH IRA")
+        assert snapshot.name == "ind.csv + roth.csv"
+        assert snapshot.source == "Fidelity positions view"
+        assert snapshot.as_of == datetime(2026, 10, 21)
+        assert len(snapshot.positions) == 12 and len(snapshot.for_account("ROTH IRA")) == 6
+
+    def test_one_file_is_read_as_it_is(self, files):
+        path = files("all.csv", FIDELITY_VIEW)
+        assert read_positions_files([path]) == read_positions_csv(path)
+
+    def test_different_days_are_refused(self, files):
+        with pytest.raises(PositionFileError, match="different days"):
+            read_positions_files([files("a.csv", view_export("Individual")),
+                                  files("b.csv", view_export("ROTH IRA", "10/20/2026"))])
+
+    def test_the_same_account_twice_is_refused(self, files):
+        with pytest.raises(PositionFileError, match="'Individual' is in both a.csv and b.csv"):
+            read_positions_files([files("a.csv", view_export("Individual")),
+                                  files("b.csv", view_export("Individual"))])
+
+    def test_an_all_accounts_export_beside_others_is_refused(self, files):
+        with pytest.raises(PositionFileError, match="already holds every account"):
+            read_positions_files([files("all.csv", FIDELITY_VIEW),
+                                  files("roth.csv", view_export("ROTH IRA"))])
+
+    def test_rows_without_an_account_are_refused(self, files):
+        generic = "symbol,quantity,price\nAAPL,5,250\n"
+        with pytest.raises(PositionFileError, match="rows without an account"):
+            read_positions_files([files("g.csv", generic),
+                                  files("roth.csv", view_export("ROTH IRA"))])
 
 
 class TestGeneric:

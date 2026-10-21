@@ -54,7 +54,8 @@ recognized by its header (``Symbol``, ``Quantity``, ``Last``, ``Value``,
 It has **no account column**: a holding in two accounts is two rows, and
 nothing says which is which. So every row belongs to the view's account,
 and the risk model adds the rows up. Separate accounts need the Portfolio
-Positions download above, or one export per account.
+Positions download above, or one export per account, read together by
+``read_positions_files`` into one snapshot.
 """
 
 from __future__ import annotations
@@ -62,12 +63,19 @@ from __future__ import annotations
 import csv
 import io
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import IO
 
-from quant_hub.data.positions import Holding, OptionContract, Position, PositionSnapshot
+from quant_hub.data.positions import (
+    Holding,
+    OptionContract,
+    Position,
+    PositionSnapshot,
+    combine_snapshots,
+)
 
 _OPTION = re.compile(r"^-?\s*([A-Z][A-Z0-9.]*?)(\d{6})([CP])(\d+(?:\.\d+)?)$")
 _DOWNLOADED = re.compile(r"date downloaded\s+([A-Za-z]{3}-\d{1,2}-\d{4})", re.IGNORECASE)
@@ -156,6 +164,26 @@ def read_positions_csv(source: str | Path | IO[str], name: str = "") -> Position
     else:
         as_of = datetime.now()
     return PositionSnapshot(tuple(positions), as_of, layout.name, name)
+
+
+def read_positions_files(paths: Sequence[str | Path]) -> PositionSnapshot:
+    """Several exports of the same day, one account each, as one snapshot
+    (``combine_snapshots``). Raises ``PositionFileError``.
+
+    An "All Accounts" view already holds every account, so beside any other
+    file it would count each holding twice: refused.
+    """
+    snapshots = [read_positions_csv(path) for path in paths]
+    if len(snapshots) > 1:
+        for snapshot in snapshots:
+            if any(a.lower() == "all accounts" for a in snapshot.accounts):
+                raise PositionFileError(
+                    f"{snapshot.name} is an All Accounts export, which already holds every "
+                    "account: import it alone, or the per-account exports without it")
+    try:
+        return combine_snapshots(snapshots)
+    except ValueError as exc:
+        raise PositionFileError(str(exc)) from exc
 
 
 def _position(record: dict[str, str], layout: _Layout, view_account: str) -> Position | None:
