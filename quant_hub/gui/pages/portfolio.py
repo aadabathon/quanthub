@@ -12,7 +12,12 @@ Risk first, for a stock and ETF portfolio that uses options sparingly:
 * the distribution of one-day P&L from that replay, with the VaR marks
   and the Gaussian curve of the same vol, so fat tails show;
 * sizing: the mix's mean return and vol drag, and the Kelly leverage with
-  its standard error, which is the point.
+  its standard error, which is the point;
+* regressions (W2, ``models/regression.py``): each holding's and the
+  portfolio's α and β on the benchmark with Newey–West errors (optionally
+  the Dimson sum beta with one lag), a rolling β with its band for the
+  selected row, and the residual links between holdings, strongest first:
+  are the streams orthogonal?
 
 Holdings come from the latest imported positions file (a broker's CSV:
 Fidelity, or the generic layout; ``services/portfolio.py``), or a built-in
@@ -38,7 +43,7 @@ from PySide6.QtWidgets import (
 )
 
 from quant_hub.data.types import PriceBasis
-from quant_hub.gui.charts import Histogram, Panel, Series, StackedTimeSeries
+from quant_hub.gui.charts import Band, Histogram, Panel, Series, StackedTimeSeries
 from quant_hub.gui.components import (
     Card,
     DataTable,
@@ -55,8 +60,15 @@ from quant_hub.gui.components import (
 )
 from quant_hub.gui.pages.base import ScrollPage
 from quant_hub.gui.theme import PALETTE, SIDE_PANEL_WIDTH, SPACE_L, SPACE_M
+from quant_hub.models.regression import Z95
 from quant_hub.services.market_service import MarketService
-from quant_hub.services.portfolio import PortfolioService, PortfolioView, example_snapshot
+from quant_hub.services.portfolio import (
+    PORTFOLIO_ROW,
+    PortfolioService,
+    PortfolioView,
+    Regressions,
+    example_snapshot,
+)
 from quant_hub.storage.state_store import ViewStateStore
 from quant_hub.tasks import TaskRunner
 
@@ -65,6 +77,8 @@ _logger = logging.getLogger(__name__)
 _STATE_KEY = "portfolio"
 _IMPORTED, _EXAMPLE = "Imported", "Example"
 _ALL_ACCOUNTS = "All accounts"
+_LAGS = {"Off": 0, "1 day": 1}          # the Dimson lag of the benchmark
+_LINK_ROWS = 8                          # residual links shown before the table scrolls
 _HALF = (SIDE_PANEL_WIDTH - 2 * SPACE_L - SPACE_M) // 2
 _FULL = 2 * _HALF + SPACE_M
 _ROW = 32
@@ -88,6 +102,9 @@ class PortfolioPage(ScrollPage):
         self._account = saved.get("account") or _ALL_ACCOUNTS
         self._import_dir = saved.get("import_dir") or str(Path.home())
         self._keep_status = False       # an import's message outlives its analysis
+        self._regressions: Regressions | None = None
+        self._regression_keys: list[str] = []
+        self._rolling_key = PORTFOLIO_ROW
 
         self._header = PageHeader(
             "Portfolio", "What today's holdings could lose, and where the risk sits")
@@ -103,6 +120,9 @@ class PortfolioPage(ScrollPage):
         column.addWidget(self._build_holdings())
         column.addWidget(self._build_replay(), 1)
         column.addWidget(self._build_losses())
+        column.addWidget(self._build_regressions())
+        column.addWidget(self._build_rolling())
+        column.addWidget(self._build_links())
 
         side = QVBoxLayout()
         side.setSpacing(SPACE_L)
@@ -167,6 +187,36 @@ class PortfolioPage(ScrollPage):
         self._losses_card.body.addWidget(self._losses)
         return self._losses_card
 
+    def _build_regressions(self) -> Card:
+        self._regress_card = Card("Regressions on the benchmark", "")
+        self._regress_table = DataTable([
+            ("Holding", "left"), ("α a year", "right"), ("β", "right"), ("Lag β", "right"),
+            ("R²", "right"), ("Residual vol", "right"), ("Days", "right")], row_height=_ROW)
+        self._regress_table.balance_columns()
+        self._regress_table.row_activated.connect(self._on_regression_row)
+        self._regress_card.body.addWidget(self._regress_table)
+        return self._regress_card
+
+    def _build_rolling(self) -> Card:
+        self._rolling_card = Card("Rolling β", "")
+        self._rolling_stack = QStackedWidget()
+        self._rolling = StackedTimeSeries()
+        self._rolling_empty = EmptyState("ph.chart-line", "No rolling β yet")
+        self._rolling_stack.addWidget(self._rolling)
+        self._rolling_stack.addWidget(self._rolling_empty)
+        self._rolling_stack.setCurrentWidget(self._rolling_empty)
+        self._rolling_stack.setMinimumHeight(240)
+        self._rolling_card.body.addWidget(self._rolling_stack, 1)
+        return self._rolling_card
+
+    def _build_links(self) -> Card:
+        self._links_card = Card("Residual links, strongest first", "")
+        self._links = DataTable([("Pair", "left"), ("Residual ρ", "right"),
+                                 ("95% range", "right"), ("Raw ρ", "right")], row_height=_ROW)
+        self._links.balance_columns()
+        self._links_card.body.addWidget(self._links)
+        return self._links_card
+
     def _build_inputs(self, saved: dict) -> Card:
         card = Card("Holdings")
         self._modes = SegmentedControl([_IMPORTED, _EXAMPLE], self._mode, fill=True)
@@ -182,8 +232,11 @@ class PortfolioPage(ScrollPage):
         self._benchmark = Field("Benchmark", saved.get("benchmark", "SPY"), _HALF, uppercase=True)
         self._lookback = Field("Lookback (calendar days)", saved.get("lookback", "730"), _HALF)
         self._rate = Field("Rate %", saved.get("rate", "4.0"), _HALF)
+        lags = saved.get("lags", "Off")
+        self._lags = SelectField("Lagged β", list(_LAGS), lags if lags in _LAGS else "Off", _HALF)
+        self._lags.select.current_changed.connect(lambda _l: self._analyse())
         card.body.addLayout(form_grid([self._source, self._benchmark, self._lookback,
-                                       self._rate], 2))
+                                       self._rate, self._lags], 2))
         for field in (self._benchmark, self._lookback, self._rate):
             field.committed.connect(self._analyse)
         buttons = QHBoxLayout()
@@ -220,6 +273,7 @@ class PortfolioPage(ScrollPage):
             "mode": self._mode, "account": self._account, "source": self._source.current(),
             "benchmark": self._benchmark.text(), "lookback": self._lookback.text(),
             "rate": self._rate.text(), "import_dir": self._import_dir,
+            "lags": self._lags.current(),
         })
 
     def _on_mode(self, mode: str) -> None:
@@ -271,6 +325,7 @@ class PortfolioPage(ScrollPage):
         source = self._source.current()
         mode = self._mode
         account = None if self._accounts.current() == _ALL_ACCOUNTS else self._accounts.current()
+        lags = _LAGS[self._lags.current()]
         portfolio, market = self._portfolio, self._market
 
         def work() -> tuple[PortfolioView, bool]:
@@ -281,7 +336,8 @@ class PortfolioPage(ScrollPage):
             else:
                 snapshot, fallback = example_snapshot(market, source), mode == _IMPORTED
             chosen = account if account in snapshot.accounts else None
-            return portfolio.analyse(snapshot, chosen, source, benchmark, lookback, rate), fallback
+            return portfolio.analyse(snapshot, chosen, source, benchmark, lookback, rate,
+                                     dimson_lags=lags), fallback
 
         self._analyse_button.setEnabled(False)
         if not self._keep_status:
@@ -310,6 +366,7 @@ class PortfolioPage(ScrollPage):
         self._render_losses(view)
         self._render_sizing(view)
         self._render_notes(view, fallback)
+        self._render_regressions(view)
 
     def _on_error(self, exc: Exception) -> None:
         self._analyse_button.setEnabled(True)
@@ -434,3 +491,105 @@ class PortfolioPage(ScrollPage):
                             "in the one-day P&L.")
         self._finding.set_text(" ".join(findings))
         self._finding.setVisible(bool(findings))
+
+    # ---------------------------------------------------------- regressions
+    def _render_regressions(self, view: PortfolioView) -> None:
+        reg = self._regressions = view.regressions
+        if reg is None:
+            self._regression_keys = []
+            self._regress_table.set_rows([])
+            self._regress_table.setFixedHeight(36)
+            self._links.set_rows([])
+            self._links.setFixedHeight(36)
+            for card in (self._regress_card, self._rolling_card, self._links_card):
+                card.set_subtitle(view.regression_note)
+            self._rolling_empty.set_text("No rolling β", view.regression_note)
+            self._rolling_stack.setCurrentWidget(self._rolling_empty)
+            return
+        self._regression_keys = list(reg.fits)
+        rows = []
+        for key in self._regression_keys:
+            fit = reg.fits[key]
+            alpha, alpha_se = fit.alpha_annual, fit.alpha_error_annual()
+            beta, beta_se = reg.beta(key)
+            lag = reg.lag_beta(key)
+            noise = abs(alpha) <= Z95 * alpha_se
+            rows.append([
+                (key, PALETTE.text if key == PORTFOLIO_ROW else PALETTE.text_secondary),
+                (f"{alpha:+.1%} ± {alpha_se:.1%}", PALETTE.muted if noise else PALETTE.text),
+                f"{beta:.2f} ± {beta_se:.2f}",
+                ("—", PALETTE.muted) if lag is None else (
+                    f"{lag[0]:+.2f} ± {lag[1]:.2f}",
+                    PALETTE.warning if abs(lag[0]) > Z95 * lag[1] else PALETTE.muted),
+                ("—", PALETTE.muted) if not math.isfinite(fit.r2) else f"{fit.r2:.0%}",
+                f"{fit.residual_vol_annual:.1%}",
+                f"{fit.observations:,}",
+            ])
+        self._regress_table.set_rows(rows)
+        self._regress_table.setFixedHeight(36 + len(rows) * _ROW)
+        any_fit = reg.fits[PORTFOLIO_ROW]
+        self._regress_card.set_subtitle(
+            f"Daily excess returns on {reg.benchmark} · {any_fit.observations:,} days · "
+            f"Newey–West errors ({any_fit.lags} lags) · grey α: within 1.96 errors of zero"
+            + (" · β is the Dimson sum, today's and yesterday's; amber lag β: the price "
+               "trails the market" if reg.dimson_lags else "")
+            + " · click a row to chart its rolling β")
+        if self._rolling_key not in reg.fits:
+            self._rolling_key = PORTFOLIO_ROW
+        self._render_rolling()
+        self._render_links(view)
+
+    def _on_regression_row(self, row: int) -> None:
+        if self._regressions is not None and 0 <= row < len(self._regression_keys):
+            self._rolling_key = self._regression_keys[row]
+            self._render_rolling()
+
+    def _render_rolling(self) -> None:
+        reg = self._regressions
+        frame = reg.rolling.get(self._rolling_key) if reg is not None else None
+        if frame is None or frame.empty:
+            self._rolling_empty.set_text(
+                "No rolling β", f"A rolling β needs {reg.window} days of returns; this "
+                "lookback has fewer." if reg is not None else "")
+            self._rolling_stack.setCurrentWidget(self._rolling_empty)
+            return
+        beta, se = frame["beta"].to_numpy(), frame["se"].to_numpy()
+        panel = Panel(f"β to {reg.benchmark}",
+                      [Series("β", beta, PALETTE.series, 1.8, fmt="{:.2f}")], axis="price",
+                      zero_line=True,
+                      bands=[Band("95%", beta - Z95 * se, beta + Z95 * se, PALETTE.series,
+                                  fmt="{:.2f}")])
+        self._rolling.set_panels(frame.index, [panel])
+        self._rolling_stack.setCurrentWidget(self._rolling)
+        self._rolling_card.set_subtitle(
+            f"{self._rolling_key} · each point uses the {reg.window} days ending that day, "
+            "so only what was known then · band ±1.96 Newey–West errors · hover for values")
+
+    def _render_links(self, view: PortfolioView) -> None:
+        reg, report = view.regressions, view.report
+        symbols = list(reg.correlation.columns)
+        sd = np.sqrt(np.diag(report.covariance))
+        raw = report.covariance / np.outer(sd, sd)
+        pairs = []
+        for i in range(len(symbols)):
+            for j in range(i + 1, len(symbols)):
+                rho = float(reg.correlation.iat[i, j])
+                pairs.append((symbols[i], symbols[j], rho, float(reg.lower.iat[i, j]),
+                              float(reg.upper.iat[i, j]), float(raw[i, j])))
+        pairs.sort(key=lambda p: -abs(p[2]) if math.isfinite(p[2]) else 0.0)
+        rows = []
+        for a, b, rho, low, high, plain in pairs:
+            if not math.isfinite(rho):
+                rows.append([f"{a} · {b}", ("—", PALETTE.muted), ("—", PALETTE.muted),
+                             f"{plain:+.2f}"])
+                continue
+            linked = low > 0 or high < 0
+            rows.append([f"{a} · {b}", (f"{rho:+.2f}", PALETTE.warning if linked else PALETTE.text),
+                         f"{low:+.2f} to {high:+.2f}", f"{plain:+.2f}"])
+        self._links.set_rows(rows)
+        self._links.setFixedHeight(36 + max(min(len(rows), _LINK_ROWS), 1) * _ROW)
+        self._links_card.set_subtitle(
+            "Correlation of what's left after the benchmark: amber where its 95% range excludes "
+            "zero, so the two aren't orthogonal (Fisher z, approximate when volatility "
+            "clusters) · raw ρ before the benchmark is taken out"
+            if rows else "One holding in the model: no pairs to compare.")

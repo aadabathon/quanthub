@@ -22,6 +22,12 @@
   - A holding whose history won't load is left out of the risk model and
     named, with the share of equity it leaves unmodelled. Its value still
     counts in the equity.
+  - **Regressions** (W2, ``models/regression.py``): each modelled holding,
+    and the portfolio, on the benchmark's excess returns, optionally with a
+    lag of it (the Dimson sum beta). The portfolio's series is the replay's
+    P&L over equity, with its cash earning the rate, so that for stocks its
+    coefficients are exactly the weighted holdings'. Plus rolling betas and
+    the residual correlations between holdings.
 
 Runs on the task-worker thread (database, files, maybe IBKR).
 """
@@ -49,6 +55,16 @@ from quant_hub.models.portfolio import (
     risk_report,
     simple_returns,
 )
+from quant_hub.models.regression import (
+    NEWEY_WEST,
+    ROLLING_WINDOW,
+    Regression,
+    design,
+    lag_name,
+    regress_returns,
+    residual_correlation,
+    rolling_regression,
+)
 from quant_hub.services.market_service import MarketService
 from quant_hub.storage.position_store import PositionSnapshotSummary, PositionStore
 
@@ -75,6 +91,42 @@ class HoldingRow:
     risk_share: float         # of the portfolio's vol
 
 
+PORTFOLIO_ROW = "Portfolio"
+_EXACT_FIT = 1.0 - 1e-9
+"""R² at which a fit is exact to rounding (a holding regressed on itself)."""
+
+
+@dataclass(frozen=True)
+class Regressions:
+    """Each holding, and the portfolio (``PORTFOLIO_ROW``), on the benchmark
+    (module docstring, Regressions)."""
+
+    benchmark: str
+    dimson_lags: int
+    fits: dict[str, Regression]           # holdings in risk-model order, then the portfolio
+    rolling: dict[str, pd.DataFrame]      # beta and beta se by window end; empty if too short
+    window: int
+    correlation: pd.DataFrame             # residuals, between holdings
+    lower: pd.DataFrame                   # Fisher-z 95% bounds
+    upper: pd.DataFrame
+
+    def beta(self, key: str) -> tuple[float, float]:
+        """The benchmark's beta and its Newey–West error: the Dimson sum
+        when lags are on."""
+        fit = self.fits[key]
+        names = (self.benchmark,
+                 *(lag_name(self.benchmark, j) for j in range(1, self.dimson_lags + 1)))
+        return fit.total(names, NEWEY_WEST)
+
+    def lag_beta(self, key: str) -> tuple[float, float] | None:
+        """The first lag's own coefficient and error, when lags are on."""
+        if not self.dimson_lags:
+            return None
+        fit = self.fits[key]
+        name = lag_name(self.benchmark, 1)
+        return fit.value(name), fit.error(name, NEWEY_WEST)
+
+
 @dataclass(frozen=True)
 class PortfolioView:
     """The page's whole picture of one snapshot (module docstring)."""
@@ -90,6 +142,8 @@ class PortfolioView:
     left_out: tuple[str, ...]          # holdings outside the model, with why
     unmodelled: float                   # their share of equity
     options: int                        # option positions in the model
+    regressions: Regressions | None = None
+    regression_note: str = ""           # why there are none
 
     @property
     def equity(self) -> float:
@@ -117,7 +171,7 @@ class PortfolioService:
 
     def analyse(self, snapshot: PositionSnapshot, account: str | None, source: str,
                 benchmark: str, lookback_days: int, rate: float,
-                now: datetime | None = None) -> PortfolioView:
+                now: datetime | None = None, dimson_lags: int = 0) -> PortfolioView:
         """The risk of ``snapshot`` (one account, or all with ``None``)."""
         now = now or datetime.now()
         start = now - timedelta(days=lookback_days)
@@ -187,10 +241,44 @@ class PortfolioService:
                        None if report.betas is None else float(report.betas[i]),
                        float(report.risk_shares[i]))
             for i, symbol in enumerate(report.symbols))
+        regressions, regression_note = None, ""
         if bench is None:
             left_out.append(f"{benchmark} (the benchmark): no history from {source}, so no beta")
+            regression_note = f"No {benchmark} history, so no regressions."
+        else:
+            try:
+                regressions = _regressions(returns, report, benchmark, rate, dimson_lags)
+            except ValueError as exc:
+                regression_note = f"No regressions: {exc}."
         return PortfolioView(snapshot, account, source, benchmark, basis, report, rows, cash,
-                             tuple(left_out), unmodelled / equity, len(options))
+                             tuple(left_out), unmodelled / equity, len(options),
+                             regressions, regression_note)
+
+
+def _regressions(returns: pd.DataFrame, report: RiskReport, benchmark: str, rate: float,
+                 dimson_lags: int) -> Regressions:
+    """The module docstring's regressions, on the risk model's own returns."""
+    cash = rate / TRADING_DAYS
+    series = returns[list(report.symbols)].copy()
+    series[PORTFOLIO_ROW] = (report.pnl / report.equity
+                             + (1.0 - report.net_exposure) * cash)
+    factors = returns[[benchmark]]
+    fits = regress_returns(series, factors, rate, dimson_lags=dimson_lags)
+    X = design(factors - cash, dimson_lags)
+    names = (benchmark, *(lag_name(benchmark, j) for j in range(1, dimson_lags + 1)))
+    rolling = {}
+    if len(X) >= ROLLING_WINDOW:
+        for key in series.columns:
+            frame = rolling_regression(series.loc[X.index, key] - cash, X, ROLLING_WINDOW,
+                                       total=names)
+            rolling[key] = frame[["total", "total se"]].set_axis(["beta", "se"], axis=1)
+    # A holding that is the benchmark itself fits exactly: its "residual" is
+    # rounding noise, not a stream, so it has no correlations (NaN).
+    residuals = pd.DataFrame({s: fits[s].residuals if not fits[s].r2 >= _EXACT_FIT else np.nan
+                              for s in report.symbols}, index=X.index)
+    correlation, lower, upper = residual_correlation(residuals)
+    return Regressions(benchmark, dimson_lags, fits, rolling, ROLLING_WINDOW, correlation,
+                       lower, upper)
 
 
 def example_snapshot(market: MarketService, source: str) -> PositionSnapshot:

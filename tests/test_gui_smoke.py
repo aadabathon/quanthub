@@ -496,6 +496,26 @@ def test_portfolio_shows_the_example_before_any_import(qt_app):
     assert shares == sorted(shares, reverse=True)                   # led by risk
 
 
+def test_portfolio_regressions_rolling_beta_and_links(qt_app):
+    app, window = qt_app
+    page = _portfolio(app, window, lags="Off")
+    reg = page._view.regressions
+    assert reg is not None and reg.dimson_lags == 0
+    table = page._regress_table
+    assert table.rowCount() == len(reg.fits)
+    assert table.item(table.rowCount() - 1, 0).text() == "Portfolio"
+    assert table.item(0, 3).text() == "—"                            # no lag column yet
+    assert page._rolling_stack.currentWidget() is page._rolling      # the portfolio's
+    page._on_regression_row(0)
+    assert page._rolling_key == page._regression_keys[0]
+    n = len(page._view.report.symbols)
+    assert page._links.rowCount() == n * (n - 1) // 2
+    page._lags.select.set_current("1 day")
+    wait_for(app, lambda: page._view.regressions.dimson_lags == 1, timeout_s=30)
+    assert table.item(0, 3).text() != "—"
+    assert page._rolling_key == page._regression_keys[0]             # the choice is kept
+
+
 def test_portfolio_imports_a_fidelity_file_and_splits_accounts(qt_app, tmp_path):
     from test_positions_csv import FIDELITY
     app, window = qt_app
