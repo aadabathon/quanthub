@@ -695,12 +695,33 @@ pytest. Environment:
        stocks, and the date was the import time.
      - A second preset now reads them, with 6 new tests on a made-up file
        of the same shape. Full suite: 1,002 passed (126 s), with the
-       known pandas date-inference warning.
+       known pandas date-inference warning; 1,010 after the per-account
+       import below.
      - All four now parse with every row accounted for.
        - Jun 29's value matches Fidelity's Totals row to the cent.
        - Jun 1's cost basis matches to the cent, but its value is a few
          hundred dollars above Fidelity's Totals: unexplained, and it
          isn't a missing row.
+     - **Checked against Fidelity's own screens (2026-10-21).** The
+       owner's screenshots of the all-accounts view and each account match
+       the Oct 21 export exactly in quantities, cash lines and cost basis.
+       Values differ only by price moves after the export, and each
+       screen's rows sum to its own total.
+     - **One export per account.** The Positions-view download has no
+       account column, so separate accounts need one export each.
+       - Portfolio's *Import positions…* now takes several files from the
+         same day as one snapshot (`combine_snapshots`,
+         `read_positions_files`).
+       - It refuses different days, an account in two files, rows without
+         an account, and an All Accounts export beside per-account ones.
+       - The dry run takes several files too.
+       - Not yet seen: a real per-account export, whose preamble should
+         name the account.
+     - **W2 derivation written for review** (`models/regression.py`,
+       docstring only, as K1 was). Its coverage claims were checked by
+       simulation first: in two variance regimes, classical intervals
+       cover 78.9% against the 78.4% closed form; under AR(1) residuals,
+       White covers 84.9% against 85.0%.
      - **Not yet done:**
        - the in-app import, with TWS open
        - the fresh adjusted-cache check: the store has no adjusted bars

@@ -868,6 +868,13 @@ W7 (ROADMAP.md).
     portfolio.
   - A second preset reads it. Per-account risk needs the Portfolio
     Positions download, or one export per account.
+  - One import may now hold several files as one snapshot
+    (`data.positions.combine_snapshots`). The rules keep it one moment and
+    count nothing twice:
+    - the same as-of day
+    - each account from one file only
+    - every row with an account
+    - no All Accounts export beside the accounts it already holds
   - The snapshot keeps the date only, as the other preset does (D19's
     naive dates).
   - The layout's option rows are unverified: no export so far held an

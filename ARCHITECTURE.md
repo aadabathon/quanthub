@@ -110,7 +110,9 @@ quant_hub/
 │   ├── bars.py                canonical OHLCV validation for ACQUIRED data
 │   │                          (structural raise vs row-drop + report)
 │   ├── positions.py           Position/OptionContract/PositionSnapshot: what an
-│   │                          account holds, broker-agnostic (D39)
+│   │                          account holds, broker-agnostic (D39);
+│   │                          combine_snapshots: one export per account, one
+│   │                          snapshot (D43)
 │   ├── options.py             OptionQuote/OptionChain: the chain contract
 │   │                          (synthetic today, IBKR adapter later)
 │   ├── ranges.py              DateRange (closed session-date intervals),

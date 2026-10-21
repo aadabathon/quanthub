@@ -162,6 +162,10 @@ Fidelity's downloads are read as they are:
 - the Positions view's download, which has no account column, so all its
   rows count as the view's account (e.g. "All Accounts")
 
+To keep accounts apart, export each account from the Positions view and
+select all of the day's files in one import: they become one snapshot,
+with the accounts in the account selector.
+
 Any other broker works through the generic layout:
 
 ```text
