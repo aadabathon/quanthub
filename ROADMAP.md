@@ -467,8 +467,9 @@ Order W0 → W7, each approved before the next:
   - `REGIME.md` filled in
 - **W1. IBKR read-only positions**, once the account exists.
 - **W2. Regressions:** α, β and R² with HAC standard errors, rolling β,
-  residual correlation. The derivation is written for review
-  (`models/regression.py`, 2026-10-21).
+  residual correlation. Landed 2026-10-21 (D44): `models/regression.py`
+  and the Portfolio page's Regressions, Rolling β and Residual links.
+  Extra factor ETFs on the page are still to come.
 - **W3. Streams and growth:**
   - the growth hurdle ∂g/∂wᵢ = (μᵢ − r) − Cov(Rᵢ, R_p)
   - optimal and fractional sizing ± SE

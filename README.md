@@ -156,6 +156,11 @@ and shows its risk.
 - **Holdings table:** each holding's share of the value beside its share of
   the risk, sorted by risk.
 - **Sizing:** Kelly leverage, shown with its standard error.
+- **Regressions:** each holding's and the portfolio's α and β on the
+  benchmark, with Newey–West errors (optionally the Dimson sum β for
+  stale prices); a rolling β for any row; and the residual links between
+  holdings, strongest first, answering whether the streams are
+  orthogonal.
 
 Fidelity's downloads are read as they are:
 - the Portfolio Positions download, one account per row

@@ -722,6 +722,29 @@ pytest. Environment:
        simulation first: in two variance regimes, classical intervals
        cover 78.9% against the 78.4% closed form; under AR(1) residuals,
        White covers 84.9% against 85.0%.
+   - **W2 landed (2026-10-21, D44)** after the owner's "continue on".
+     - `models/regression.py`: OLS with classical, White and Newey–West
+       covariances, the Dimson sum, causal rolling fits, and Fisher-z
+       residual correlations.
+       - `tests/test_regression.py` (18) follows the docstring's plan.
+       - Coverage against the closed forms at 3,000 runs each: two
+         variance regimes, and AR(1) residuals.
+       - Also: the Bartlett block-sum identity and PSD, invariance under
+         factor recombination, causality of the rolling fit, Fisher
+         coverage, and the portfolio identity.
+     - `services/portfolio.py` adds a `Regressions` bundle to each
+       analysis. Its portfolio β equals the Beta tile's (tested).
+     - The Portfolio page gains three cards below the existing ones:
+       - Regressions on the benchmark: α a year ± SE, grey when within its
+         error of zero; β ± SE; lag β; R²; residual vol; days
+       - Rolling β for the clicked row, with a ±1.96 band
+       - Residual links, strongest first, amber when not orthogonal
+       - A Lagged β choice (Off / 1 day) sits in the inputs.
+     - Screenshots at 1280×800 and 1720×1040 on a copy of the store, with
+       real fonts: no horizontal overflow (content 823 px in a 1,038 px
+       viewport at 1280).
+     - Not yet: extra factor ETFs on the page, and a run on the owner's
+       real holdings, which needs the import with TWS open.
      - **Not yet done:**
        - the in-app import, with TWS open
        - the fresh adjusted-cache check: the store has no adjusted bars

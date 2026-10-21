@@ -160,6 +160,10 @@ quant_hub/
 │   │                          beta, historical (options repriced) and
 │   │                          Gaussian VaR/ES, drawdown of today's mix,
 │   │                          N_eff, Kelly with its error (D39)
+│   ├── regression.py          OLS of daily excess returns: classical, White
+│   │                          and Newey–West errors, Dimson sum beta, causal
+│   │                          rolling fits, Fisher-z residual correlations
+│   │                          (W2, D44)
 │   ├── strategies.py          six causal daily rules, rolling fits and
 │   │                          capped portfolio risk sizing (D42)
 │   ├── research_worlds.py     seeded null, trend and reversion controls
@@ -177,8 +181,9 @@ quant_hub/
 │   ├── option_chains.py       ChainService: chains by named source, every
 │   │                          live fetch saved; "stored" = latest snapshot
 │   ├── portfolio.py           PortfolioService: positions imports kept,
-│   │                          holdings valued, options priced, risk run;
-│   │                          gaps named; the example portfolio
+│   │                          holdings valued, options priced, risk run,
+│   │                          regressions on the benchmark (D44); gaps
+│   │                          named; the example portfolio
 │   ├── research.py            exact experiment snapshots/replay, matched
 │   │                          tests, sweep manifests and paper imports (D42)
 │   ├── file_import.py         CSV bars validated into the store under
@@ -255,7 +260,8 @@ Kalman Lab = local level / local linear trend on log prices: synthetic or source
 Markov Lab = hidden volatility regimes in returns (Gaussian HMM, BIC over 1–3):
              synthetic worlds or source history
 Portfolio  = imported positions (or the example): risk first: VaR/ES, risk
-             contributions, beta, the replayed drawdown, Kelly with its error
+             contributions, beta, the replayed drawdown, Kelly with its error;
+             then α/β regressions, rolling β and residual links (D44)
 RESEARCH…  = GARCH Lab, Vol Lab, Kalman Lab, Markov Lab, Research
 ```
 

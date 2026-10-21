@@ -886,3 +886,43 @@ W7 (ROADMAP.md).
     terminal cash flow, the valuation date, net debt
   - the name and layering rule of the online-provider package (W5)
   - rule-set versioning (W7)
+
+## D44 — W2: regression conventions (2026-10-21)
+
+The owner approved the derivation in `models/regression.py` ("continue
+on"). The implementation and the Portfolio page's regressions follow it.
+Calls made:
+
+- **Returns:** daily simple returns of adjusted closes, on the risk model's
+  own common days.
+- **Excess over cash at r/252 a day.** That's the Portfolio page's
+  arithmetic convention, the one its Kelly uses. The backtester compounds
+  instead, (1+r)^(1/252) − 1. At 4% the two differ by about 0.03
+  percentage points of α a year.
+- **Errors:**
+  - Newey–West is the default: Bartlett weights, the plug-in lag
+    ⌊4(T/100)^{2/9}⌋, and the T/(T − p) small-sample factor (also used
+    for White's).
+  - Classical and White are kept beside it.
+- **The portfolio row:**
+  - It's the replay's P&L over equity, with cash earning the rate.
+  - For stocks, its coefficients are then exactly the weighted
+    holdings', and its β equals the Beta tile's (tested).
+- **Stale prices:** a Lagged β choice (Off / 1 day) turns β into the
+  Dimson sum, and shows the lag's own coefficient, amber when
+  significant.
+- **Rolling β:**
+  - 126 sessions, causal, with ±1.96 Newey–West bands, for the clicked
+    row.
+  - No β = 1 reference line: it pulled the axis away from the data.
+- **Residual links:**
+  - A table of pairs, strongest first, amber where the Fisher interval
+    excludes zero, with the raw correlation beside each.
+  - This replaces the heatmap the derivation sketched. A correlation
+    matrix is categories on both axes with signed values, and
+    `charts.Heatmap` has a numeric x and a sequential ramp. A table
+    shows the numbers and needs no new design token.
+  - A holding that is the benchmark itself fits exactly (R² = 1 to
+    rounding). Its residual is rounding noise, so its links are "—".
+- **Deferred within W2:** extra factor ETFs on the page (the model
+  already takes them), and factor spreads as tilts.
