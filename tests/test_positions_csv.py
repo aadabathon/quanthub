@@ -61,6 +61,78 @@ class TestFidelity:
         assert len(snapshot.for_account(None)) == 5
 
 
+# The Positions view's download, as the owner's real exports are laid out
+# (made-up holdings): a quoted preamble with trailing spaces, cash per core
+# fund, a holding in two accounts as two rows, a Totals row, a footer.
+FIDELITY_VIEW = (
+    '"Positions \nAll Accounts \nas of 10/21/2026 at 11:18:16 AM"\n'
+    "\n"
+    "Symbol,Quantity,Last,$ Chg,% Chg,Volume,$ Day G/L,% Day G/L,$ Total G/L,% Total G/L,"
+    "Value,Basis,Day Range,52W Range,Earnings Date,Div Amt,Div Ex-Date\n"
+    "Cash (USD),0,1.00,0.00,0.00,0,--,--,--,--,--,--,0.00-0.00,0.00-0.00,--,0.00,--\n"
+    'AAPL,3,250.00,-0.37,-0.15,"2,000,000",-1.11,-0.15,75.00,11.11,750.00,675.00,'
+    "248.00-252.00,190.00-260.00,Oct-30-2026,0.26,Aug-11-2026\n"
+    'Cash (SPAXX),"1,250.00",1.00,0.00,0.00,0,--,--,--,--,"1,250.00",--,0.00-0.00,'
+    "3.20-3.80,--,0.0032,Nov-3-2025\n"
+    'VTI,2.5,300.00,1.00,0.33,"4,000,000",2.50,0.33,50.00,7.14,750.00,700.00,'
+    "298.00-301.00,250.00-310.00,--,1.10,Sep-25-2026\n"
+    "Cash (SPAXX),400.00,1.00,0.00,0.00,0,--,--,--,--,400.00,--,0.00-0.00,3.20-3.80,--,"
+    "0.0032,Nov-3-2025\n"
+    'AAPL,1,250.00,-0.37,-0.15,"2,000,000",-0.37,-0.15,10.00,4.17,250.00,240.00,'
+    "248.00-252.00,190.00-260.00,Oct-30-2026,0.26,Aug-11-2026\n"
+    "Totals,,,,,,0.00,--,0.00,--,0.00,0.00,,,,,\n"
+    "\n"
+    "\n"
+    "Disclosure\n"
+    '"The data and information in this spreadsheet is provided to you solely for your use '
+    "and is not for distribution. \n"
+    'Brokerage services are provided by Fidelity Brokerage Services LLC (FBS)."\n'
+)
+
+
+class TestFidelityPositionsView:
+    @pytest.fixture
+    def snapshot(self) -> PositionSnapshot:
+        return read_positions_csv(io.StringIO(FIDELITY_VIEW), "10-21-26_port.csv")
+
+    def test_the_layout_and_its_date(self, snapshot):
+        assert snapshot.source == "Fidelity positions view"
+        assert snapshot.as_of == datetime(2026, 10, 21)           # the date only
+        assert [p.symbol for p in snapshot.positions] == [
+            "CASH", "AAPL", "SPAXX", "VTI", "SPAXX", "AAPL"]        # Totals skipped
+
+    def test_every_row_belongs_to_the_view(self, snapshot):
+        assert snapshot.accounts == ("All Accounts",)
+        apple = [p for p in snapshot.positions if p.symbol == "AAPL"]
+        assert [p.quantity for p in apple] == [3, 1]               # two accounts' rows, kept
+        assert sum(p.market_value for p in apple) == pytest.approx(1000.00)
+
+    def test_cash_lines(self, snapshot):
+        cash = [p for p in snapshot.positions if p.kind is Holding.CASH]
+        assert [(p.symbol, p.market_value) for p in cash] == [
+            ("CASH", 0.0), ("SPAXX", pytest.approx(1250.00)), ("SPAXX", pytest.approx(400.00))]
+
+    def test_holdings(self, snapshot):
+        aapl, vti = snapshot.positions[1], snapshot.positions[3]
+        assert (aapl.kind, aapl.quantity, aapl.price, aapl.value, aapl.cost_basis) == (
+            Holding.EQUITY, 3, 250.00, 750.00, 675.00)
+        assert vti.quantity == 2.5                                  # fractional shares
+
+    def test_a_single_account_view_names_its_account(self):
+        snapshot = read_positions_csv(io.StringIO(
+            FIDELITY_VIEW.replace("All Accounts", "Individual")))
+        assert snapshot.accounts == ("Individual",)
+
+    def test_the_file_as_saved(self, tmp_path):
+        """The real downloads carry a byte-order mark and Windows line ends."""
+        path = tmp_path / "10-21-26_port.csv"
+        path.write_bytes(b"\xef\xbb\xbf" + FIDELITY_VIEW.replace("\n", "\r\n").encode("utf-8"))
+        snapshot = read_positions_csv(path)
+        assert snapshot.name == "10-21-26_port.csv"
+        assert snapshot.source == "Fidelity positions view"
+        assert snapshot.as_of == datetime(2026, 10, 21) and len(snapshot.positions) == 6
+
+
 class TestGeneric:
     def test_the_generic_layout(self):
         snapshot = read_positions_csv(io.StringIO(
