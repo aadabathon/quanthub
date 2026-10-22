@@ -478,7 +478,9 @@ Order W0 → W7, each approved before the next:
     Growth and Options book cards. It works from the replay's per-position
     series and leads with the minimum-variance hedge.
 - **W4. DCF core** (`models/dcf.py`): the owner's engine ported, plus the
-  Gordon identity and reverse DCF with every root.
+  Gordon identity and reverse DCF with every root. Landed 2026-10-21 (D46),
+  with `data/fundamentals.py`. The open conventions are options defaulting
+  to the original; a latest-year bug in the original is fixed.
 - **W5. SEC fundamentals:** stdlib `companyfacts` (no edgartools), facts
   stored as filed.
 - **W6. Valuation page:** EV bridge, sensitivity, reverse DCF, margin of

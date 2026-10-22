@@ -109,6 +109,9 @@ quant_hub/
 │   ├── sources.py             DataSource + BarSource protocols, SyntheticSource
 │   ├── bars.py                canonical OHLCV validation for ACQUIRED data
 │   │                          (structural raise vs row-drop + report)
+│   ├── fundamentals.py        YearData/FinancialHistory: a filer's statements
+│   │                          with provenance and null reasons (the loud-
+│   │                          failure contract); FundamentalsSource (D46)
 │   ├── positions.py           Position/OptionContract/PositionSnapshot: what an
 │   │                          account holds, broker-agnostic (D39);
 │   │                          combine_snapshots: one export per account, one
@@ -134,6 +137,10 @@ quant_hub/
 │   │                          (MinimizeResult); callers reparameterize
 │   ├── garch.py               stationary GARCH(1,1): simulation, Gaussian
 │   │                          QMLE fit, conditional variance diagnostics
+│   ├── dcf.py                 unlevered-FCF DCF (the owner's, ported):
+│   │                          projection, terminal conventions, valuation
+│   │                          date, sensitivity, multiples, margin of safety,
+│   │                          reverse DCF with every root, seeding (D46)
 │   ├── black_scholes.py       Black-Scholes-Merton (dividend yield q):
 │   │                          MarketInputs, vectorized price/Greeks (D25
 │   │                          scaling), no-arbitrage bounds, bracketed-Newton IV

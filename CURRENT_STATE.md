@@ -299,6 +299,9 @@ what the desktop shortcut targets. The GUI is `quant_hub/gui/` (Qt, D31) on
     0.2.0; 28 offline tests pass).
   - Correction: it doesn't store anything. It fetches live through
     edgartools, and SQLite was only the plan.
+  - W4 (the engine) landed 2026-10-21 (D46). Waiting on the owner: which
+    of the three conventions (terminal flow, valuation date, securities
+    netting) become the page's defaults.
 
 ## Version control / environment
 
@@ -717,6 +720,13 @@ pytest. Environment:
        - The dry run takes several files too.
        - Not yet seen: a real per-account export, whose preamble should
          name the account.
+     - **Not yet done:**
+       - the in-app import, with TWS open
+       - the fresh adjusted-cache check: the store has no adjusted bars
+         yet, and no bars at all for five of the holdings
+       - checking the import's total against Fidelity's site
+     - Note: the page analyses the most recently *imported* snapshot, so
+       import older exports first.
      - **W2 derivation written for review** (`models/regression.py`,
        docstring only, as K1 was). Its coverage claims were checked by
        simulation first: in two variance regimes, classical intervals
@@ -803,10 +813,25 @@ pytest. Environment:
          1,038 px viewport.
        - The first screenshot also showed a sleeve weight using the
          model's put premium, not the file's. Fixed.
-     - **Not yet done:**
-       - the in-app import, with TWS open
-       - the fresh adjusted-cache check: the store has no adjusted bars
-         yet, and no bars at all for five of the holdings
-       - checking the import's total against Fidelity's site
-     - Note: the page analyses the most recently *imported* snapshot, so
-       import older exports first.
+   - **W4 landed (2026-10-21, D46)**: the owner's DCF engine, ported.
+     - `data/fundamentals.py` holds the contract (loud failure, a
+       `FundamentalsSource` port, marketable securities).
+     - `models/dcf.py` holds the engine, sensitivity, multiples, market
+       comparison, reverse DCF with every root, calibration and seeding.
+       Its derivation is in the docstring.
+     - The open conventions are options defaulting to the original:
+       - the terminal flow: last-year or steady-state
+       - the valuation date s, with EV × (1+W)^s
+       - netting marketable securities
+     - **A bug in the original, fixed:** `latest()` picked the oldest year
+       in its adapter's newest-first order. A 22% understatement in the
+       worked example.
+     - `tests/test_dcf.py` (36):
+       - the owner's engine, analysis and seeding tests (16), golden 18.784
+         intact
+       - new: the Gordon identity under both conventions at N = 1, 3, 5, 10;
+         the steady-state flow's closed form and the 7.9% / 78% figures;
+         the roll-forward; the two-root reverse DCF and the monotone case;
+         unique implied WACC; securities netting; the latest-year
+         regression test; rejections
+     - No page yet: that's W6. The SEC adapter is W5.

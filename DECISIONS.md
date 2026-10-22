@@ -994,3 +994,63 @@ Portfolio page's Growth and Options book cards follow it. Calls made:
   - Its five tiles sit in two rows: in one row they truncated at 1280 px.
 - **Not included:** transaction costs and taxes in the what-if; a smile
   for the greeks (realized vol, as in the risk model).
+
+## D46 — W4: the DCF port (2026-10-21)
+
+The owner's `dcfmodeler` is ported into the layers.
+- `schema.py` becomes `data/fundamentals.py`: the contract, with its
+  loud-failure rule, plus a `FundamentalsSource` port (D34) and a
+  `marketable_securities` line.
+- The engine, assumptions, sensitivity, analysis and the batch screener's
+  seeding become `models/dcf.py`.
+
+The math is the plan's (D43). Calls made:
+
+- **Conventions the plan left open are options, defaulting to the owner's
+  original behavior.** The golden 18.784 holds, and nothing changes meaning
+  until the owner picks.
+  - `terminal_method`: *last-year*, UFCF_N(1+g_T) (the default), or
+    *steady-state*, year N's ratios at g_T. They're equal iff g_N = g_T.
+    At 15% growth the steady-state flow is 7.9% higher, with the TV at 78%
+    of EV.
+  - `valuation_years` s ∈ [0, 1): discount over t − s, so EV is multiplied
+    by (1+W)^s. s = 0 values as of the fiscal year end, the original. s ≥ 1
+    is refused: use a newer filing.
+  - `net_marketable_securities`: off by default. When on and the filing
+    lacks the line, it's a loud `ValuationError`, never a silent zero.
+  - Recommended, for the owner to decide at W6:
+    - steady-state as the page's default: a 78% TV share is too much
+      weight to leave on a working-capital artifact
+    - s from the filing's period end to the price date, so value and price
+      are compared at the same time
+    - netting securities per company, for cash-rich filers
+- **Reverse DCF returns every root** (a tuple, empty when none is in
+  range), instead of one float or None.
+  - `growth_monotone` (k_t ≥ n_t ≥ 0 every year) says when the implied
+    growth is unique.
+  - `cash_flows_positive` says when the implied WACC is.
+  - The working-capital-heavy case's two roots (−14.9% and +15.9% at $18)
+    are tested.
+- **A bug in the original, fixed.** `FinancialHistory.latest()` returned the
+  last element appended. The edgartools adapter appended the newest year
+  first, so live runs valued the company off its *oldest* fetched year.
+  - Debt and cash were attached to that year too.
+  - Example: three years at 800 → 1,000 gave $18.12 a share instead of
+    $23.15 (22% low).
+  - The original tests built histories oldest-first, so they missed it.
+  - `latest()` now sorts by fiscal year, with a regression test. Past
+    valuations of growing companies from the original tool were likely
+    biased low.
+- **Typing:**
+  - Dicts became frozen dataclasses (`ForwardMultiples`, `Calibration`,
+    results).
+  - The sensitivity grid uses NaN, not None.
+  - Missing data raises once instead of blanking every cell.
+  - A market price must be positive.
+- **Moved:**
+  - The edgartools adapter is replaced in W5, and its tests' intent goes
+    with it.
+  - `serialize`, `rank_screen` and their tests go to W6 (CSV only).
+  - The CLI and text renderers aren't ported.
+- **Defaults** (WACC 9%, g_T 2.5%, margins) are the owner's illustrative
+  numbers, not recommendations.
