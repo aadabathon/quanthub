@@ -752,6 +752,24 @@ pytest. Environment:
          1280 px the nine-column version overflowed.
      - Not yet: a run on the owner's real holdings, which needs the
        import with TWS open.
+   - **W3 derivation written for review** (2026-10-21,
+     `models/growth.py`, docstring only).
+     - Growth from the replay's per-position excess series.
+     - An exact attribution, since per-position covariances with the
+       portfolio sum to its variance.
+     - The hurdle at the margin, with *oversized* when a position adds
+       growth overall but loses it at the margin.
+     - Two sleeve sizes: c_mv, which minimizes variance, and c* = c_mv +
+       the sleeve's own Kelly fraction, which maximizes growth.
+     - Book greeks and annual carry.
+     - Simulations changed two parts of the plan:
+       - the quadratic matches realized log growth to about 0.003% even
+         with puts and crashes; it's delta-counting that misses
+         convexity
+       - over two years, ĉ* scattered 141 times more widely than ĉ_mv
+         (2.52 ± 0.20): its error was 28 times today's size, though its
+         intervals still covered 94.9%
+     - Code waits for the owner's review.
      - **Not yet done:**
        - the in-app import, with TWS open
        - the fresh adjusted-cache check: the store has no adjusted bars

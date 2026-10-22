@@ -173,6 +173,13 @@ account exists
   the formula below misses convexity.
 - Tests: the closed forms below, and Monte Carlo realized log growth against
   g(w) under correlated GBM.
+- **Amended 2026-10-21** by the simulations behind the derivation
+  (`models/growth.py`):
+  - The quadratic doesn't miss convexity on daily data: it matches
+    realized log growth to about 0.003%. What misses it is counting
+    options by delta, so W3 works from the replay's per-position series.
+  - The growth-optimal size is about 140 times noisier than the
+    minimum-variance hedge ratio, so the page leads with the latter.
 
 **W4. DCF core, pure** (v1.2, with W5 and W6)
 - `data/fundamentals.py` holds your `FinancialHistory` and its loud-failure
