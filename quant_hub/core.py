@@ -21,6 +21,7 @@ from quant_hub.events import EventBus, EventBusLogHandler
 from quant_hub.tasks import TaskRunner
 from quant_hub.services.cached_source import CachedSource
 from quant_hub.services.file_import import FileImportService, FileSource
+from quant_hub.services.fundamentals import FundamentalsService
 from quant_hub.services.market_service import MarketService
 from quant_hub.services.option_chains import ChainService
 from quant_hub.services.portfolio import PortfolioService
@@ -28,6 +29,7 @@ from quant_hub.services.research import ResearchService
 from quant_hub.services.workstation import WorkstationService
 from quant_hub.storage.bar_store import BarStore
 from quant_hub.storage.chain_store import ChainStore
+from quant_hub.storage.fundamentals_store import FundamentalsStore
 from quant_hub.storage.position_store import PositionStore
 from quant_hub.storage.research_store import ResearchStore
 from quant_hub.storage.schema import prepare_store
@@ -52,6 +54,8 @@ class Core:
     portfolio: PortfolioService
     research_store: ResearchStore
     research: ResearchService
+    fundamentals_store: FundamentalsStore
+    fundamentals: FundamentalsService
     tasks: TaskRunner
 
     def shutdown(self) -> None:
@@ -65,6 +69,7 @@ class Core:
             ("closing chain store", self.chain_store.close),
             ("closing position store", self.position_store.close),
             ("closing research store", self.research_store.close),
+            ("closing fundamentals store", self.fundamentals_store.close),
         ):
             try:
                 step()
@@ -147,6 +152,8 @@ def build_core(config: AppConfig | None = None) -> Core:
     # Imported positions, kept as dated snapshots in the same database (P2).
     position_store = PositionStore(config.db_path)
     research_store = ResearchStore(config.db_path)
+    # SEC facts as filed, same database (W5); fetching needs [sec] identity.
+    fundamentals_store = FundamentalsStore(config.db_path)
     return Core(
         config=config, bus=bus, broker=broker, store=store, state_store=state_store,
         market_service=market_service, chain_store=chain_store, chains=chains,
@@ -154,4 +161,6 @@ def build_core(config: AppConfig | None = None) -> Core:
         position_store=position_store,
         portfolio=PortfolioService(market_service, position_store), tasks=TaskRunner(),
         research_store=research_store, research=ResearchService(market_service, research_store),
+        fundamentals_store=fundamentals_store,
+        fundamentals=FundamentalsService(fundamentals_store, config.sec_identity),
     )

@@ -92,7 +92,8 @@ def test_a_file_from_before_versioning_is_backed_up_then_adopted(tmp_path):
     assert rows(db, "SELECT version, applied_at, backup FROM schema_migrations") == [
         (1, "2026-10-15T19:30:05", str(result.backup)),
         (2, "2026-10-15T19:30:05", str(result.backup)),
-        (3, "2026-10-15T19:30:05", str(result.backup))]
+        (3, "2026-10-15T19:30:05", str(result.backup)),
+        (4, "2026-10-15T19:30:05", str(result.backup))]
     assert rows(db, "SELECT COUNT(*) FROM bars") == [(count,)]
     # Up to date now: the next start changes nothing and copies nothing.
     again = prepare_store(db, clock)

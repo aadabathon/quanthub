@@ -9,6 +9,8 @@ The rules the whole design rests on:
 * ``broker``   -- the only package allowed to import ibapi; never GUI/storage.
 * ``importers`` -- read files into ``data`` types (pandas + stdlib); no other
                   layer. Services validate and store what they read.
+* ``providers`` -- online providers (the SEC): ``data`` types plus the
+                  stdlib; no other layer. Services store what they fetch.
 * ``storage``  -- sqlite3 + ``data`` only; never GUI, broker, or ibapi.
 * ``visualization`` -- matplotlib figures for scripts/notebooks; never GUI.
 * ``gui``      -- the Qt front end (D31): never ibapi, the concrete broker or
@@ -40,6 +42,10 @@ RULES = {
     # File importers read files into data/ types: pandas and stdlib only.
     "importers": ["ibapi", "quant_hub.gui", "quant_hub.broker", "quant_hub.services",
                   "quant_hub.storage", "quant_hub.models", "quant_hub.visualization"],
+    # Online providers: data/ types and the stdlib only (D47).
+    "providers": ["ibapi", "quant_hub.gui", "quant_hub.broker", "quant_hub.services",
+                  "quant_hub.storage", "quant_hub.models", "quant_hub.visualization",
+                  "quant_hub.importers"],
     "storage": ["ibapi", "quant_hub.gui", "quant_hub.broker", "quant_hub.services",
                 "quant_hub.visualization"],
     "visualization": ["ibapi", "quant_hub.gui", "quant_hub.broker", "quant_hub.services",
@@ -47,7 +53,8 @@ RULES = {
     "gui": ["ibapi", "quant_hub.importers", "quant_hub.broker.ibkr",
             "quant_hub.broker.market_source",
             "quant_hub.broker.option_chain", "quant_hub.storage.bar_store",
-            "quant_hub.storage.chain_store", "quant_hub.storage.position_store"],
+            "quant_hub.storage.chain_store", "quant_hub.storage.position_store",
+            "quant_hub.providers", "quant_hub.storage.fundamentals_store"],
 }
 
 QT_LIBRARIES = ("PySide6", "pyqtgraph", "qtawesome", "qtpy")

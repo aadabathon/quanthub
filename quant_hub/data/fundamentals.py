@@ -119,6 +119,37 @@ class FinancialHistory:
 LINE_ITEMS = tuple(f.name for f in fields(YearData) if f.name not in ("fiscal_year", "period_end"))
 
 
+@dataclass(frozen=True)
+class Fact:
+    """One XBRL fact as filed (W5): a concept's value for one period, in one
+    filing. Sources map facts to ``YearData``; the store keeps facts, so a
+    mapping rule can change without refetching.
+
+    ``start`` is None for an instant (a balance-sheet date); ``fiscal_year``
+    and ``fiscal_period`` are the *filing's* (a 10-K's comparative columns
+    carry the 10-K's year, not their own).
+    """
+
+    taxonomy: str               # "us-gaap", "dei", "ifrs-full"
+    concept: str
+    unit: str                   # "USD", "EUR", "shares", ...
+    start: str | None
+    end: str
+    value: float
+    fiscal_year: int | None
+    fiscal_period: str | None   # "FY", "Q1", ...
+    form: str                   # "10-K", "10-K/A", "10-Q", "20-F", ...
+    filed: str
+    accession: str
+
+    def __post_init__(self) -> None:
+        if not math.isfinite(float(self.value)):
+            raise ValueError(f"{self.concept}: a fact's value must be finite")
+        if not (self.end and self.filed and self.accession and self.form):
+            raise ValueError(f"{self.concept}: a fact needs its end, filing date, accession "
+                             "and form")
+
+
 class FundamentalsSource(Protocol):
     """The port a filing source implements (D34); the SEC adapter is W5's."""
 

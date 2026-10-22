@@ -13,6 +13,10 @@ file is easy to find and edit. What a user can set (D34):
   optional provider. Turned off, the app registers no IBKR sources and
   hides the connection controls, so it's complete on synthetic data and
   imports.
+* ``[sec] identity``: the SEC asks every program that downloads its filings
+  to say who is asking, a name and an email (its fair-access policy). Only
+  the Valuation page's company data needs it (W5, D47); empty, the page
+  says how to set it.
 
 A bad file never stops the app. Each problem (a syntax error, an unknown
 section or key, a wrong type) is reported, and that setting keeps its
@@ -67,6 +71,9 @@ class AppConfig:
     # SQLite store for acquired historical bars (created on first use).
     db_path: Path = field(default_factory=_default_db_path)
 
+    # The SEC's required User-Agent, "Name email@example.com" (D47).
+    sec_identity: str = ""
+
     default_symbol: str = "SPY"
 
     # Simulator defaults (annualized decimals; 252 steps = 1 year).
@@ -97,6 +104,11 @@ host = "127.0.0.1"
 # Enable the read-only API in TWS; Quant Hub never places orders.
 port = 7496
 client_id = 17
+
+[sec]
+# The SEC asks programs that download its filings to say who is asking:
+# your name and email. Needed only for the Valuation page's company data.
+# identity = "Your Name you@example.com"
 """
 
 
@@ -131,11 +143,18 @@ def _client_id(value: Any, _base: Path) -> int:
     return value
 
 
+def _identity(value: Any, _base: Path) -> str:
+    if not isinstance(value, str) or "@" not in value or not value.strip():
+        raise ValueError('must be your name and email in quotes, e.g. "Jane Doe jane@example.com"')
+    return value.strip()
+
+
 # [section] key -> (AppConfig field, parser)
 _SETTINGS = {
     "store": {"path": ("db_path", _path)},
     "ibkr": {"enabled": ("ibkr_enabled", _boolean), "host": ("ibkr_host", _host),
              "port": ("ibkr_port", _port), "client_id": ("ibkr_client_id", _client_id)},
+    "sec": {"identity": ("sec_identity", _identity)},
 }
 
 
