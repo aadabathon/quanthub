@@ -92,7 +92,7 @@ quant_hub/
 │                              dashboard.py, markets.py, garch_lab.py,
 │                              simulator.py, options_lab/ (page, underlying,
 │                              pricer, strategy, monte_carlo), volatility_lab.py,
-│                              kalman_lab.py, markov_lab.py,
+│                              kalman_lab.py, markov_lab.py, valuation.py,
 │                              research/ (page, history, library)
 ├── config.py                  AppConfig
 ├── events.py                  EventBus (thread-safe), LogEvent, log handler
@@ -201,6 +201,9 @@ quant_hub/
 │   │                          named; the example portfolio
 │   ├── research.py            exact experiment snapshots/replay, matched
 │   │                          tests, sweep manifests and paper imports (D42)
+│   ├── valuation.py           the Valuation page's data: companies, prices
+│   │                          (quote else last close), the screen ranked
+│   │                          cheapest first, saved records, CSV (D48)
 │   ├── fundamentals.py        ticker/CIK → FinancialHistory: SEC facts kept a
 │   │                          day, refetched on demand, mapped offline (D47)
 │   ├── file_import.py         CSV bars validated into the store under
@@ -218,6 +221,8 @@ quant_hub/
 ├── providers/sec_edgar.py     SEC companyfacts through the stdlib: the client
 │                              (identity, gzip, 10/s, typed errors), facts as
 │                              filed, and the mapping to FinancialHistory (D47)
+├── storage/valuation_store.py  saved valuations, immutable records with a
+│                              filing-data fingerprint (schema v5, D48)
 ├── storage/fundamentals_store.py  SEC facts as filed, filers, the ticker map
 │                              (schema v4, D47)
 ├── storage/position_store.py  imported position snapshots, kept (D39)
@@ -285,6 +290,9 @@ Portfolio  = imported positions (or the example): risk first: VaR/ES, risk
              contributions, beta, the replayed drawdown, Kelly with its error;
              then growth by sleeve with hedge sizes and the options book
              (D45), α/β regressions, rolling β and residual links (D44)
+Valuation  = a DCF from SEC filings (the owner's modeler): seeded assumptions,
+             EV bridge, projection, WACC × g grid, reverse DCF with every
+             root, a screen, saved valuations (D46–D48)
 RESEARCH…  = GARCH Lab, Vol Lab, Kalman Lab, Markov Lab, Research
 ```
 

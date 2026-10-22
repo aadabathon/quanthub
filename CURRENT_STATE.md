@@ -864,3 +864,37 @@ pytest. Environment:
      - **Not yet live:** no request has reached the SEC from here. The
        check against real 10-Ks (AAPL and two others) needs the owner's
        identity in `settings.toml`.
+   - **W6 landed (2026-10-21, D48)**: the Valuation page (core section,
+     after Portfolio).
+     - Load a ticker or CIK, and the assumptions seed from trailing
+       averages. Edit them as one number or one per year; the DCF
+       recalculates as you type.
+     - Conventions: terminal flow, value as of, securities netting.
+     - It shows the tiles (value, price, margin of safety, terminal share),
+       filings with a Trailing row, the EV bridge and projection, the
+       WACC × g grid, and the reverse DCF as every root plus uniqueness.
+     - Price from a source (quote, else last close) or typed.
+     - Screen: holdings or tickers, ranked cheapest first, failures as
+       rows, CSV.
+     - Saved valuations: immutable, schema v5. Reopening checks a
+       fingerprint of the filing data.
+     - `services/valuation.py` and `storage/valuation_store.py`.
+       `FinancialHistory.fingerprint()`.
+     - Tests:
+       - `tests/test_valuation_service.py` (13): prices and their
+         fallback; the screen's ranking and failure rows; the ported
+         `rank_screen` test; CSV; save and reopen across a restatement;
+         the valuation date; refusals; the fingerprint; the v4 → v5
+         migration
+       - 3 page smoke tests: load, value, price, save, reopen; per-year
+         paths, overrides and bad input; the screen and export
+       - Full suite: 1,154 passed
+     - Screenshots at 1280 with real fonts found and fixed two layout
+       bugs:
+       - the Screen card's one-row controls set a 1,178 px minimum (now
+         871 px in 1,038 px)
+       - a wrapped note squeezed the Valuation card and hid the terminal
+         row (D48; the trap is now in AGENTS.md)
+     - **Not live yet:** real companies need the owner's `[sec]
+       identity`. Also open: which conventions become the page's
+       defaults.

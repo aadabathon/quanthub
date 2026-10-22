@@ -486,7 +486,9 @@ Order W0 → W7, each approved before the next:
   fact store (schema v4) and `services/fundamentals.py`, verified offline.
   The live check against real 10-Ks needs the owner's `[sec] identity`.
 - **W6. Valuation page:** EV bridge, sensitivity, reverse DCF, margin of
-  safety, a screen, saved valuations.
+  safety, a screen, saved valuations. Landed 2026-10-21 (D48), on a
+  made-up filer. Real companies need `[sec] identity`, and the page's
+  default conventions are still the owner's call.
 - **W7. The regime:** versioned rule sets and the daily Review page with
   its journal.
 

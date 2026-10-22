@@ -192,6 +192,42 @@ CASH,1250,,,Brokerage
 - Imports are kept as dated snapshots.
 - Before any import, the page shows a $100,000 example portfolio.
 
+## Valuation
+
+A discounted cash flow from a company's SEC filings: the owner's DCF
+modeler, inside the app.
+
+- **Company:** type a ticker or CIK. Its 10-K facts come from the SEC's free
+  companyfacts API and are kept in the local store; Refresh refetches.
+  Every gap in the filings is named with its reason, never filled in.
+- **Assumptions:** seeded from the company's own trailing averages, and
+  editable as one number for every year, or one per year
+  (`12, 10, 8, 6, 5`).
+  - The conventions are choices: the terminal cash flow (the original's
+    last-year, or steady-state), value as of the year end or today, and
+    netting marketable securities.
+- **Result:** value per share, the EV bridge with the terminal value's share
+  of it, the projection, a WACC × terminal-growth grid, and what the price
+  implies: every growth rate and WACC that gives it, and whether there can
+  be only one.
+- **Price:** from a source (its quote, else its last close) or typed, for the
+  margin of safety.
+- **Screen:** your holdings or a list of tickers, each seeded from its own
+  filings, ranked cheapest first, exported as CSV.
+- **Saved valuations:** immutable records. Reopening one says whether the
+  filings have changed since.
+
+The SEC asks every program that downloads its filings to say who is asking,
+so add your name and email to `settings.toml`:
+
+```toml
+[sec]
+identity = "Your Name you@example.com"
+```
+
+Filings already in the store work without it. An unlevered DCF is the
+wrong model for banks, insurers and REITs. IFRS filers aren't mapped yet.
+
 ## Research workspace
 
 **Experiments** contains Data, Rule and Costs forms. Training prices precede

@@ -1115,3 +1115,66 @@ edgartools. W5 builds it. Calls made:
   - The live check against real 10-Ks (AAPL and two others, the original
     README's checklist) needs the owner's identity. Until then the mapping
     is verified only on fixtures in the API's shape.
+
+## D48 — W6: the Valuation page (2026-10-21)
+
+The owner's DCF modeler is usable in the app: a Valuation page in the core
+section, after Portfolio, on `services/valuation.py`. Calls made:
+
+- **The flow:**
+  - a ticker or CIK loads the filings (W5); Refresh refetches
+  - assumptions seed from the company's own trailing averages (the
+    original screener's base case) and stay editable, as one number or
+    one per year
+  - the DCF (W4) recalculates as you type: a debounced, pure model call on
+    the GUI thread (D26)
+  - fetches run on the TaskRunner: filings, prices, the screen, saves
+- **Conventions on the page** (D46's options):
+  - Terminal flow: Last year (original) or Steady state
+  - Value as of: Fiscal year end or Today. Today uses s from the period
+    end, and a filing over a year old falls back to its year end, with
+    the reason.
+  - Marketable securities: Not netted or Netted
+  - The defaults stay the original's until the owner picks.
+- **What it shows:**
+  - tiles: value per share, price, margin of safety, and the terminal
+    share of EV, red above 75%
+  - the filings table, with a Trailing row that seeds the assumptions
+  - the EV bridge and the projection, with its terminal row
+  - the WACC × terminal-growth grid, ±2 and ±1 points, as the original
+    CLI had
+  - what the price implies: every root of the reverse DCF, and whether
+    it's unique
+- **Price:**
+  - From the named source: its quote, else its last close (the Options
+    Lab's rule, D23), or typed by hand.
+  - The basis is shown and saved.
+- **The screen:**
+  - Holdings (the latest positions import) or typed tickers, each seeded
+    from its own filings.
+  - The page's WACC, terminal growth, working capital and conventions
+    apply. Working capital joined because filings can't give it; the
+    original screener assumed none.
+  - Ranked cheapest first, with failures kept as rows giving their reason.
+  - Exported as CSV only. The original `rank_screen` test is ported.
+- **Saved valuations** (schema v5, after the backup):
+  - Immutable records of the assumptions, the price and its basis, the
+    result, the implied roots, and a SHA-256 fingerprint of the filing
+    data.
+  - Reopening restores the assumptions against today's filings and says
+    whether they changed since (a restatement, a new 10-K). Notes are
+    editable in the store; not yet on the page.
+- **Layout:**
+  - At 1280 px the first version overflowed. The Screen card's field and
+    three buttons on one row set a 1,178 px minimum; two rows bring it to
+    871 px in a 1,038 px viewport.
+  - Wrapped text in a ScrollPage's main column squeezed the cards below
+    it. The body opts out of height-for-width, so a wrapped note's real
+    height isn't in the page minimum.
+    - The Filings sources note took 68 px from the Valuation card and hid
+      the projection's terminal row.
+    - The provenance and gap notes moved to the fixed-width side panel,
+      and the reverse-DCF sentences became a table. AGENTS.md records the
+      trap.
+- **Not live yet:** real companies need `[sec] identity` (D47). The page
+  and its tests run on a made-up filer in the store.

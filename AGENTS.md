@@ -89,6 +89,13 @@ plot's log mode (transform x yourself; `PlotDataItem` handles it), and an
 pile up. Scripts outside the project dir need `PYTHONPATH=...\quanthub`
 (the editable install is not on every interpreter path).
 
+Wrapped text in a `ScrollPage`'s main column squeezes the cards below it:
+the body opts out of height-for-width, so a wrapped label's real height
+isn't counted in the page minimum, and the layout takes the difference
+from a neighbour (D48). Put long wrapped text in the fixed-width side
+panel, or use a table or an elided subtitle. Check a new page's geometry
+(each card's height against its `minimumSizeHint`) as well as its pixels.
+
 Qt WebEngine (the 3D surface, D32):
 - **Load order.** Import `QtWebEngineWidgets` before the `QApplication`
   exists (`app.py` does, through the page imports).
