@@ -835,3 +835,32 @@ pytest. Environment:
          unique implied WACC; securities netting; the latest-year
          regression test; rejections
      - No page yet: that's W6. The SEC adapter is W5.
+   - **W5 landed (2026-10-21, D47)**: SEC fundamentals through the stdlib.
+     - `providers/sec_edgar.py` is a new layer (data/ + stdlib only,
+       layering-tested). It has the client (identity header, gzip, 10 a
+       second, explained errors), facts as filed, and the pure mapping to
+       `FinancialHistory`.
+     - The mapping rules: annual forms and spans; latest filing wins
+       (restatements); tag priority year by year; non-overlapping debt
+       parts; weighted diluted shares, else the cover page, labelled.
+       Every gap is a reason.
+     - `storage/fundamentals_store.py` keeps facts, filers and the ticker
+       map: schema v4, migrated after the backup. `services/fundamentals.py`
+       serves the store for a day, refetches on Refresh, and serves the
+       stored copy when a refetch fails.
+     - `[sec] identity` is in the settings (the template documents it).
+       Fetching needs it; stored facts don't.
+     - Tests:
+       - `tests/test_sec_edgar.py` (31): every mapping rule on a made-up
+         filer in the API's JSON shape (a restatement, a tag switch,
+         quarterly noise, both debt layouts, the share fallback, a debt-
+         free filer the DCF refuses loudly, EUR, 52/53-week labels), plus
+         identifiers and the client against a fake opener
+       - `tests/test_fundamentals_service.py` (10): store round trips, the
+         v3 → v4 migration with its backup, caching and refresh, the
+         identity, and failed fetches
+       - 1 config test for `[sec] identity`
+       - Full suite: 1,137 passed, 1 skipped (the offscreen 3D draw)
+     - **Not yet live:** no request has reached the SEC from here. The
+       check against real 10-Ks (AAPL and two others) needs the owner's
+       identity in `settings.toml`.

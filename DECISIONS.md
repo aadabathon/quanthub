@@ -1054,3 +1054,64 @@ The math is the plan's (D43). Calls made:
   - The CLI and text renderers aren't ported.
 - **Defaults** (WACC 9%, g_T 2.5%, margins) are the owner's illustrative
   numbers, not recommendations.
+
+## D47 — W5: SEC fundamentals, stdlib only (2026-10-21)
+
+D43 approved SEC's `companyfacts` API through the stdlib, in place of
+edgartools. W5 builds it. Calls made:
+
+- **A new package, `providers/`,** mirrors `importers/`: it fetches into
+  `data/` types with the stdlib only.
+  - The layering test enforces it. The GUI may not import it or the fact
+    store: it goes through `services/fundamentals.py`.
+  - `providers/sec_edgar.py` has three parts:
+    - a client that only fetches
+    - a flattener to `data.fundamentals.Fact`
+    - a pure mapping to `FinancialHistory`
+- **The fair-access policy:**
+  - Every request declares `[sec] identity`, "Name email", from the
+    settings file. The template documents it, and no identity ships with
+    the code.
+  - Requests are spaced at least 0.1 s apart, gzip is accepted, and
+    timeouts are 30 s.
+  - A 403 says to set the identity, and a 404 says the filer has no XBRL
+    facts.
+- **Facts are stored as filed** (schema v4, after D36's backup): concept,
+  unit, period, value, form, filing date, accession.
+  - Only the concepts the mapping reads are kept, so the store stays
+    small.
+  - A refetch replaces a filer's facts whole.
+  - The mapping runs on stored facts, so a rule fix applies without
+    refetching.
+  - The ticker map is stored too, so tickers resolve offline.
+- **Mapping rules** (in the module docstring):
+  - **Which facts:** annual forms (10-K, 20-F, 40-F, and amendments);
+    flows spanning 350 to 380 days; instants at the year end.
+  - **Restatements:** the latest-filed fact per concept and period wins.
+  - **Tags:** priority lists followed year by year, so a filer's tag
+    change is tracked.
+  - **Fiscal years:** labelled by the year they end in, with first-week-of-
+    January ends labelled the year before so 52/53-week filers keep unique
+    labels.
+  - **Debt:** non-overlapping parts.
+    - The current part is `DebtCurrent`, else commercial paper +
+      short-term borrowings + current long-term debt.
+    - The noncurrent part is `LongTermDebtNoncurrent`, else `LongTermDebt`
+      less its current portion.
+    - The original summed every tag present, which double-counts current
+      maturities beside a `LongTermDebt` total.
+  - **Shares:** weighted-average diluted shares, else the cover page's,
+    labelled basic.
+  - **Currency:** revenue's unit, USD preferred.
+  - **Gaps:** every one is a reason in `missing`.
+- **Refresh:** stored facts serve for a day, and Refresh fetches at once.
+  The plan said "when a newer filing exists". Checking that would cost a
+  second request per lookup (the submissions API), while filings arrive
+  only a few times a quarter. A failed refresh serves the stored copy and
+  says so. With stored facts, no identity is needed.
+- **Not yet:**
+  - IFRS filers (`ifrs-full`, many 20-Fs) come back with no annual facts,
+    named as such.
+  - The live check against real 10-Ks (AAPL and two others, the original
+    README's checklist) needs the owner's identity. Until then the mapping
+    is verified only on fixtures in the API's shape.

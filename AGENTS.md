@@ -37,7 +37,9 @@ codebase themselves — the standing constraint is:
    appear only in `gui/` and `app.py` (and tkinter nowhere); `data/`
    imports nothing from other layers and never ibapi; only `broker/` may
    import ibapi; `models/` knows only `data/`; `storage/` knows only `data/`
-   and sqlite3; `visualization/` and `services/` never import the GUI. GUI
+   and sqlite3; `importers/` and `providers/` (online data, the SEC) know
+   only `data/` and the stdlib (pandas too, for importers);
+   `visualization/` and `services/` never import the GUI. GUI
    pages may call pure `models/` functions directly (no service wrapper
    needed, D26). If your change fights the layering
    test, your design is wrong, not the test.

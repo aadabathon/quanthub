@@ -482,7 +482,9 @@ Order W0 → W7, each approved before the next:
   with `data/fundamentals.py`. The open conventions are options defaulting
   to the original; a latest-year bug in the original is fixed.
 - **W5. SEC fundamentals:** stdlib `companyfacts` (no edgartools), facts
-  stored as filed.
+  stored as filed. Landed 2026-10-21 (D47): `providers/sec_edgar.py`, the
+  fact store (schema v4) and `services/fundamentals.py`, verified offline.
+  The live check against real 10-Ks needs the owner's `[sec] identity`.
 - **W6. Valuation page:** EV bridge, sensitivity, reverse DCF, margin of
   safety, a screen, saved valuations.
 - **W7. The regime:** versioned rule sets and the daily Review page with

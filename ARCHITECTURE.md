@@ -25,6 +25,9 @@ broker/         Infrastructure. The ONLY package allowed to import ibapi.
 importers/      File readers (CSV bars and positions): files into data/ types with
                 pandas + stdlib. No other layer; services store what they
                 read, and the GUI reaches them only through services.
+providers/      Online providers (the SEC's companyfacts): fetches into data/
+                types with the stdlib only. No other layer; services cache
+                and store what they fetch (D47).
 storage/        SQLite persistence (stdlib sqlite3). Knows data/ only —
                 no broker, no GUI, no services.
 visualization/  Matplotlib figures for scripts and notebooks. Never GUI.
@@ -198,6 +201,8 @@ quant_hub/
 │   │                          named; the example portfolio
 │   ├── research.py            exact experiment snapshots/replay, matched
 │   │                          tests, sweep manifests and paper imports (D42)
+│   ├── fundamentals.py        ticker/CIK → FinancialHistory: SEC facts kept a
+│   │                          day, refetched on demand, mapped offline (D47)
 │   ├── file_import.py         CSV bars validated into the store under
 │   │                          "file" (all or nothing per file); FileSource
 │   │                          serves them; FileImportService for the GUI
@@ -210,6 +215,11 @@ quant_hub/
 │                              presets (Portfolio Positions; Positions view,
 │                              no account column, D43), option symbols parsed
 │                              (D39)
+├── providers/sec_edgar.py     SEC companyfacts through the stdlib: the client
+│                              (identity, gzip, 10/s, typed errors), facts as
+│                              filed, and the mapping to FinancialHistory (D47)
+├── storage/fundamentals_store.py  SEC facts as filed, filers, the ticker map
+│                              (schema v4, D47)
 ├── storage/position_store.py  imported position snapshots, kept (D39)
 ├── storage/research_store.py  immutable research payloads, mutable notes
 │                              and paper metadata; local PDF copies (D42)
