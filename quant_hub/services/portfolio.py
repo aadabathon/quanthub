@@ -23,8 +23,10 @@
     named, with the share of equity it leaves unmodelled. Its value still
     counts in the equity.
   - **Regressions** (W2, ``models/regression.py``): each modelled holding,
-    and the portfolio, on the benchmark's excess returns, optionally with a
-    lag of it (the Dimson sum beta). The portfolio's series is the replay's
+    and the portfolio, on the benchmark's excess returns, plus any extra
+    factor ETFs (their betas are then partial: each holds the others fixed),
+    optionally with a lag of the benchmark (the Dimson sum beta). A factor
+    without history is left out and named. The portfolio's series is the replay's
     P&L over equity, with its cash earning the rate, so that for stocks its
     coefficients are exactly the weighted holdings'. Plus rolling betas and
     the residual correlations between holdings.
@@ -102,6 +104,7 @@ class Regressions:
     (module docstring, Regressions)."""
 
     benchmark: str
+    factors: tuple[str, ...]              # extra factors beside the benchmark, as fitted
     dimson_lags: int
     fits: dict[str, Regression]           # holdings in risk-model order, then the portfolio
     rolling: dict[str, pd.DataFrame]      # beta and beta se by window end; empty if too short
@@ -117,6 +120,11 @@ class Regressions:
         names = (self.benchmark,
                  *(lag_name(self.benchmark, j) for j in range(1, self.dimson_lags + 1)))
         return fit.total(names, NEWEY_WEST)
+
+    def factor_beta(self, key: str, factor: str) -> tuple[float, float]:
+        """An extra factor's (partial) beta and its Newey–West error."""
+        fit = self.fits[key]
+        return fit.value(factor), fit.error(factor, NEWEY_WEST)
 
     def lag_beta(self, key: str) -> tuple[float, float] | None:
         """The first lag's own coefficient and error, when lags are on."""
@@ -171,7 +179,8 @@ class PortfolioService:
 
     def analyse(self, snapshot: PositionSnapshot, account: str | None, source: str,
                 benchmark: str, lookback_days: int, rate: float,
-                now: datetime | None = None, dimson_lags: int = 0) -> PortfolioView:
+                now: datetime | None = None, dimson_lags: int = 0,
+                factors: tuple[str, ...] = ()) -> PortfolioView:
         """The risk of ``snapshot`` (one account, or all with ``None``)."""
         now = now or datetime.now()
         start = now - timedelta(days=lookback_days)
@@ -246,8 +255,25 @@ class PortfolioService:
             left_out.append(f"{benchmark} (the benchmark): no history from {source}, so no beta")
             regression_note = f"No {benchmark} history, so no regressions."
         else:
+            # Factor returns stand apart from the risk model's: a factor with
+            # less history shortens the regressions' sample, not the VaR's.
+            factor_closes, missing = {}, []
+            for factor in dict.fromkeys(f for f in factors if f != benchmark):
+                if factor in closes:
+                    factor_closes[factor] = closes[factor]
+                    continue
+                try:
+                    factor_closes[factor] = self._market.get_return_history(
+                        factor, start, now, source=source).closes
+                except Exception as exc:
+                    _logger.warning("portfolio: no %s factor history: %s", factor, exc)
+                    missing.append(factor)
+            if missing:
+                regression_note = (f"No history from {source} for {', '.join(missing)}: "
+                                   "left out of the factors.")
+            extra = simple_returns(factor_closes) if factor_closes else None
             try:
-                regressions = _regressions(returns, report, benchmark, rate, dimson_lags)
+                regressions = _regressions(returns, report, benchmark, rate, dimson_lags, extra)
             except ValueError as exc:
                 regression_note = f"No regressions: {exc}."
         return PortfolioView(snapshot, account, source, benchmark, basis, report, rows, cash,
@@ -256,13 +282,16 @@ class PortfolioService:
 
 
 def _regressions(returns: pd.DataFrame, report: RiskReport, benchmark: str, rate: float,
-                 dimson_lags: int) -> Regressions:
-    """The module docstring's regressions, on the risk model's own returns."""
+                 dimson_lags: int, extra: pd.DataFrame | None = None) -> Regressions:
+    """The module docstring's regressions, on the risk model's own returns,
+    with ``extra`` factor returns beside the benchmark's (on common days)."""
     cash = rate / TRADING_DAYS
     series = returns[list(report.symbols)].copy()
     series[PORTFOLIO_ROW] = (report.pnl / report.equity
                              + (1.0 - report.net_exposure) * cash)
     factors = returns[[benchmark]]
+    if extra is not None:
+        factors = factors.join(extra, how="inner")
     fits = regress_returns(series, factors, rate, dimson_lags=dimson_lags)
     X = design(factors - cash, dimson_lags)
     names = (benchmark, *(lag_name(benchmark, j) for j in range(1, dimson_lags + 1)))
@@ -277,8 +306,8 @@ def _regressions(returns: pd.DataFrame, report: RiskReport, benchmark: str, rate
     residuals = pd.DataFrame({s: fits[s].residuals if not fits[s].r2 >= _EXACT_FIT else np.nan
                               for s in report.symbols}, index=X.index)
     correlation, lower, upper = residual_correlation(residuals)
-    return Regressions(benchmark, dimson_lags, fits, rolling, ROLLING_WINDOW, correlation,
-                       lower, upper)
+    return Regressions(benchmark, tuple(str(c) for c in factors.columns[1:]), dimson_lags, fits,
+                       rolling, ROLLING_WINDOW, correlation, lower, upper)
 
 
 def example_snapshot(market: MarketService, source: str) -> PositionSnapshot:

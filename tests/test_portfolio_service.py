@@ -165,6 +165,36 @@ class TestRegressions:
         lag = reg.lag_beta("AAA")
         assert reg.beta("AAA")[0] == pytest.approx(fit.value("SPY") + lag[0])
 
+    def test_extra_factors_are_partial_betas_and_leave_the_risk_alone(self, service):
+        snap = snapshot(equity("AAA", 100, 50.0), equity("BBB", 200, 25.0))
+        plain = service.analyse(snap, None, "synthetic", "SPY", 730, 0.04, now=NOW)
+        both = service.analyse(snap, None, "synthetic", "SPY", 730, 0.04, now=NOW,
+                               factors=("QQQ", "SPY", "TLT", "QQQ"))   # the benchmark and repeats drop
+        reg = both.regressions
+        assert reg.factors == ("QQQ", "TLT")
+        assert reg.fits["AAA"].names == ("alpha", "SPY", "QQQ", "TLT")
+        value, error = reg.factor_beta("AAA", "QQQ")
+        assert np.isfinite(value) and error > 0
+        assert both.report.vol == plain.report.vol                       # the risk model is untouched
+        assert both.report.beta == plain.report.beta
+
+    def test_a_factor_without_history_is_named(self, store):
+        from quant_hub.services.file_import import FileSource
+        from quant_hub.storage.bar_store import BarStore, InstrumentKey
+        import pandas as pd
+        bars = BarStore(":memory:")
+        dates = pd.bdate_range("2024-06-03", "2026-10-16")
+        rng = np.random.default_rng(2)
+        for symbol in ("AAA", "SPY"):
+            closes = 50 * np.exp(np.cumsum(rng.normal(0, 0.01, len(dates))))
+            bars.insert_bars(InstrumentKey(symbol), "file", "1 day",
+                             pd.DataFrame({"close": closes}, index=dates))
+        service = PortfolioService(MarketService(sources=[FileSource(bars)]), store)
+        view = service.analyse(snapshot(equity("AAA", 100, 50.0)), None, "file", "SPY", 730,
+                               0.04, now=NOW, factors=("ZZZ",))
+        assert view.regressions is not None and view.regressions.factors == ()
+        assert "ZZZ" in view.regression_note
+
     def test_no_benchmark_history_means_no_regressions(self, store):
         from quant_hub.services.file_import import FileSource
         from quant_hub.storage.bar_store import BarStore, InstrumentKey

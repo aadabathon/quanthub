@@ -504,7 +504,8 @@ def test_portfolio_regressions_rolling_beta_and_links(qt_app):
     table = page._regress_table
     assert table.rowCount() == len(reg.fits)
     assert table.item(table.rowCount() - 1, 0).text() == "Portfolio"
-    assert table.item(0, 3).text() == "—"                            # no lag column yet
+    assert table.columnCount() == 5                                  # fits at 1280 px
+    assert not page._exposure_table.isVisibleTo(page)                # no factors, no lag
     assert page._rolling_stack.currentWidget() is page._rolling      # the portfolio's
     page._on_regression_row(0)
     assert page._rolling_key == page._regression_keys[0]
@@ -512,8 +513,27 @@ def test_portfolio_regressions_rolling_beta_and_links(qt_app):
     assert page._links.rowCount() == n * (n - 1) // 2
     page._lags.select.set_current("1 day")
     wait_for(app, lambda: page._view.regressions.dimson_lags == 1, timeout_s=30)
-    assert table.item(0, 3).text() != "—"
+    others = page._exposure_table
+    assert others.isVisibleTo(page) and others.horizontalHeaderItem(1).text() == "Lag β"
+    assert others.item(0, 1).text() != "—"
     assert page._rolling_key == page._regression_keys[0]             # the choice is kept
+
+
+def test_portfolio_extra_factors_add_beta_columns(qt_app):
+    app, window = qt_app
+    page = _portfolio(app, window, lags="Off")
+    table = page._regress_table
+    page._factors.set_text("tlt, gld")
+    page._factors.committed.emit()
+    wait_for(app, lambda: page._view.regressions.factors == ("TLT", "GLD"), timeout_s=30)
+    assert table.horizontalHeaderItem(2).text() == "β SPY"
+    others = page._exposure_table
+    assert [others.horizontalHeaderItem(c).text() for c in range(others.columnCount())] == [
+        "Holding", "β TLT", "β GLD"]                                 # lag off: no lag column
+    assert others.rowCount() == table.rowCount()
+    page._factors.set_text("QQQ TLT GLD IWM")
+    page._factors.committed.emit()
+    assert "at most 3" in page._header._status.full_text()
 
 
 def test_portfolio_imports_a_fidelity_file_and_splits_accounts(qt_app, tmp_path):

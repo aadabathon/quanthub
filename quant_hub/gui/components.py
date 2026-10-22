@@ -364,14 +364,7 @@ class DataTable(QTableWidget):
     def __init__(self, columns: Sequence[tuple[str, str]], stretch: int = -1,
                  row_height: int = 38, focusable: bool = False) -> None:
         super().__init__(0, len(columns))
-        self._aligns = [
-            (Qt.AlignRight if align == "right" else Qt.AlignLeft) | Qt.AlignVCenter
-            for _, align in columns
-        ]
-        for col, (title, _) in enumerate(columns):
-            item = QTableWidgetItem(title)
-            item.setTextAlignment(self._aligns[col])
-            self.setHorizontalHeaderItem(col, item)
+        self._set_headers(columns)
         self.verticalHeader().setVisible(False)
         self.verticalHeader().setDefaultSectionSize(row_height)
         self.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -399,6 +392,26 @@ class DataTable(QTableWidget):
     def selected_row(self) -> int:
         rows = self.selectionModel().selectedRows()
         return rows[0].row() if rows else -1
+
+    def set_columns(self, columns: Sequence[tuple[str, str]]) -> None:
+        """Replace the columns (their rows go too), for tables whose columns
+        follow the data, such as one per regression factor."""
+        self.set_rows([])
+        self.setColumnCount(len(columns))
+        self._set_headers(columns)
+        if self._balanced:
+            self.horizontalHeader().setSectionResizeMode(QHeaderView.Fixed)
+        self._balance()
+
+    def _set_headers(self, columns: Sequence[tuple[str, str]]) -> None:
+        self._aligns = [
+            (Qt.AlignRight if align == "right" else Qt.AlignLeft) | Qt.AlignVCenter
+            for _, align in columns
+        ]
+        for col, (title, _) in enumerate(columns):
+            item = QTableWidgetItem(title)
+            item.setTextAlignment(self._aligns[col])
+            self.setHorizontalHeaderItem(col, item)
 
     def balance_columns(self) -> None:
         """Content-aware spacing: every column gets its natural width (header,

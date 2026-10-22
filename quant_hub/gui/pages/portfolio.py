@@ -14,8 +14,9 @@ Risk first, for a stock and ETF portfolio that uses options sparingly:
 * sizing: the mix's mean return and vol drag, and the Kelly leverage with
   its standard error, which is the point;
 * regressions (W2, ``models/regression.py``): each holding's and the
-  portfolio's α and β on the benchmark with Newey–West errors (optionally
-  the Dimson sum beta with one lag), a rolling β with its band for the
+  portfolio's α and β on the benchmark, and up to three extra factor ETFs,
+  with Newey–West errors (optionally the Dimson sum beta with one lag), a
+  rolling β with its band for the
   selected row, and the residual links between holdings, strongest first:
   are the streams orthogonal?
 
@@ -57,6 +58,7 @@ from quant_hub.gui.components import (
     StatTable,
     button,
     form_grid,
+    label,
 )
 from quant_hub.gui.pages.base import ScrollPage
 from quant_hub.gui.theme import PALETTE, SIDE_PANEL_WIDTH, SPACE_L, SPACE_M
@@ -79,6 +81,7 @@ _IMPORTED, _EXAMPLE = "Imported", "Example"
 _ALL_ACCOUNTS = "All accounts"
 _LAGS = {"Off": 0, "1 day": 1}          # the Dimson lag of the benchmark
 _LINK_ROWS = 8                          # residual links shown before the table scrolls
+_MAX_FACTORS = 3                        # extra factor columns the table fits at 1280 px
 _HALF = (SIDE_PANEL_WIDTH - 2 * SPACE_L - SPACE_M) // 2
 _FULL = 2 * _HALF + SPACE_M
 _ROW = 32
@@ -86,6 +89,15 @@ _ROW = 32
 
 def _money(value: float) -> str:
     return f"−${-value:,.0f}" if value < 0 else f"${value:,.0f}"
+
+
+def _estimate(value: float, error: float, fmt: str = "{:+.2f}") -> str:
+    """``value ± error``, with values that round to zero shown unsigned
+    rather than as −0.00."""
+    shown = fmt.format(value)
+    if float(fmt.format(abs(value)).strip("+%")) == 0:
+        shown = fmt.replace("+", "").format(0.0)
+    return f"{shown} ± {fmt.replace('+', '').format(error)}"
 
 
 class PortfolioPage(ScrollPage):
@@ -104,6 +116,8 @@ class PortfolioPage(ScrollPage):
         self._keep_status = False       # an import's message outlives its analysis
         self._regressions: Regressions | None = None
         self._regression_keys: list[str] = []
+        self._regression_columns: list[tuple[str, str]] = []
+        self._exposure_columns: list[tuple[str, str]] = []
         self._rolling_key = PORTFOLIO_ROW
 
         self._header = PageHeader(
@@ -190,11 +204,21 @@ class PortfolioPage(ScrollPage):
     def _build_regressions(self) -> Card:
         self._regress_card = Card("Regressions on the benchmark", "")
         self._regress_table = DataTable([
-            ("Holding", "left"), ("α a year", "right"), ("β", "right"), ("Lag β", "right"),
-            ("R²", "right"), ("Residual vol", "right"), ("Days", "right")], row_height=_ROW)
+            ("Holding", "left"), ("α a year", "right"), ("β", "right"), ("R²", "right"),
+            ("Residual vol", "right")], row_height=_ROW)
         self._regress_table.balance_columns()
         self._regress_table.row_activated.connect(self._on_regression_row)
         self._regress_card.body.addWidget(self._regress_table)
+        # Extra factors' betas and the lag's: a second table, so neither one
+        # outgrows the 1280 px window.
+        self._exposure_caption = label("Other exposures, ± Newey–West errors", "fieldCaption")
+        self._exposure_table = DataTable([("Holding", "left")], row_height=_ROW)
+        self._exposure_table.balance_columns()
+        self._exposure_table.row_activated.connect(self._on_regression_row)
+        self._regress_card.body.addWidget(self._exposure_caption)
+        self._regress_card.body.addWidget(self._exposure_table)
+        self._exposure_caption.setVisible(False)
+        self._exposure_table.setVisible(False)
         return self._regress_card
 
     def _build_rolling(self) -> Card:
@@ -235,9 +259,11 @@ class PortfolioPage(ScrollPage):
         lags = saved.get("lags", "Off")
         self._lags = SelectField("Lagged β", list(_LAGS), lags if lags in _LAGS else "Off", _HALF)
         self._lags.select.current_changed.connect(lambda _l: self._analyse())
+        self._factors = Field("Extra factors", saved.get("factors", ""), _HALF,
+                              placeholder="e.g. QQQ TLT", uppercase=True)
         card.body.addLayout(form_grid([self._source, self._benchmark, self._lookback,
-                                       self._rate, self._lags], 2))
-        for field in (self._benchmark, self._lookback, self._rate):
+                                       self._rate, self._lags, self._factors], 2))
+        for field in (self._benchmark, self._lookback, self._rate, self._factors):
             field.committed.connect(self._analyse)
         buttons = QHBoxLayout()
         buttons.setSpacing(SPACE_M)
@@ -273,7 +299,7 @@ class PortfolioPage(ScrollPage):
             "mode": self._mode, "account": self._account, "source": self._source.current(),
             "benchmark": self._benchmark.text(), "lookback": self._lookback.text(),
             "rate": self._rate.text(), "import_dir": self._import_dir,
-            "lags": self._lags.current(),
+            "lags": self._lags.current(), "factors": self._factors.text(),
         })
 
     def _on_mode(self, mode: str) -> None:
@@ -319,6 +345,11 @@ class PortfolioPage(ScrollPage):
             lookback = self._lookback.number(integer=True, minimum=120)
             rate = self._rate.number(scale=0.01)
             benchmark = self._benchmark.required_text()
+            factors = tuple(dict.fromkeys(                   # pasted text isn't uppercased
+                f for f in self._factors.text().upper().replace(",", " ").split()
+                if f != benchmark))
+            if len(factors) > _MAX_FACTORS:
+                raise self._factors.fail(f"Extra factors: at most {_MAX_FACTORS}")
         except ValueError as exc:
             self._header.set_status(str(exc), error=True)
             return
@@ -337,7 +368,7 @@ class PortfolioPage(ScrollPage):
                 snapshot, fallback = example_snapshot(market, source), mode == _IMPORTED
             chosen = account if account in snapshot.accounts else None
             return portfolio.analyse(snapshot, chosen, source, benchmark, lookback, rate,
-                                     dimson_lags=lags), fallback
+                                     dimson_lags=lags, factors=factors), fallback
 
         self._analyse_button.setEnabled(False)
         if not self._keep_status:
@@ -499,6 +530,8 @@ class PortfolioPage(ScrollPage):
             self._regression_keys = []
             self._regress_table.set_rows([])
             self._regress_table.setFixedHeight(36)
+            self._exposure_caption.setVisible(False)
+            self._exposure_table.setVisible(False)
             self._links.set_rows([])
             self._links.setFixedHeight(36)
             for card in (self._regress_card, self._rolling_card, self._links_card):
@@ -507,33 +540,56 @@ class PortfolioPage(ScrollPage):
             self._rolling_stack.setCurrentWidget(self._rolling_empty)
             return
         self._regression_keys = list(reg.fits)
-        rows = []
+        columns = [("Holding", "left"), ("α a year", "right"), (f"β {reg.benchmark}", "right"),
+                   ("R²", "right"), ("Residual vol", "right")]
+        if columns != self._regression_columns:
+            self._regress_table.set_columns(columns)
+            self._regression_columns = columns
+        exposures = [("Holding", "left"), *((f"β {f}", "right") for f in reg.factors),
+                     *((("Lag β", "right"),) if reg.dimson_lags else ())]
+        if exposures != self._exposure_columns:
+            self._exposure_table.set_columns(exposures)
+            self._exposure_columns = exposures
+        rows, others = [], []
         for key in self._regression_keys:
             fit = reg.fits[key]
             alpha, alpha_se = fit.alpha_annual, fit.alpha_error_annual()
             beta, beta_se = reg.beta(key)
             lag = reg.lag_beta(key)
             noise = abs(alpha) <= Z95 * alpha_se
+            name = (key, PALETTE.text if key == PORTFOLIO_ROW else PALETTE.text_secondary)
             rows.append([
-                (key, PALETTE.text if key == PORTFOLIO_ROW else PALETTE.text_secondary),
-                (f"{alpha:+.1%} ± {alpha_se:.1%}", PALETTE.muted if noise else PALETTE.text),
-                f"{beta:.2f} ± {beta_se:.2f}",
-                ("—", PALETTE.muted) if lag is None else (
-                    f"{lag[0]:+.2f} ± {lag[1]:.2f}",
-                    PALETTE.warning if abs(lag[0]) > Z95 * lag[1] else PALETTE.muted),
+                name,
+                (_estimate(alpha, alpha_se, "{:+.1%}"), PALETTE.muted if noise else PALETTE.text),
+                _estimate(beta, beta_se),
                 ("—", PALETTE.muted) if not math.isfinite(fit.r2) else f"{fit.r2:.0%}",
                 f"{fit.residual_vol_annual:.1%}",
-                f"{fit.observations:,}",
+            ])
+            others.append([
+                name,
+                *(_estimate(*reg.factor_beta(key, f)) for f in reg.factors),
+                *(() if lag is None else ((
+                    _estimate(*lag),
+                    PALETTE.warning if abs(lag[0]) > Z95 * lag[1] else PALETTE.muted),)),
             ])
         self._regress_table.set_rows(rows)
         self._regress_table.setFixedHeight(36 + len(rows) * _ROW)
+        has_others = len(exposures) > 1
+        self._exposure_caption.setVisible(has_others)
+        self._exposure_table.setVisible(has_others)
+        if has_others:
+            self._exposure_table.set_rows(others)
+            self._exposure_table.setFixedHeight(36 + len(others) * _ROW)
         any_fit = reg.fits[PORTFOLIO_ROW]
+        on = " + ".join((reg.benchmark, *reg.factors))
         self._regress_card.set_subtitle(
-            f"Daily excess returns on {reg.benchmark} · {any_fit.observations:,} days · "
+            f"Daily excess returns on {on} · {any_fit.observations:,} days · "
             f"Newey–West errors ({any_fit.lags} lags) · grey α: within 1.96 errors of zero"
-            + (" · β is the Dimson sum, today's and yesterday's; amber lag β: the price "
-               "trails the market" if reg.dimson_lags else "")
-            + " · click a row to chart its rolling β")
+            + (" · each β holds the other factors fixed" if reg.factors else "")
+            + (" · β is the Dimson sum, today's and yesterday's; amber lag β below: the "
+               "price trails the market" if reg.dimson_lags else "")
+            + " · click a row to chart its rolling β"
+            + (f" · {view.regression_note}" if view.regression_note else ""))
         if self._rolling_key not in reg.fits:
             self._rolling_key = PORTFOLIO_ROW
         self._render_rolling()
@@ -589,7 +645,7 @@ class PortfolioPage(ScrollPage):
         self._links.set_rows(rows)
         self._links.setFixedHeight(36 + max(min(len(rows), _LINK_ROWS), 1) * _ROW)
         self._links_card.set_subtitle(
-            "Correlation of what's left after the benchmark: amber where its 95% range excludes "
+            "Correlation of what's left after the factors: amber where its 95% range excludes "
             "zero, so the two aren't orthogonal (Fisher z, approximate when volatility "
             "clusters) · raw ρ before the benchmark is taken out"
             if rows else "One holding in the model: no pairs to compare.")
