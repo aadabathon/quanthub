@@ -128,6 +128,65 @@ class TestAnalyse:
         assert both.equity == pytest.approx(2 * roth.equity)           # identical made-up files
 
 
+class TestHistoryProblems:
+    """Every failure says what happened: before this, a portfolio whose
+    histories all failed (IBKR not connected) reported "0 common days of
+    returns; the model needs 60"."""
+
+    @staticmethod
+    def file_service(store, histories: dict[str, int]):
+        """The ``file`` source holding ``days`` daily closes per symbol, up to NOW."""
+        import numpy as np
+        import pandas as pd
+        from quant_hub.services.file_import import FileSource
+        from quant_hub.storage.bar_store import BarStore, InstrumentKey
+        bars = BarStore(":memory:")
+        for i, (symbol, days) in enumerate(histories.items()):
+            dates = pd.bdate_range(end="2026-10-16", periods=days)
+            moves = np.random.default_rng(i).normal(0, 0.01, days)
+            bars.insert_bars(InstrumentKey(symbol), "file", "1 day",
+                             pd.DataFrame({"close": 50 * np.exp(np.cumsum(moves))}, index=dates))
+        return PortfolioService(MarketService(sources=[FileSource(bars)]), store)
+
+    def test_a_short_history_is_left_out_not_shrinking_the_rest(self, store):
+        service = self.file_service(store, {"AAA": 500, "BBB": 30, "SPY": 500})
+        snap = snapshot(equity("AAA", 100, 50.0), equity("BBB", 100, 50.0))
+        view = service.analyse(snap, None, "file", "SPY", 730, 0.04, now=NOW)
+        assert [r.symbol for r in view.rows] == ["AAA"]
+        assert len(view.report.pnl) > 400                       # AAA's own window, not BBB's
+        assert any(note.startswith("BBB: only 29 days") for note in view.left_out)
+        assert view.unmodelled == pytest.approx(0.5)
+
+    def test_no_history_at_all_says_why(self, store):
+        service = self.file_service(store, {"SPY": 500})
+        snap = snapshot(equity("AAA", 100, 50.0), equity("BBB", 100, 50.0))
+        with pytest.raises(ValueError, match=r"No holding's price history loaded from file"
+                                             r".*AAA: no history from file"):
+            service.analyse(snap, None, "file", "SPY", 730, 0.04, now=NOW)
+
+    def test_a_disconnected_broker_points_at_connect(self, store):
+        from quant_hub.broker.types import NotConnectedError
+
+        class Disconnected:
+            name = "ibkr"
+
+            def get_history(self, symbol, start, end, basis=None):
+                raise NotConnectedError("not connected to IBKR")
+
+            def get_quote(self, symbol):
+                raise NotConnectedError("not connected to IBKR")
+
+        service = PortfolioService(MarketService(sources=[Disconnected()]), store)
+        with pytest.raises(ValueError, match="Press Connect IBKR"):
+            service.analyse(snapshot(equity("AAA", 100, 50.0)), None, "ibkr", "SPY", 730,
+                            0.04, now=NOW)
+
+    def test_only_cash_has_no_market_risk(self, service):
+        cash = Position("CASH", Holding.CASH, 5_000.0, "Brokerage", value=5_000.0)
+        with pytest.raises(ValueError, match="only cash"):
+            service.analyse(snapshot(cash), None, "synthetic", "SPY", 730, 0.04, now=NOW)
+
+
 def test_the_example_is_a_hundred_thousand_dollars():
     market = MarketService(sources=[SyntheticSource()])
     snap = example_snapshot(market, "synthetic")

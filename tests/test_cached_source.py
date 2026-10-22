@@ -362,6 +362,18 @@ class TestDividendStepGuard:
     def test_steps(self, ratio, ok):
         assert dividend_steps_only(*self.frames(ratio), self.TODAY) is ok
 
+    def test_cent_rounding_at_low_prices_is_not_a_split(self):
+        # Found live: a split-adjusted history at low prices, refetched two
+        # months apart, came back rounded differently by up to 0.04%.
+        index = pd.bdate_range("2024-01-01", periods=6)
+        traded = pd.DataFrame({"close": [13.01, 12.99, 13.02, 13.00, 12.98, 13.01]},
+                              index=index)
+        adjusted = traded.assign(close=[13.00, 13.00, 13.01, 13.01, 12.99, 13.00])
+        assert dividend_steps_only(traded, adjusted, self.TODAY)
+        # A 2:1 split at those prices is still caught.
+        split = adjusted.assign(close=[6.50, 6.50, 6.51, 13.01, 12.99, 13.00])
+        assert not dividend_steps_only(traded, split, self.TODAY)
+
     def test_todays_provisional_bar_is_ignored(self):
         traded, adjusted = self.frames([1.0] * 6)
         adjusted.iloc[-1, 0] = 140.0                     # moved since it was stored
