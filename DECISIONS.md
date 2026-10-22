@@ -926,3 +926,19 @@ Calls made:
     rounding). Its residual is rounding noise, so its links are "—".
 - **Deferred within W2:** extra factor ETFs on the page (the model
   already takes them), and factor spreads as tilts.
+- **Amended the same day: extra factors landed.**
+  - An *Extra factors* field takes up to three ETFs. The benchmark and
+    repeats are dropped, and pasted text is uppercased.
+  - Their betas are partial: each holds the others fixed.
+  - Factor returns stay apart from the risk model's. A factor with
+    shorter history shortens the regressions' sample, never the VaR's,
+    and a factor without history is named and left out.
+  - The table split in two, so neither outgrows 1280 px:
+    - the main table: α, β to the benchmark, R², residual vol
+    - "Other exposures": each extra factor's β, and the lag β, shown only
+      when there are any
+  - The Days column became the subtitle's day count, since every row
+    shares it.
+  - `DataTable.set_columns` lets a table's columns follow the data.
+  - Factor spreads stay deferred. By the invariance in the derivation,
+    they'd change only what the coefficients mean, not the fit.

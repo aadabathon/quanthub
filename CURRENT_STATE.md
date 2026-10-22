@@ -743,8 +743,15 @@ pytest. Environment:
      - Screenshots at 1280×800 and 1720×1040 on a copy of the store, with
        real fonts: no horizontal overflow (content 823 px in a 1,038 px
        viewport at 1280).
-     - Not yet: extra factor ETFs on the page, and a run on the owner's
-       real holdings, which needs the import with TWS open.
+     - **Extra factors** (D44, amended): up to three ETFs as partial
+       betas.
+       - Factor returns are kept apart from the risk model's, which is
+         tested unchanged. A factor without history is named.
+       - The regressions card now has two tables: α, β, R² and residual
+         vol; then the factors' and lag's betas when there are any. At
+         1280 px the nine-column version overflowed.
+     - Not yet: a run on the owner's real holdings, which needs the
+       import with TWS open.
      - **Not yet done:**
        - the in-app import, with TWS open
        - the fresh adjusted-cache check: the store has no adjusted bars

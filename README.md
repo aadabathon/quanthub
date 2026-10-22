@@ -157,8 +157,9 @@ and shows its risk.
   the risk, sorted by risk.
 - **Sizing:** Kelly leverage, shown with its standard error.
 - **Regressions:** each holding's and the portfolio's α and β on the
-  benchmark, with Newey–West errors (optionally the Dimson sum β for
-  stale prices); a rolling β for any row; and the residual links between
+  benchmark, and on up to three extra factor ETFs, with Newey–West errors
+  (optionally the Dimson sum β for stale prices); a rolling β for any row;
+  and the residual links between
   holdings, strongest first, answering whether the streams are
   orthogonal.
 
