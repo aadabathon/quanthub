@@ -178,9 +178,11 @@ class TestOneExportPerAccount:
 
     def test_rows_without_an_account_are_refused(self, files):
         generic = "symbol,quantity,price\nAAPL,5,250\n"
+        # An undated generic file is stamped now, so the export must be from today.
+        today = date.today().strftime("%m/%d/%Y")
         with pytest.raises(PositionFileError, match="rows without an account"):
             read_positions_files([files("g.csv", generic),
-                                  files("roth.csv", view_export("ROTH IRA"))])
+                                  files("roth.csv", view_export("ROTH IRA", today))])
 
 
 class TestGeneric:
