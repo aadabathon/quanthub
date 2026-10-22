@@ -595,6 +595,79 @@ def test_portfolio_imports_one_export_per_account_together(qt_app, tmp_path):
     page._accounts.select.set_current("ROTH IRA")
     wait_for(app, lambda: page._view.account == "ROTH IRA", timeout_s=30)
 
+
+# ----------------------------------------------------------------- Valuation
+def _valuation(app, window, **state):
+    """The Valuation page over a stored filer (no SEC identity in tests, so the
+    store serves): the made-up DEMO filings, ten shares."""
+    from datetime import datetime
+    from test_sec_edgar import companyfacts, flow
+    from quant_hub.providers.sec_edgar import facts_from_companyfacts
+    core = window._core
+    now = datetime.now()
+    shares = {"WeightedAverageNumberOfDilutedSharesOutstanding": {"shares": [
+        flow(2025, 10.0, "A25")]}}
+    core.fundamentals_store.save_tickers({"DEMO": (1234, "DEMO Corp")}, now)
+    core.fundamentals_store.save_facts(1234, "DEMO Corp",
+                                       facts_from_companyfacts(companyfacts(**shares)), now)
+    core.state_store.save("valuation", {"price_source": "synthetic", **state})
+    page = window.show_page("Valuation")
+    page._identifier.set_text("DEMO")
+    page._load(False)
+    wait_for(app, lambda: page._result is not None, timeout_s=30)
+    return page
+
+
+def test_valuation_loads_values_prices_saves_and_reopens(qt_app):
+    app, window = qt_app
+    page = _valuation(app, window)
+    assert page._identity_note.isVisibleTo(page)                      # no identity here
+    assert page._tiles["value"].value_text().startswith("$")
+    assert page._filings.rowCount() == 6                               # five years + trailing
+    assert page._projection.rowCount() == 6                            # five years + terminal
+    assert page._fields["growth"].text() == "5.7"                      # seeded: the CAGR
+    page._get_price()
+    wait_for(app, lambda: page._tiles["margin"].value_text() != "—", timeout_s=30)
+    assert page._price.text() and "synthetic" in page._price_caption.text()
+    assert page._implied.rowCount() == 2
+    assert page._implied.item(0, 0).text() == "Flat revenue growth"
+    assert page._sources.isVisibleTo(page)                             # provenance, side panel
+    page._save()
+    wait_for(app, lambda: page._saved.rowCount() == 1 and page._saved_ids, timeout_s=30)
+    page._fields["growth"].set_text("1")
+    page._reopen(0)
+    wait_for(app, lambda: page._saved_note.isVisibleTo(page), timeout_s=30)
+    assert "unchanged" in page._saved_note._text.text()
+    assert page._fields["growth"].text() == "5.7"                      # the saved assumption
+
+
+def test_valuation_per_year_paths_overrides_and_bad_input(qt_app):
+    app, window = qt_app
+    page = _valuation(app, window)
+    page._fields["growth"].set_text("10, 8, 6, 4, 2")
+    page._recompute()
+    assert page._assumed.revenue_growth == pytest.approx([0.10, 0.08, 0.06, 0.04, 0.02])
+    before = page._result.value_per_share
+    page._fields["net_debt"].set_text("0")
+    page._recompute()
+    assert page._result.value_per_share > before                       # net debt was 130
+    page._fields["growth"].set_text("10 8")
+    page._recompute()
+    assert "2 values for 5 years" in page._header._status.full_text()
+
+
+def test_valuation_screen_and_export(qt_app, tmp_path):
+    app, window = qt_app
+    page = _valuation(app, window)
+    page._screen_list.set_text("DEMO NOPE")
+    page._run_screen()
+    wait_for(app, lambda: page._screen.rowCount() == 2, timeout_s=30)
+    assert page._screen.item(0, 0).text() == "DEMO"
+    path = tmp_path / "screen.csv"
+    page.export_screen(path)
+    wait_for(app, lambda: path.exists(), timeout_s=30)
+    assert path.read_text(encoding="utf-8").splitlines()[0].startswith("ticker,company")
+
 # ------------------------------------------------------------------- Markets
 
 def test_markets_synthetic_quotes_add_and_remove(qt_app):

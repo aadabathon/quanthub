@@ -33,6 +33,7 @@ Versions:
   ``research_papers``).
 * **4** (W5, D47): SEC facts as filed, their filers, and the ticker map
   (``sec_facts``, ``sec_filers``, ``sec_tickers``).
+* **5** (W6, D48): saved valuations (``valuations``).
 
 Steps are frozen: each one spells out its own SQL, never the stores'
 current schema, which keeps moving. A test holds a migrated file and a new
@@ -55,7 +56,7 @@ from quant_hub.storage.bar_store import StorageError
 
 _logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 BACKUP_DIR = "backups"
 
 _TABLE = """
@@ -130,8 +131,15 @@ def _fundamentals(conn: sqlite3.Connection) -> None:
         conn.execute(statement)
 
 
+def _valuations(conn: sqlite3.Connection) -> None:
+    """4 -> 5: saved valuations, immutable records (W6)."""
+    from quant_hub.storage.valuation_store import V5_TABLES
+    for statement in V5_TABLES:
+        conn.execute(statement)
+
+
 _STEPS: dict[int, Callable[[sqlite3.Connection], None]] = {
-    0: _adopt, 1: _price_basis, 2: _research, 3: _fundamentals,
+    0: _adopt, 1: _price_basis, 2: _research, 3: _fundamentals, 4: _valuations,
 }
 
 

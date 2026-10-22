@@ -22,6 +22,8 @@ millions); shares as a count; ``period_end`` an ISO date (``YYYY-MM-DD``).
 
 from __future__ import annotations
 
+import hashlib
+import json
 import math
 from dataclasses import dataclass, field, fields
 from typing import Protocol
@@ -108,6 +110,15 @@ class FinancialHistory:
         """The most recent fiscal year, whatever order ``years`` holds."""
         ordered = self.ordered()
         return ordered[-1] if ordered else None
+
+    def fingerprint(self) -> str:
+        """SHA-256 of the numbers a valuation reads (every year's line items,
+        the share count, the currency): a saved valuation compares it with
+        today's to show a restatement or a new filing since (W6)."""
+        body = {"currency": self.currency, "shares": self.shares_diluted,
+                "years": [[y.fiscal_year, y.period_end, *(getattr(y, n) for n in LINE_ITEMS)]
+                          for y in self.ordered()]}
+        return hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()
 
     def note_missing(self, field_name: str, reason: str) -> None:
         self.missing[field_name] = reason
