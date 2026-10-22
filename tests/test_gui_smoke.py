@@ -519,6 +519,35 @@ def test_portfolio_regressions_rolling_beta_and_links(qt_app):
     assert page._rolling_key == page._regression_keys[0]             # the choice is kept
 
 
+def test_portfolio_growth_sleeves_and_what_if(qt_app):
+    app, window = qt_app
+    page = _portfolio(app, window)
+    growth = page._view.growth
+    assert growth is not None
+    assert page._sleeves.rowCount() == len(growth.sleeves)
+    assert page._growth_tiles["growth"].value_text().endswith("%")
+    assert not page._book_card.isVisibleTo(page)                     # the example holds no options
+    page._on_sleeve_row(1)
+    assert page._what_sleeve.current() == page._sleeve_names[1]
+    assert "today's size" in page._what_result.text()
+    page._what_scale.set_text("lots")
+    page._what_scale.committed.emit()
+    assert "must be a number" in page._what_result.text()
+
+
+def test_portfolio_options_book_appears_with_options(qt_app, tmp_path):
+    app, window = qt_app
+    page = _portfolio(app, window)
+    path = tmp_path / "book.csv"
+    path.write_text("symbol,quantity,price,account\nSPY,10,500,Brokerage\n"
+                    "-SPY271217P450,2,12.50,Brokerage\n", encoding="utf-8")
+    page.import_file(path)
+    wait_for(app, lambda: page._view.snapshot.name == "book.csv", timeout_s=30)
+    assert page._book_card.isVisibleTo(page)
+    assert page._view.book.contracts == 1 and page._view.book.delta < 0
+    assert page._book_tiles["carry"].value_text().endswith("%")
+
+
 def test_portfolio_extra_factors_add_beta_columns(qt_app):
     app, window = qt_app
     page = _portfolio(app, window, lags="Off")

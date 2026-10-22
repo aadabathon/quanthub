@@ -1,9 +1,7 @@
 r"""Growth and streams: the owner's thesis as numbers (W3).
 
-**Status: derivation for owner review (milestone W3).** The implementation
-follows once this is approved; nothing below is code yet.
-
-The thesis (REGIME.md §1): a core beta stream, plus hedge and return
+The derivation below was reviewed before the code (2026-10-21), as W2's
+was. The thesis (REGIME.md §1): a core beta stream, plus hedge and return
 streams orthogonal to it, sized for CAGR. For today's holdings this module
 answers:
 - Which positions and sleeves add to the portfolio's growth, and which
@@ -225,6 +223,208 @@ On the Portfolio page:
   :math:`c_{\mathrm{mv}}` ± SE, :math:`c^*` ± SE
 - **What-if:** a sleeve and a scale, giving the change in growth and vol
 - **Options:** book greeks and annual carry, shown when the book holds any
+
+Verdicts, completed in the code
+-------------------------------
+Contribution and margin give four sign pairs, not the three labels above:
+- **adds:** :math:`GC > 0` and margin :math:`> 0`
+- **oversized:** :math:`GC > 0`, margin :math:`\le 0`
+- **undersized:** :math:`GC \le 0`, margin :math:`> 0`. It costs growth today,
+  yet more would help: typically a cheap hedge held too small.
+- **costs:** :math:`GC \le 0` and margin :math:`\le 0`
+
+A verdict whose margin is within 1.96 errors of zero is reported as not
+significant. A sleeve with no variance has no sizes (NaN), rather than
+failing the whole report.
 """
 
 from __future__ import annotations
+
+import math
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+
+import numpy as np
+import pandas as pd
+
+from quant_hub.models.black_scholes import greeks_array
+from quant_hub.models.portfolio import MIN_DAYS, TRADING_DAYS, OptionExposure
+from quant_hub.models.regression import NEWEY_WEST, Z95, ols
+
+ADDS, OVERSIZED, UNDERSIZED, COSTS = "adds", "oversized", "undersized", "costs"
+DAYS_PER_YEAR = 365.0                     # theta is per calendar day (D25)
+MOVE = 0.01                               # the gamma P&L is quoted for a 1% move
+
+
+@dataclass(frozen=True)
+class SleeveGrowth:
+    """One sleeve's part in the portfolio's growth (module docstring).
+    Rates are annual; sizes are multiples of today's size."""
+
+    name: str
+    positions: tuple[str, ...]
+    value_share: float                    # sum of its value shares v_i
+    vol: float                            # sigma_S, annual, at today's size
+    contribution: float                   # GC_S, growth units
+    margin: float                         # dg/d(delta_S)
+    excess_mean: float                    # 252 e-bar_S
+    excess_mean_error: float              # Newey–West, annual; also the margin's error
+    c_mv: float                           # minimum-variance size
+    c_mv_error: float
+    vol_at_c_mv: float                    # the portfolio's annual vol at c_mv
+    c_star: float                         # growth-optimal size
+    c_star_error: float
+
+    @property
+    def verdict(self) -> str:
+        if self.contribution > 0:
+            return ADDS if self.margin > 0 else OVERSIZED
+        return UNDERSIZED if self.margin > 0 else COSTS
+
+    @property
+    def significant(self) -> bool:
+        """Whether the margin is more than 1.96 errors from zero."""
+        return abs(self.margin) > Z95 * self.excess_mean_error
+
+
+@dataclass(frozen=True)
+class GrowthReport:
+    """The portfolio's growth and each sleeve's part (module docstring)."""
+
+    rate: float
+    growth: float                         # g, annual log growth rate
+    realized: float                       # 252 mean log(1 + R_t + r/252)
+    drag: float                           # 126 s^2
+    vol: float                            # annual
+    observations: int
+    sleeves: tuple[SleeveGrowth, ...]
+    excess: pd.DataFrame                  # each sleeve's daily excess series
+    total: pd.Series                      # the portfolio's daily excess series
+
+    @property
+    def cagr(self) -> float:
+        return math.expm1(self.growth)
+
+    def sleeve(self, name: str) -> SleeveGrowth:
+        for sleeve in self.sleeves:
+            if sleeve.name == name:
+                return sleeve
+        raise KeyError(f"no sleeve {name!r}")
+
+
+@dataclass(frozen=True)
+class BookGreeks:
+    """The options book's greeks in dollars (module docstring, D25 units)."""
+
+    delta: float                          # stock-equivalent dollars
+    gamma_move: float                     # P&L of a 1% move from gamma
+    vega: float                           # per vol point
+    theta: float                          # per calendar day
+    contracts: int                        # option positions in the book
+
+    @property
+    def carry(self) -> float:
+        """Annual theta, dollars: the hedge budget's measure."""
+        return DAYS_PER_YEAR * self.theta
+
+
+def growth_report(excess: pd.DataFrame, rate: float,
+                  sleeves: Mapping[str, Sequence[str]] | None = None,
+                  values: Mapping[str, float] | None = None) -> GrowthReport:
+    """Growth, attribution, hurdles and sizes from per-position daily excess
+    series (fractions of equity, in excess of cash at ``rate``/252).
+    ``sleeves`` groups positions by name; by default each position is one.
+    ``values`` gives each position's value share, for the sleeves' weights."""
+    if not isinstance(excess, pd.DataFrame) or excess.shape[1] == 0:
+        raise ValueError("excess must be a DataFrame with a column per position")
+    if not np.isfinite(excess.to_numpy(dtype=float)).all():
+        raise ValueError("excess series must be finite")
+    if len(excess) < MIN_DAYS:
+        raise ValueError(f"{len(excess)} days of returns; growth needs {MIN_DAYS}")
+    if not math.isfinite(rate):
+        raise ValueError("rate must be finite")
+    groups = ({str(c): (str(c),) for c in excess.columns} if sleeves is None
+              else {name: tuple(members) for name, members in sleeves.items()})
+    listed = [p for members in groups.values() for p in members]
+    unknown = sorted(set(listed) - set(map(str, excess.columns)))
+    if unknown:
+        raise ValueError(f"sleeves name unknown positions: {unknown}")
+    if len(listed) != len(set(listed)):
+        raise ValueError("a position belongs to more than one sleeve")
+    if any(not members for members in groups.values()):
+        raise ValueError("every sleeve needs at least one position")
+
+    excess = excess.rename(columns=str)
+    by_sleeve = pd.DataFrame({name: excess[list(members)].sum(axis=1)
+                              for name, members in groups.items()})
+    # Positions in no sleeve still count in the portfolio.
+    total = excess.sum(axis=1).to_numpy(dtype=float)
+    mean, variance = float(total.mean()), float(total.var(ddof=1))
+    growth = rate + TRADING_DAYS * (mean - 0.5 * variance)
+    realized = TRADING_DAYS * float(np.mean(np.log1p(total + rate / TRADING_DAYS)))
+    ones = np.ones((len(total), 1))
+    reports = []
+    for name, members in groups.items():
+        e = by_sleeve[name].to_numpy(dtype=float)
+        rest = total - e
+        cov_total = float(np.cov(e, total, ddof=1)[0, 1])
+        cov_rest = float(np.cov(e, rest, ddof=1)[0, 1])
+        var_e = float(e.var(ddof=1))
+        mean_fit = ols(e, ones, ("mean",))
+        mean_error = mean_fit.error("mean", NEWEY_WEST)
+        if var_e > 0:
+            c_mv = -cov_rest / var_e
+            hedge = ols(rest, np.column_stack([ones, e]), ("alpha", "sleeve"))
+            c_mv_error = hedge.error("sleeve", NEWEY_WEST)
+            var_at = float(rest.var(ddof=1)) + 2 * c_mv * cov_rest + c_mv**2 * var_e
+            c_star = (float(e.mean()) - cov_rest) / var_e
+            c_star_error = mean_error / var_e
+        else:
+            c_mv = c_mv_error = var_at = c_star = c_star_error = float("nan")
+        reports.append(SleeveGrowth(
+            name, members,
+            value_share=float(sum((values or {}).get(p, 0.0) for p in members)),
+            vol=math.sqrt(var_e * TRADING_DAYS),
+            contribution=TRADING_DAYS * (float(e.mean()) - 0.5 * cov_total),
+            margin=TRADING_DAYS * (float(e.mean()) - cov_total),
+            excess_mean=TRADING_DAYS * float(e.mean()),
+            excess_mean_error=TRADING_DAYS * mean_error,
+            c_mv=c_mv, c_mv_error=c_mv_error,
+            vol_at_c_mv=math.sqrt(max(var_at, 0.0) * TRADING_DAYS) if var_e > 0 else float("nan"),
+            c_star=c_star, c_star_error=c_star_error))
+    return GrowthReport(rate, growth, realized, 0.5 * TRADING_DAYS * variance,
+                        math.sqrt(variance * TRADING_DAYS), len(total), tuple(reports), by_sleeve,
+                        pd.Series(total, index=excess.index))
+
+
+def what_if(report: GrowthReport, sleeve: str, scale: float) -> tuple[float, float]:
+    """The change in annual growth and vol if ``sleeve`` were ``scale`` times
+    today's size, everything else fixed (exact within the replay)."""
+    if not math.isfinite(scale):
+        raise ValueError("scale must be finite")
+    if sleeve not in report.excess.columns:
+        raise KeyError(f"no sleeve {sleeve!r}")
+    e = report.excess[sleeve].to_numpy(dtype=float)
+    rest = report.total.to_numpy(dtype=float) - e
+
+    def moments(c: float) -> tuple[float, float]:
+        series = rest + c * e
+        return float(series.mean()), float(series.var(ddof=1))
+
+    (m1, v1), (m2, v2) = moments(1.0), moments(scale)
+    growth = TRADING_DAYS * ((m2 - 0.5 * v2) - (m1 - 0.5 * v1))
+    vol = math.sqrt(v2 * TRADING_DAYS) - math.sqrt(v1 * TRADING_DAYS)
+    return growth, vol
+
+
+def book_greeks(options: Sequence[OptionExposure]) -> BookGreeks:
+    """Signed sums over legs in D25 units (module docstring)."""
+    delta = gamma = vega = theta = 0.0
+    for o in options:
+        g = greeks_array(o.spot, o.strike, max(o.days, 1e-6), o.rate, o.vol, o.option_type)
+        size = o.contracts * o.multiplier
+        delta += size * float(g.delta) * o.spot
+        gamma += size * 0.5 * float(g.gamma) * (MOVE * o.spot) ** 2
+        vega += size * float(g.vega)
+        theta += size * float(g.theta)
+    return BookGreeks(delta, gamma, vega, theta, len(options))

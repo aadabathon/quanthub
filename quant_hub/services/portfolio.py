@@ -30,6 +30,11 @@
     P&L over equity, with its cash earning the rate, so that for stocks its
     coefficients are exactly the weighted holdings'. Plus rolling betas and
     the residual correlations between holdings.
+  - **Growth** (W3, ``models/growth.py``): from the replay position by
+    position (options repriced in full), each position's excess series
+    over cash at the rate; sleeves are underlyings (shares plus their
+    options) until W7 stores the owner's own. Plus the options book's
+    greeks and carry.
 
 Runs on the task-worker thread (database, files, maybe IBKR).
 """
@@ -57,6 +62,7 @@ from quant_hub.models.portfolio import (
     risk_report,
     simple_returns,
 )
+from quant_hub.models.growth import BookGreeks, GrowthReport, book_greeks, growth_report
 from quant_hub.models.regression import (
     NEWEY_WEST,
     ROLLING_WINDOW,
@@ -152,6 +158,9 @@ class PortfolioView:
     options: int                        # option positions in the model
     regressions: Regressions | None = None
     regression_note: str = ""           # why there are none
+    growth: GrowthReport | None = None
+    growth_note: str = ""               # why there is none
+    book: BookGreeks | None = None      # when the book holds options
 
     @property
     def equity(self) -> float:
@@ -231,7 +240,8 @@ class PortfolioService:
                 continue
             options.append(OptionExposure(
                 underlying, p.option.option_type, p.option.strike, days, p.quantity,
-                file_prices.get(underlying, last), _realized_vol(closes[underlying]), rate))
+                file_prices.get(underlying, last), _realized_vol(closes[underlying]), rate,
+                value=p.market_value))
         if equity <= 0:
             raise ValueError("the positions add up to no equity")
 
@@ -276,9 +286,27 @@ class PortfolioService:
                 regressions = _regressions(returns, report, benchmark, rate, dimson_lags, extra)
             except ValueError as exc:
                 regression_note = f"No regressions: {exc}."
+        growth, growth_note = None, ""
+        try:
+            growth = _growth(report, rate)
+        except ValueError as exc:
+            growth_note = f"No growth report: {exc}."
         return PortfolioView(snapshot, account, source, benchmark, basis, report, rows, cash,
                              tuple(left_out), unmodelled / equity, len(options),
-                             regressions, regression_note)
+                             regressions, regression_note, growth, growth_note,
+                             book_greeks(options) if options else None)
+
+
+def _growth(report: RiskReport, rate: float) -> GrowthReport:
+    """The module docstring's growth report: each position's excess series,
+    grouped by underlying."""
+    equity = report.equity
+    shares = report.position_value / equity
+    excess = report.position_pnl / equity - shares * rate / TRADING_DAYS
+    sleeves: dict[str, list[str]] = {}
+    for position, underlying in report.position_underlying.items():
+        sleeves.setdefault(str(underlying), []).append(str(position))
+    return growth_report(excess, rate, sleeves, values=shares.to_dict())
 
 
 def _regressions(returns: pd.DataFrame, report: RiskReport, benchmark: str, rate: float,

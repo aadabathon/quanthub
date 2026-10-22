@@ -211,6 +211,30 @@ class TestRegressions:
         assert view.regressions is None and "No SPY history" in view.regression_note
 
 
+class TestGrowth:
+    def test_sleeves_are_underlyings_and_the_attribution_adds_up(self, service):
+        put = Position("AAA261218P45", Holding.OPTION, 2, "Brokerage", 1.20, 240.0, None, "",
+                       OptionContract("AAA", "put", 45.0, date(2026, 12, 18)))
+        snap = snapshot(equity("AAA", 100, 50.0), equity("BBB", 200, 25.0), put)
+        view = service.analyse(snap, None, "synthetic", "SPY", 730, 0.04, now=NOW)
+        growth = view.growth
+        assert growth is not None and view.growth_note == ""
+        assert {s.name for s in growth.sleeves} == {"AAA", "BBB"}
+        assert len(growth.sleeve("AAA").positions) == 2                # its shares and its put
+        assert sum(s.contribution for s in growth.sleeves) == pytest.approx(
+            growth.growth - 0.04, abs=1e-12)
+        assert view.book is not None and view.book.contracts == 1
+        assert view.book.delta < 0                                      # long puts: short delta
+
+    def test_stocks_only_growth_equals_the_sizing_card(self, service):
+        snap = snapshot(equity("AAA", 100, 50.0), equity("BBB", 200, 25.0),
+                        Position("CASH", Holding.CASH, 5_000.0, "Brokerage", value=5_000.0))
+        view = service.analyse(snap, None, "synthetic", "SPY", 730, 0.04, now=NOW)
+        r = view.report
+        assert view.growth.growth == pytest.approx(r.growth(r.net_exposure), abs=1e-12)
+        assert view.book is None
+
+
 def test_the_example_is_a_hundred_thousand_dollars():
     market = MarketService(sources=[SyntheticSource()])
     snap = example_snapshot(market, "synthetic")

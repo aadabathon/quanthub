@@ -13,6 +13,11 @@ Risk first, for a stock and ETF portfolio that uses options sparingly:
   and the Gaussian curve of the same vol, so fat tails show;
 * sizing: the mix's mean return and vol drag, and the Kelly leverage with
   its standard error, which is the point;
+* growth (W3, ``models/growth.py``): growth, realized log growth, CAGR and
+  drag from the replay with options repriced in full; each sleeve's
+  contribution, verdict (adds / oversized / undersized / costs), its
+  minimum-variance size and its far noisier growth-optimal size; a
+  read-only what-if; and the options book's greeks and carry;
 * regressions (W2, ``models/regression.py``): each holding's and the
   portfolio's α and β on the benchmark, and up to three extra factor ETFs,
   with Newey–West errors (optionally the Dimson sum beta with one lag), a
@@ -34,6 +39,7 @@ import math
 from pathlib import Path
 
 import numpy as np
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QFileDialog,
     QGridLayout,
@@ -59,9 +65,11 @@ from quant_hub.gui.components import (
     button,
     form_grid,
     label,
+    metric_row,
 )
 from quant_hub.gui.pages.base import ScrollPage
 from quant_hub.gui.theme import PALETTE, SIDE_PANEL_WIDTH, SPACE_L, SPACE_M
+from quant_hub.models.growth import ADDS, COSTS, GrowthReport, what_if
 from quant_hub.models.regression import Z95
 from quant_hub.services.market_service import MarketService
 from quant_hub.services.portfolio import (
@@ -114,6 +122,8 @@ class PortfolioPage(ScrollPage):
         self._account = saved.get("account") or _ALL_ACCOUNTS
         self._import_dir = saved.get("import_dir") or str(Path.home())
         self._keep_status = False       # an import's message outlives its analysis
+        self._growth: GrowthReport | None = None
+        self._sleeve_names: list[str] = []
         self._regressions: Regressions | None = None
         self._regression_keys: list[str] = []
         self._regression_columns: list[tuple[str, str]] = []
@@ -134,6 +144,8 @@ class PortfolioPage(ScrollPage):
         column.addWidget(self._build_holdings())
         column.addWidget(self._build_replay(), 1)
         column.addWidget(self._build_losses())
+        column.addWidget(self._build_growth())
+        column.addWidget(self._build_book())
         column.addWidget(self._build_regressions())
         column.addWidget(self._build_rolling())
         column.addWidget(self._build_links())
@@ -200,6 +212,52 @@ class PortfolioPage(ScrollPage):
         self._losses.setMinimumHeight(200)
         self._losses_card.body.addWidget(self._losses)
         return self._losses_card
+
+    def _build_growth(self) -> Card:
+        self._growth_card = Card("Growth: who adds, who costs", "")
+        self._growth_tiles = {
+            "growth": MetricTile("Growth · annual"), "realized": MetricTile("Realized log growth"),
+            "cagr": MetricTile("CAGR"), "drag": MetricTile("Vol drag"),
+        }
+        self._growth_card.body.addLayout(metric_row(list(self._growth_tiles.values())))
+        self._sleeves = DataTable([
+            ("Sleeve", "left"), ("Weight", "right"), ("Contribution", "right"),
+            ("Verdict", "right"), ("Min-variance size", "right"), ("Growth-optimal", "right")],
+            row_height=_ROW)
+        self._sleeves.balance_columns()
+        self._sleeves.row_activated.connect(self._on_sleeve_row)
+        self._growth_card.body.addWidget(self._sleeves)
+        self._what_sleeve = SelectField("What if", ["—"], "—", _HALF)
+        self._what_scale = Field("Scale ×", "1.10", _HALF)
+        self._what_result = label("", "muted", wrap=True)
+        row = QHBoxLayout()
+        row.setSpacing(SPACE_M)
+        row.addWidget(self._what_sleeve)
+        row.addWidget(self._what_scale)
+        row.addWidget(self._what_result, 1, Qt.AlignBottom)
+        self._growth_card.body.addLayout(row)
+        self._what_sleeve.select.current_changed.connect(lambda _s: self._render_what_if())
+        self._what_scale.committed.connect(self._render_what_if)
+        return self._growth_card
+
+    def _build_book(self) -> Card:
+        self._book_card = Card("Options book", "")
+        self._book_tiles = {
+            "delta": MetricTile("Dollar delta"), "gamma": MetricTile("Gamma · 1% move"),
+            "vega": MetricTile("Vega · per vol point"), "theta": MetricTile("Theta · a day"),
+            "carry": MetricTile("Carry · a year"),
+        }
+        # Two rows, as the top tiles: five in one row truncate at 1280 px.
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(SPACE_M)
+        grid.setVerticalSpacing(SPACE_M)
+        for i, tile in enumerate(self._book_tiles.values()):
+            grid.addWidget(tile, i // 3, i % 3)
+        for col in range(3):
+            grid.setColumnStretch(col, 1)
+        self._book_card.body.addLayout(grid)
+        self._book_card.setVisible(False)
+        return self._book_card
 
     def _build_regressions(self) -> Card:
         self._regress_card = Card("Regressions on the benchmark", "")
@@ -397,6 +455,8 @@ class PortfolioPage(ScrollPage):
         self._render_losses(view)
         self._render_sizing(view)
         self._render_notes(view, fallback)
+        self._render_growth(view)
+        self._render_book(view)
         self._render_regressions(view)
 
     def _on_error(self, exc: Exception) -> None:
@@ -493,7 +553,10 @@ class PortfolioPage(ScrollPage):
             s.set_value("mean", f"{r.mean:+.1%}")
             s.set_value("mix_vol", f"{sigma:.1%}")
             s.set_value("drag", f"{0.5 * sigma**2:.1%}")
-            s.set_value("growth_now", f"{r.growth(r.net_exposure):+.1%}")
+            # W3's growth when there is one: the replay with options repriced
+            # in full, equal to this delta-based formula for stocks alone.
+            growth = view.growth.growth if view.growth is not None else r.growth(r.net_exposure)
+            s.set_value("growth_now", f"{growth:+.1%}")
             s.set_value("exposure", f"{r.net_exposure:.2f}×")
             s.set_value("kelly", f"{r.kelly:+.1f}×")
             s.set_value("kelly_error", f"±{r.kelly_error:.1f}×")
@@ -522,6 +585,92 @@ class PortfolioPage(ScrollPage):
                             "in the one-day P&L.")
         self._finding.set_text(" ".join(findings))
         self._finding.setVisible(bool(findings))
+
+    # --------------------------------------------------------------- growth
+    def _render_growth(self, view: PortfolioView) -> None:
+        g = self._growth = view.growth
+        if g is None:
+            for tile in self._growth_tiles.values():
+                tile.set_value("—", hint="")
+            self._sleeves.set_rows([])
+            self._sleeves.setFixedHeight(36)
+            self._what_sleeve.select.set_items(["—"], "—")
+            self._what_result.setText("")
+            self._growth_card.set_subtitle(view.growth_note)
+            return
+        tone = "good" if g.growth > g.rate else "critical"
+        self._growth_tiles["growth"].set_value(f"{g.growth:+.2%}", tone,
+                                               hint="r + mean − ½ var")
+        self._growth_tiles["realized"].set_value(
+            f"{g.realized:+.2%}", hint=f"{g.realized - g.growth:+.3%} vs growth")
+        self._growth_tiles["cagr"].set_value(f"{g.cagr:+.2%}", hint="e^growth − 1")
+        self._growth_tiles["drag"].set_value(f"{g.drag:.2%}", hint=f"vol {g.vol:.1%}")
+        colors = {ADDS: PALETTE.good, COSTS: PALETTE.critical}
+        rows = []
+        for s in sorted(g.sleeves, key=lambda s: -s.contribution):
+            sized = math.isfinite(s.c_mv)
+            rows.append([
+                s.name,
+                f"{s.value_share:.1%}",
+                f"{s.contribution * 1e4:+,.0f} bp",
+                (s.verdict, colors.get(s.verdict, PALETTE.warning) if s.significant
+                 else PALETTE.muted),
+                _estimate(s.c_mv, s.c_mv_error).lstrip("+") + "×" if sized
+                else ("—", PALETTE.muted),
+                (_estimate(s.c_star, s.c_star_error, "{:+.1f}") + "×", PALETTE.muted) if sized
+                else ("—", PALETTE.muted),
+            ])
+        self._sleeve_names = [s.name for s in sorted(g.sleeves, key=lambda s: -s.contribution)]
+        self._sleeves.set_rows(rows)
+        self._sleeves.setFixedHeight(36 + len(rows) * _ROW)
+        chosen = self._what_sleeve.current()
+        self._what_sleeve.select.set_items(
+            self._sleeve_names, chosen if chosen in self._sleeve_names else self._sleeve_names[0])
+        self._growth_card.set_subtitle(
+            f"Today's holdings replayed over {g.observations:,} days, options repriced in full · "
+            "contribution: each sleeve's share of growth above the rate, in basis points a "
+            "year · verdict grey when within 1.96 errors · min-variance size: the scale of the "
+            "sleeve that makes the portfolio's risk smallest · growth-optimal: noisy, read the "
+            "error first · sizes are multiples of today's")
+        self._render_what_if()
+
+    def _on_sleeve_row(self, row: int) -> None:
+        if self._growth is not None and 0 <= row < len(self._sleeve_names):
+            self._what_sleeve.select.set_current(self._sleeve_names[row])
+
+    def _render_what_if(self) -> None:
+        g = self._growth
+        name = self._what_sleeve.current()
+        if g is None or name not in g.excess.columns:
+            self._what_result.setText("")
+            return
+        try:
+            scale = self._what_scale.number(minimum=0.0)
+        except ValueError as exc:
+            self._what_result.setText(str(exc))
+            return
+        growth, vol = what_if(g, name, scale)
+        self._what_result.setText(
+            f"{name} at {scale:g}× today's size: growth {growth * 100:+.2f} points a year, "
+            f"vol {vol * 100:+.2f} points (within the replay; nothing is traded)")
+
+    def _render_book(self, view: PortfolioView) -> None:
+        book = view.book
+        self._book_card.setVisible(book is not None)
+        if book is None:
+            return
+        e = view.equity
+        t = self._book_tiles
+        t["delta"].set_value(_money(book.delta), hint=f"{book.delta / e:+.1%} of equity")
+        t["gamma"].set_value(_money(book.gamma_move), hint="from gamma alone")
+        t["vega"].set_value(_money(book.vega), hint="per vol point")
+        t["theta"].set_value(_money(book.theta), "critical" if book.theta < 0 else "good",
+                             hint="per calendar day")
+        t["carry"].set_value(f"{book.carry / e:+.2%}", "critical" if book.carry < 0 else "good",
+                             hint=f"{_money(book.carry)} a year, of equity")
+        self._book_card.set_subtitle(
+            f"{book.contracts} option position{'s' if book.contracts != 1 else ''} · greeks at "
+            "each underlying's realized vol (no smile), the page's rate, today's spot")
 
     # ---------------------------------------------------------- regressions
     def _render_regressions(self, view: PortfolioView) -> None:
