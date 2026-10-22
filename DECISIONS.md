@@ -942,3 +942,55 @@ Calls made:
   - `DataTable.set_columns` lets a table's columns follow the data.
   - Factor spreads stay deferred. By the invariance in the derivation,
     they'd change only what the coefficients mean, not the fit.
+
+## D45 — W3: growth and streams (2026-10-21)
+
+The owner approved the derivation in `models/growth.py`. The model and the
+Portfolio page's Growth and Options book cards follow it. Calls made:
+
+- **From the replay, position by position.** `risk_report` keeps each
+  position's daily P&L (options repriced in full, as before), its value
+  and its underlying. Those series sum to the replay.
+  - The excess series nets cash at r/252 on each position's value share.
+  - An option's value share is the account's own premium from the export,
+    when there is one, not the model's. That keeps weights consistent with
+    equity: a file's premium and the model's can differ widely.
+- **Growth:** g = r + 252(mean − ½ var) of the portfolio's excess series,
+  with realized log growth shown beside it. Variances use ddof = 1, as
+  `np.cov` does in the risk model.
+  - For stocks alone, g equals the Sizing card's delta-based growth
+    exactly (tested).
+  - With options the two differ, so the Sizing card now shows W3's g when
+    there is one.
+- **Attribution:** exact, the mean less half the covariance with the
+  portfolio.
+- **Verdicts:** contribution and margin give four outcomes, not the
+  derivation's three:
+  - *adds*
+  - *oversized*
+  - *undersized*: costs growth today, but more would help, e.g. a cheap
+    hedge held too small
+  - *costs*
+
+  A verdict is grey when its margin is within 1.96 Newey–West errors of
+  zero.
+- **Sleeves:** each underlying, i.e. its shares plus its options, until
+  W7 stores the owner's own. `growth_report` takes any grouping.
+- **Sizes:** both are shown in multiples of today's size.
+  - The min-variance size comes with its regression's Newey–West error,
+    and the page lists it first.
+  - The growth-optimal size is shown muted, with its error. In the tested
+    hedge world its error is more than ten times the min-variance size's,
+    and the derivation's simulation found about 140 times.
+  - A sleeve with no variance has no sizes (NaN), rather than failing the
+    report.
+- **What-if:** an exact quadratic within the replay. It's computed on the
+  GUI thread as a pure model call (D26), and is read-only: no ticket, no
+  order (D12).
+- **Book greeks:** signed sums in D25 units (dollar delta, gamma P&L of a
+  1% move, vega per vol point, theta per day), plus annual carry = 365 ×
+  theta.
+  - The Options book card appears only when the book holds options.
+  - Its five tiles sit in two rows: in one row they truncated at 1280 px.
+- **Not included:** transaction costs and taxes in the what-if; a smile
+  for the greeks (realized vol, as in the risk model).

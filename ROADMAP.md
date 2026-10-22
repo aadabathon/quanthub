@@ -474,9 +474,9 @@ Order W0 → W7, each approved before the next:
   - the growth hurdle ∂g/∂wᵢ = (μᵢ − r) − Cov(Rᵢ, R_p)
   - optimal and fractional sizing ± SE
   - hedge ratios and aggregate greeks
-  - The derivation is written for review (`models/growth.py`,
-    2026-10-21). It works from the replay's per-position series and leads
-    with the minimum-variance hedge.
+  - Landed 2026-10-21 (D45): `models/growth.py` and the Portfolio page's
+    Growth and Options book cards. It works from the replay's per-position
+    series and leads with the minimum-variance hedge.
 - **W4. DCF core** (`models/dcf.py`): the owner's engine ported, plus the
   Gordon identity and reverse DCF with every root.
 - **W5. SEC fundamentals:** stdlib `companyfacts` (no edgartools), facts

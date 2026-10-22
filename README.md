@@ -156,6 +156,13 @@ and shows its risk.
 - **Holdings table:** each holding's share of the value beside its share of
   the risk, sorted by risk.
 - **Sizing:** Kelly leverage, shown with its standard error.
+- **Growth:** today's mix's growth rate, CAGR and vol drag, from the
+  replay with options repriced in full.
+  - Each sleeve's contribution and verdict: adds, oversized, undersized
+    or costs.
+  - Its minimum-variance size (the hedge ratio, well estimated) and its
+    growth-optimal size (shown with its much larger error).
+  - A read-only what-if, and the options book's greeks and annual carry.
 - **Regressions:** each holding's and the portfolio's α and β on the
   benchmark, and on up to three extra factor ETFs, with Newey–West errors
   (optionally the Dimson sum β for stale prices); a rolling β for any row;

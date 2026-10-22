@@ -770,6 +770,39 @@ pytest. Environment:
          (2.52 ± 0.20): its error was 28 times today's size, though its
          intervals still covered 94.9%
      - Code waits for the owner's review.
+   - **W3 landed (2026-10-21, D45)** after the owner's approval.
+     - `models/growth.py`: growth, attribution, the four verdicts, both
+       sizes with errors, what-if, book greeks.
+       - `risk_report` now keeps each position's replay series, value and
+         underlying.
+       - An option's value is the export's own premium when known.
+     - `tests/test_growth.py` (20) follows the docstring's plan:
+       - the attribution is exact with a put in the book
+       - the margin matches finite differences for a stock and the put
+       - the closed form holds at sample moments
+       - c* agrees with a grid search, equals c_mv plus the sleeve's own
+         Kelly fraction, and keeps f(2 − f) under fractional sizing
+       - coverage of both sizes at 95% over 1,500 two-year runs, with
+         c*'s error more than ten times c_mv's
+       - orthogonal streams add ½ SR² each, exactly
+       - quadratic and realized log growth agree within 0.01%
+       - book greeks match finite-difference repricing
+     - The service groups sleeves by underlying. For stock-only books its
+       growth equals the Sizing card's (tested); the Sizing card now
+       shows W3's growth.
+     - The Portfolio page gains two cards after One-day P&L:
+       - Growth: four tiles, then the sleeves table (weight, contribution
+         in bp, verdict, min-variance size, growth-optimal size) and a
+         what-if
+       - Options book: dollar delta, 1% gamma P&L, vega, theta, annual
+         carry; shown only with options
+     - Screenshots at 1280 with real fonts, for the example and a book
+       with a protective put.
+       - At first, five tiles in one row truncated the delta and pushed
+         the page to a 1,028 px minimum. In two rows it's 865 px in a
+         1,038 px viewport.
+       - The first screenshot also showed a sleeve weight using the
+         model's put premium, not the file's. Fixed.
      - **Not yet done:**
        - the in-app import, with TWS open
        - the fresh adjusted-cache check: the store has no adjusted bars

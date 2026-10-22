@@ -160,6 +160,10 @@ quant_hub/
 │   │                          beta, historical (options repriced) and
 │   │                          Gaussian VaR/ES, drawdown of today's mix,
 │   │                          N_eff, Kelly with its error (D39)
+│   ├── growth.py              growth from the replay's per-position series:
+│   │                          exact attribution, hurdles and verdicts,
+│   │                          min-variance and growth-optimal sleeve sizes
+│   │                          with errors, what-if, book greeks (W3, D45)
 │   ├── regression.py          OLS of daily excess returns: classical, White
 │   │                          and Newey–West errors, Dimson sum beta, causal
 │   │                          rolling fits, Fisher-z residual correlations
@@ -182,7 +186,8 @@ quant_hub/
 │   │                          live fetch saved; "stored" = latest snapshot
 │   ├── portfolio.py           PortfolioService: positions imports kept,
 │   │                          holdings valued, options priced, risk run,
-│   │                          regressions on the benchmark (D44); gaps
+│   │                          regressions on the benchmark (D44), growth
+│   │                          and book greeks (D45); gaps
 │   │                          named; the example portfolio
 │   ├── research.py            exact experiment snapshots/replay, matched
 │   │                          tests, sweep manifests and paper imports (D42)
@@ -261,7 +266,8 @@ Markov Lab = hidden volatility regimes in returns (Gaussian HMM, BIC over 1–3)
              synthetic worlds or source history
 Portfolio  = imported positions (or the example): risk first: VaR/ES, risk
              contributions, beta, the replayed drawdown, Kelly with its error;
-             then α/β regressions, rolling β and residual links (D44)
+             then growth by sleeve with hedge sizes and the options book
+             (D45), α/β regressions, rolling β and residual links (D44)
 RESEARCH…  = GARCH Lab, Vol Lab, Kalman Lab, Markov Lab, Research
 ```
 
