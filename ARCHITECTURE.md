@@ -93,7 +93,7 @@ quant_hub/
 │                              simulator.py, options_lab/ (page, underlying,
 │                              pricer, strategy, monte_carlo), volatility_lab.py,
 │                              kalman_lab.py, markov_lab.py, valuation.py,
-│                              research/ (page, history, library)
+│                              review.py, research/ (page, history, library)
 ├── config.py                  AppConfig
 ├── events.py                  EventBus (thread-safe), LogEvent, log handler
 ├── broker/
@@ -115,6 +115,8 @@ quant_hub/
 │   ├── fundamentals.py        YearData/FinancialHistory: a filer's statements
 │   │                          with provenance and null reasons (the loud-
 │   │                          failure contract); FundamentalsSource (D46)
+│   ├── regime.py              Rule/Limit/Measure, Grade/Effect, RuleSet: the
+│   │                          owner's REGIME.md as data (W7, D49)
 │   ├── positions.py           Position/OptionContract/PositionSnapshot: what an
 │   │                          account holds, broker-agnostic (D39);
 │   │                          combine_snapshots: one export per account, one
@@ -140,6 +142,10 @@ quant_hub/
 │   │                          (MinimizeResult); callers reparameterize
 │   ├── garch.py               stationary GARCH(1,1): simulation, Gaussian
 │   │                          QMLE fit, conditional variance diagnostics
+│   ├── regime.py              the review's checks: evidence-level breaches,
+│   │                          Fisher-scale correlation limits, persistence,
+│   │                          one-day dominance (t(3)-calibrated), the HMM and
+│   │                          GARCH gates, implied growth (W7, D49)
 │   ├── dcf.py                 unlevered-FCF DCF (the owner's, ported):
 │   │                          projection, terminal conventions, valuation
 │   │                          date, sensitivity, multiples, margin of safety,
@@ -201,6 +207,9 @@ quant_hub/
 │   │                          named; the example portfolio
 │   ├── research.py            exact experiment snapshots/replay, matched
 │   │                          tests, sweep manifests and paper imports (D42)
+│   ├── review.py              the daily review: rules → newest export →
+│   │                          risk/regressions/growth → gates → valuations →
+│   │                          checklist → journal; trade drafts (W7, D49)
 │   ├── valuation.py           the Valuation page's data: companies, prices
 │   │                          (quote else last close), the screen ranked
 │   │                          cheapest first, saved records, CSV (D48)
@@ -218,9 +227,15 @@ quant_hub/
 │                              presets (Portfolio Positions; Positions view,
 │                              no account column, D43), option symbols parsed
 │                              (D39)
+├── importers/regime_md.py     REGIME.md → RuleSet: rows by their label, blanks
+│                              off, "by k SE", every bad value names its line
+│                              (W7, D49)
 ├── providers/sec_edgar.py     SEC companyfacts through the stdlib: the client
 │                              (identity, gzip, 10/s, typed errors), facts as
 │                              filed, and the mapping to FinancialHistory (D47)
+├── storage/regime_store.py    regime versions (by text hash), immutable
+│                              reviews with notes, hand-placed trades
+│                              (schema v6, D49)
 ├── storage/valuation_store.py  saved valuations, immutable records with a
 │                              filing-data fingerprint (schema v5, D48)
 ├── storage/fundamentals_store.py  SEC facts as filed, filers, the ticker map
@@ -293,6 +308,9 @@ Portfolio  = imported positions (or the example): risk first: VaR/ES, risk
 Valuation  = a DCF from SEC filings (the owner's modeler): seeded assumptions,
              EV bridge, projection, WACC × g grid, reverse DCF with every
              root, a screen, saved valuations (D46–D48)
+Review     = the front door (after Dashboard): the owner's REGIME.md checked
+             against the newest export: checklist, thesis by stream, gates,
+             one-day dominance, journal and trades (W7, D49)
 RESEARCH…  = GARCH Lab, Vol Lab, Kalman Lab, Markov Lab, Research
 ```
 

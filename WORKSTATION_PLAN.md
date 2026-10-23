@@ -248,7 +248,8 @@ account exists
     trade" entry for the owner to complete.
   - **The cash rate** is entered by hand: the 3-month Treasury yield.
     Fetching it from FRED would be a new provider, for discussion first.
-- **The checks' derivation** is in `models/regime.py`, for review before
+- **Landed 2026-10-23 (D49)**, after the derivation was approved.
+- **The checks' derivation** is in `models/regime.py`, reviewed before
   any code:
   - evidence levels for estimated measures
   - persistence as a delay

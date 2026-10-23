@@ -111,7 +111,9 @@ CURRENT_STATE.md (done / untested).
 
 The first run writes `~/.quant_hub/settings.toml`, a commented file of the
 defaults. Edit it and restart. It sets where the market-data store lives,
-and whether and how to reach Interactive Brokers. Don't use IBKR? Set
+whether and how to reach Interactive Brokers, your SEC identity
+(Valuation), and where the Review page finds your `REGIME.md` and your
+exports. Don't use IBKR? Set
 `enabled = false` under `[ibkr]`, and its controls and sources disappear.
 The app is complete on synthetic data without it. A mistake in the file
 never stops the app: it's reported in the log, and that setting keeps its
@@ -227,6 +229,48 @@ identity = "Your Name you@example.com"
 
 Filings already in the store work without it. An unlevered DCF is the
 wrong model for banks, insurers and REITs. IFRS filers aren't mapped yet.
+
+## Review
+
+Your trading regime, written down in `REGIME.md` and checked against your
+book every time you press **Run review**. It's decision support only: it
+records trades you place by hand and never places one.
+
+1. Copy the repository's `REGIME.md` to `~/.quant_hub/REGIME.md` and fill in
+   the `___` values. Keep the filled-in copy out of the repository. A blank
+   leaves its rule off, so start with a few rules.
+2. Optionally, point the review at the folder you save broker exports to.
+   It reads the newest one by the date printed inside it:
+
+   ```toml
+   [positions]
+   folder = "~/Documents/exports"
+   ```
+
+   Without a folder, it uses the newest snapshot imported on the Portfolio
+   page.
+3. Press **Run review**. It does the following:
+   - reads your rules, storing each new version of the file
+   - loads the positions and their history
+   - runs the risk, regressions and growth by your sleeves
+   - fits the market-state gates on the benchmark
+   - re-runs your saved valuations on today's filings and price
+   - grades every rule
+
+What the page shows:
+- **Checklist:** every rule over what it governs, breaches first. A rule
+  that reads an estimate shows how many standard errors past its limit it
+  is. With `by k SE` in its value, it breaches only beyond k.
+- **Thesis by stream:** section 1's tests (growth hurdle, orthogonality,
+  beta creep), and how many reviews in a row each stream has failed.
+- **Market state:** the calm regime's filtered probability, its odds ahead,
+  and the volatility forecast.
+- **One day dominating:** a holding whose variance is mostly one day's,
+  such as a takeover or approval jump. Section 4 says whether the checks
+  read the numbers with that day or without it.
+- **Journal:** trades drafted from the change since the export before,
+  notes, and trades you record by hand. Every review is kept whole, with
+  the rules it ran under.
 
 ## Research workspace
 

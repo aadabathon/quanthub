@@ -93,8 +93,14 @@ Wrapped text in a `ScrollPage`'s main column squeezes the cards below it:
 the body opts out of height-for-width, so a wrapped label's real height
 isn't counted in the page minimum, and the layout takes the difference
 from a neighbour (D48). Put long wrapped text in the fixed-width side
-panel, or use a table or an elided subtitle. Check a new page's geometry
-(each card's height against its `minimumSizeHint`) as well as its pixels.
+panel, or use a table or an elided subtitle. Even in the side panel, a
+wrapped `Note` gets the height of a guessed, wider line and can lose its
+last line: give it the width it will have (`Note(..., width=...)`) and it
+sets its own minimum height (D49). Check a new page's geometry (each
+card's height against its `minimumSizeHint`, each table's columns against
+its viewport) as well as its pixels. `DataTable.balance_columns` never
+shrinks a column below its natural width; pin long text columns with
+`fix_column` so they elide.
 
 Qt WebEngine (the 3D surface, D32):
 - **Load order.** Import `QtWebEngineWidgets` before the `QApplication`

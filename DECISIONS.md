@@ -1178,3 +1178,91 @@ section, after Portfolio, on `services/valuation.py`. Calls made:
       trap.
 - **Not live yet:** real companies need `[sec] identity` (D47). The page
   and its tests run on a made-up filer in the store.
+
+## D49 — W7: the regime, checked; the Review page (2026-10-23)
+
+The owner's `REGIME.md` became rules the app checks at every review. The
+derivation (`models/regime.py`) was reviewed and approved before the code.
+Calls made:
+
+- **The checks** (`models/regime.py`):
+  - An estimated measure breaches when it's past its limit by more than
+    k standard errors, with k the owner's per rule (`by k SE`; k = 0 is
+    the estimate alone). Past the limit by less is *near*: shown, not
+    graded. On the boundary, noise breaches 1 − Φ(k) of reviews; the tests
+    check that by simulation.
+  - A correlation limit applies on Fisher's scale, so at k = 1.96 it
+    agrees with W2's interval exactly.
+  - Persistence (section 1) counts reviews in a row, one per day, and is
+    a delay, not a filter. Daily reviews of a two-year window share
+    499/500 of their data, so noise persists; k is what filters it.
+  - One day dominating a holding's variance: D = max r² / Σ r², flagged
+    above the 99.9% point of an iid t(3) null. The calibration
+    (`DOMINANCE_NULL`) is 100,000 runs per T on a grid from 60 to 2,500
+    days, seed 20261023; `calibrate_dominance()` reproduces it, and a test
+    reproduces its first row exactly. The Gaussian null (0.045 at T = 500)
+    is far too thin: SPY's own D over two years is 0.20.
+  - Gates: the HMM's filtered calm probability, whose history is never
+    smoothed or Viterbi (both look ahead), its odds αP^h, and GARCH's
+    closed-form average variance. A test checks the GARCH number against
+    a Monte Carlo run of the recursion.
+  - A reverse DCF with several roots is *ambiguous*, never chosen between.
+    A non-positive trailing CAGR makes "c × CAGR" no limit, so that check
+    reports no data.
+- **The rules' source.** The repository is public, so the filled-in copy
+  lives at `~/.quant_hub/REGIME.md` (`[regime] path`). The template stays
+  blank.
+  - `importers/regime_md.py` recognizes rows by their first column. An
+    unknown label is an error, so a renamed row can't silently turn its
+    rule off. Every unreadable value names its line.
+  - Each distinct text is stored once, by SHA-256, as a version, and a
+    review names the version it ran under.
+  - The template gained what parsing needed: units in section 7, the
+    `by k SE` convention, a grade line for sleeve sizes, the dominant-day
+    choice, and section 1's N.
+- **The review** (`services/review.py`), one TaskRunner job:
+  - **Positions.** The newest export in `[positions] folder`, by the date
+    inside each file. Files that aren't positions are named, not fatal.
+    Without a folder, the newest imported snapshot. The export before
+    drafts the journal's trade entries.
+  - **Settings.** Section 2's documented defaults apply (SPY, 730 days).
+    A blank cash rate or history source stops the run, naming the row.
+  - **The book.** `PortfolioService.analyse` gained `sleeves` (growth by
+    the owner's sleeves) and `exclude` (days dropped from every return
+    series), and returns its return frame.
+  - **Streams.** Each sleeve's own return is W3's excess over its value
+    share, plus cash. Stream β and the residual correlations (stream with
+    stream, stream with core) come from W2's OLS on the benchmark.
+  - **Section 8** re-runs the owner's newest saved valuation of each name
+    on today's filings and price. A name without one is reported, not
+    guessed: assumptions are the owner's to set.
+  - **Missing history.** It's fetched through the named source. The review
+    never connects a broker on the owner's behalf.
+  - **Cost.** Only measures some rule reads are computed.
+  - **No orders.** Trades are recorded, never sent (D12).
+- **Storage**, schema v6 after the backup: `regime_versions`, `reviews`
+  (immutable payloads; notes editable) and `trades`.
+- **The page** sits after Dashboard, as the plan's front door.
+  - The tiles, then the cards: checklist, thesis by stream, market state
+    with the calm probability's filtered history, one-day dominance, the
+    journal, and past reviews.
+  - The side panel holds the rules and folder, the owner's indicator tick
+    boxes, and the trade form.
+- **Layout at 1280 px:**
+  - The first checklist (six columns) overflowed its card:
+    `DataTable.balance_columns` never shrinks a column below its natural
+    width. It became four: a short name with its limit, what it's on, the
+    value, and a result that carries how far past it is in SE, and why
+    when there's no data. Long columns are pinned with `fix_column`.
+  - Wrapped notes in the side panel lost their last line, because the page
+    body ignores height-for-width. `Note` now takes its width and sets its
+    own minimum height. AGENTS.md records both.
+  - The content's minimum is 775 px in a 1,038 px viewport, and no card is
+    below its minimum height.
+- **Not yet:**
+  - The owner's values for sections 3–10. The review runs with whatever
+    is filled in.
+  - A live run on the owner's real book.
+  - Fetching the cash rate from FRED, which would be a new provider (for
+    discussion).
+  - Per-account rules: the All Accounts export can't tell accounts apart.

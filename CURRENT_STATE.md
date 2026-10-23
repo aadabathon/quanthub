@@ -919,3 +919,45 @@ pytest. Environment:
      - WORKSTATION_PLAN's W7 records what was settled along the way: the
        rules' source and parser, the positions folder, journal trade
        drafts, and the cash rate.
+   - **W7 landed (2026-10-23, D49)** after the owner approved the
+     derivation: the Review page, the workflow's front door.
+     - `models/regime.py`: the checks, with `data/regime.py` holding the
+       records (Rule, Limit, Measure, RuleSet). The dominance calibration
+       is a 100,000-run table that `calibrate_dominance()` reproduces.
+     - `importers/regime_md.py` reads REGIME.md. The template gained what
+       parsing needed: section 7's units, `by k SE`, the sleeve-size grade,
+       the dominant-day choice, and section 1's N. The owner's private copy
+       got the same changes, with their values kept.
+     - `storage/regime_store.py`, schema v6: rule versions by text hash,
+       immutable reviews with notes, hand-placed trades.
+     - `services/review.py` runs the chain: rules, the newest export,
+       history, risk, regressions and growth by the owner's sleeves,
+       one-day dominance, the gates, saved valuations re-run, the
+       checklist, section 1's persistence, and the journal.
+       `PortfolioService.analyse` gained `sleeves` and `exclude`.
+     - Settings: `[regime] path` (default `~/.quant_hub/REGIME.md`) and
+       `[positions] folder`.
+     - The Review page sits after Dashboard. `Note` gained a width so
+       wrapped side-panel notes keep their last line.
+     - Screenshots at 1280×800 and 1720×1040 with real fonts, on made-up
+       data: every table fits, the content's minimum is 775 px in a
+       1,038 px viewport, and no card is below its minimum.
+     - Tests, 71 new:
+       - `tests/test_regime.py` (26): the boundary rate 1 − Φ(k) and power
+         by simulation; Fisher agreement with W2; run lengths; one-day
+         dominance (closed form, null exceedance, the calibration row);
+         filtered gates; GARCH against Monte Carlo; implied growth;
+         rejections
+       - `tests/test_regime_md.py` (31): the template reads all-off; every
+         kind of row; every unreadable value names its line
+       - `tests/test_regime_store.py` (4), including the v5 → v6 migration
+       - `tests/test_review_service.py` (7), end to end on made-up tickers
+         with a planted jump
+       - 2 page smoke tests and a config test
+       - Full suite: 1,225 passed
+     - **Not yet:**
+       - The owner's values for sections 3–10. The review runs with
+         whatever is filled in.
+       - A live review of the real book (TWS open, `[positions] folder`
+         set).
+       - Fetching the cash rate from FRED, a new provider, for discussion.

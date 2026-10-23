@@ -490,7 +490,10 @@ Order W0 → W7, each approved before the next:
   made-up filer. Real companies need `[sec] identity`, and the page's
   default conventions are still the owner's call.
 - **W7. The regime:** versioned rule sets and the daily Review page with
-  its journal.
+  its journal. Landed 2026-10-23 (D49): the checks (evidence k,
+  persistence, one-day dominance, the gates) and the Review page as the
+  front door. It runs with whatever the owner has filled in; sections 3–10
+  are still the owner's to fill.
 
 Versions: W1–W3 → v1.1, W4–W6 → v1.2, W7 → v1.3.
 
