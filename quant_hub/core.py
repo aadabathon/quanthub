@@ -26,12 +26,14 @@ from quant_hub.services.market_service import MarketService
 from quant_hub.services.option_chains import ChainService
 from quant_hub.services.portfolio import PortfolioService
 from quant_hub.services.research import ResearchService
+from quant_hub.services.review import ReviewService
 from quant_hub.services.valuation import ValuationService
 from quant_hub.services.workstation import WorkstationService
 from quant_hub.storage.bar_store import BarStore
 from quant_hub.storage.chain_store import ChainStore
 from quant_hub.storage.fundamentals_store import FundamentalsStore
 from quant_hub.storage.position_store import PositionStore
+from quant_hub.storage.regime_store import RegimeStore
 from quant_hub.storage.research_store import ResearchStore
 from quant_hub.storage.schema import prepare_store
 from quant_hub.storage.state_store import ViewStateStore
@@ -60,6 +62,8 @@ class Core:
     fundamentals: FundamentalsService
     valuation_store: ValuationStore
     valuation: ValuationService
+    regime_store: RegimeStore
+    review: ReviewService
     tasks: TaskRunner
 
     def shutdown(self) -> None:
@@ -75,6 +79,7 @@ class Core:
             ("closing research store", self.research_store.close),
             ("closing fundamentals store", self.fundamentals_store.close),
             ("closing valuation store", self.valuation_store.close),
+            ("closing regime store", self.regime_store.close),
         ):
             try:
                 step()
@@ -162,14 +167,18 @@ def build_core(config: AppConfig | None = None) -> Core:
     fundamentals = FundamentalsService(fundamentals_store, config.sec_identity)
     # Saved valuations, immutable records in the same database (W6).
     valuation_store = ValuationStore(config.db_path)
+    valuation = ValuationService(fundamentals, market_service, valuation_store)
+    portfolio = PortfolioService(market_service, position_store)
+    # The regime's versions and the review journal, same database (W7).
+    regime_store = RegimeStore(config.db_path)
     return Core(
         config=config, bus=bus, broker=broker, store=store, state_store=state_store,
         market_service=market_service, chain_store=chain_store, chains=chains,
         workstation=WorkstationService(store), file_import=FileImportService(store),
-        position_store=position_store,
-        portfolio=PortfolioService(market_service, position_store), tasks=TaskRunner(),
+        position_store=position_store, portfolio=portfolio, tasks=TaskRunner(),
         research_store=research_store, research=ResearchService(market_service, research_store),
         fundamentals_store=fundamentals_store, fundamentals=fundamentals,
-        valuation_store=valuation_store,
-        valuation=ValuationService(fundamentals, market_service, valuation_store),
+        valuation_store=valuation_store, valuation=valuation, regime_store=regime_store,
+        review=ReviewService(portfolio, valuation, regime_store, config.regime_path,
+                             config.positions_folder),
     )

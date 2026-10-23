@@ -17,6 +17,12 @@ file is easy to find and edit. What a user can set (D34):
   to say who is asking, a name and an email (its fair-access policy). Only
   the Valuation page's company data needs it (W5, D47); empty, the page
   says how to set it.
+* ``[regime] path``: the owner's filled-in ``REGIME.md``, which the Review
+  page reads (W7). It defaults to ``~/.quant_hub/REGIME.md``, outside the
+  repository, because the repository is public.
+* ``[positions] folder``: where the owner saves broker exports. The review
+  reads the newest one there, by the date inside it (W7); unset, it uses
+  the newest snapshot imported on the Portfolio page.
 
 A bad file never stops the app. Each problem (a syntax error, an unknown
 section or key, a wrong type) is reported, and that setting keeps its
@@ -39,6 +45,10 @@ def _default_db_path() -> Path:
     """Per-user application data, outside the repository: acquired market
     data is a local asset, not source code."""
     return Path.home() / ".quant_hub" / "market_data.db"
+
+
+def _default_regime_path() -> Path:
+    return Path.home() / ".quant_hub" / "REGIME.md"
 
 
 def default_settings_path() -> Path:
@@ -73,6 +83,10 @@ class AppConfig:
 
     # The SEC's required User-Agent, "Name email@example.com" (D47).
     sec_identity: str = ""
+
+    # The owner's filled-in REGIME.md, and the folder of broker exports (W7).
+    regime_path: Path = field(default_factory=_default_regime_path)
+    positions_folder: Path | None = None
 
     default_symbol: str = "SPY"
 
@@ -109,6 +123,16 @@ client_id = 17
 # The SEC asks programs that download its filings to say who is asking:
 # your name and email. Needed only for the Valuation page's company data.
 # identity = "Your Name you@example.com"
+
+[regime]
+# Your filled-in REGIME.md, which the Review page checks. Keep it outside the
+# repository if the repository is public.
+path = "~/.quant_hub/REGIME.md"
+
+[positions]
+# The folder you save broker exports to. The review reads the newest one by
+# the date inside it; without a folder, it uses the newest imported snapshot.
+# folder = "~/Documents/exports"
 """
 
 
@@ -155,6 +179,8 @@ _SETTINGS = {
     "ibkr": {"enabled": ("ibkr_enabled", _boolean), "host": ("ibkr_host", _host),
              "port": ("ibkr_port", _port), "client_id": ("ibkr_client_id", _client_id)},
     "sec": {"identity": ("sec_identity", _identity)},
+    "regime": {"path": ("regime_path", _path)},
+    "positions": {"folder": ("positions_folder", _path)},
 }
 
 

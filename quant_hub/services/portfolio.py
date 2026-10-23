@@ -43,9 +43,9 @@ from __future__ import annotations
 
 import logging
 import math
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -161,6 +161,7 @@ class PortfolioView:
     growth: GrowthReport | None = None
     growth_note: str = ""               # why there is none
     book: BookGreeks | None = None      # when the book holds options
+    returns: pd.DataFrame | None = None  # the risk model's daily returns, benchmark included
 
     @property
     def equity(self) -> float:
@@ -189,8 +190,13 @@ class PortfolioService:
     def analyse(self, snapshot: PositionSnapshot, account: str | None, source: str,
                 benchmark: str, lookback_days: int, rate: float,
                 now: datetime | None = None, dimson_lags: int = 0,
-                factors: tuple[str, ...] = ()) -> PortfolioView:
-        """The risk of ``snapshot`` (one account, or all with ``None``)."""
+                factors: tuple[str, ...] = (), sleeves: Mapping[str, str] | None = None,
+                exclude: Sequence[date] = ()) -> PortfolioView:
+        """The risk of ``snapshot`` (one account, or all with ``None``).
+        ``sleeves`` names an underlying's sleeve for the growth report (W7;
+        an underlying it doesn't name is its own). ``exclude`` drops those
+        days from every return series, e.g. a day that dominates a
+        holding's variance (``models/regime.py``)."""
         now = now or datetime.now()
         start = now - timedelta(days=lookback_days)
         positions = snapshot.for_account(account)
@@ -247,6 +253,9 @@ class PortfolioService:
 
         modelled = sorted({*stocks, *(o.underlying for o in options)})
         returns = simple_returns({s: closes[s] for s in [*modelled, benchmark] if s in closes})
+        if exclude:
+            dropped = set(exclude)
+            returns = returns[[t.date() not in dropped for t in returns.index]]
         bench = returns[benchmark] if benchmark in returns.columns else None
         report = risk_report(Exposures(equity, stocks, tuple(options)), returns, bench, rate)
 
@@ -288,24 +297,26 @@ class PortfolioService:
                 regression_note = f"No regressions: {exc}."
         growth, growth_note = None, ""
         try:
-            growth = _growth(report, rate)
+            growth = _growth(report, rate, sleeves)
         except ValueError as exc:
             growth_note = f"No growth report: {exc}."
         return PortfolioView(snapshot, account, source, benchmark, basis, report, rows, cash,
                              tuple(left_out), unmodelled / equity, len(options),
                              regressions, regression_note, growth, growth_note,
-                             book_greeks(options) if options else None)
+                             book_greeks(options) if options else None, returns)
 
 
-def _growth(report: RiskReport, rate: float) -> GrowthReport:
+def _growth(report: RiskReport, rate: float,
+            names: Mapping[str, str] | None = None) -> GrowthReport:
     """The module docstring's growth report: each position's excess series,
-    grouped by underlying."""
+    grouped by underlying, or by the sleeve ``names`` gives an underlying."""
     equity = report.equity
     shares = report.position_value / equity
     excess = report.position_pnl / equity - shares * rate / TRADING_DAYS
     sleeves: dict[str, list[str]] = {}
     for position, underlying in report.position_underlying.items():
-        sleeves.setdefault(str(underlying), []).append(str(position))
+        sleeve = (names or {}).get(str(underlying), str(underlying))
+        sleeves.setdefault(sleeve, []).append(str(position))
     return growth_report(excess, rate, sleeves, values=shares.to_dict())
 
 

@@ -787,7 +787,8 @@ class Note(QFrame):
     """An inline explanation box: ``critical`` for a problem (why a quote is
     unavailable), ``info`` for a finding the reader should know about."""
 
-    def __init__(self, icon_name: str = "ph.warning", tone: str = "critical") -> None:
+    def __init__(self, icon_name: str = "ph.warning", tone: str = "critical",
+                 width: int | None = None) -> None:
         super().__init__()
         set_role(self, "note")
         self.setProperty("tone", tone)
@@ -800,6 +801,14 @@ class Note(QFrame):
         layout.addWidget(glyph, 0, Qt.AlignTop)
         self._text = label("", wrap=True)
         layout.addWidget(self._text, 1)
+        self._width = width
 
     def set_text(self, text: str) -> None:
         self._text.setText(text)
+        if self._width is not None:
+            # A page body ignores height-for-width (pages/base.py), so the
+            # wrapped text would get the height of a guessed, wider line. At
+            # a known width (a side panel), the note sets its own minimum.
+            self._text.ensurePolished()
+            room = self._width - 2 * SPACE_M - 16 - SPACE_S
+            self._text.setMinimumHeight(self._text.heightForWidth(room))

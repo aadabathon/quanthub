@@ -43,7 +43,8 @@ def qt_app(tmp_path):
         seed_store.insert_bars(InstrumentKey(symbol), "ibkr", "1 day", frame)
     seed_store.close()
 
-    app, window = create_app(AppConfig(db_path=db, default_symbol="BBB"), argv=["test"])
+    app, window = create_app(AppConfig(db_path=db, default_symbol="BBB",
+                                       regime_path=tmp_path / "REGIME.md"), argv=["test"])
     window.show()
     yield app, window
     _close(app, window)
@@ -68,7 +69,8 @@ def test_the_store_is_versioned_and_backed_up_before_the_stores_open(qt_app, tmp
 
 def test_ibkr_turned_off_leaves_no_controls_or_sources(tmp_path):
     # D34: someone who doesn't use IBKR sets enabled = false in settings.toml.
-    app, window = create_app(AppConfig(db_path=tmp_path / "s.db", ibkr_enabled=False),
+    app, window = create_app(AppConfig(db_path=tmp_path / "s.db", ibkr_enabled=False,
+                                       regime_path=tmp_path / "REGIME.md"),
                              argv=["test"])
     try:
         window.show()
@@ -225,7 +227,8 @@ def test_startup_and_first_visits_do_not_show_temporary_windows(tmp_path, monkey
     app.installEventFilter(observer)
     window = None
     try:
-        app, window = create_app(AppConfig(db_path=tmp_path / "startup.db", ibkr_enabled=False))
+        app, window = create_app(AppConfig(db_path=tmp_path / "startup.db", ibkr_enabled=False,
+                                       regime_path=tmp_path / "REGIME.md"))
         window.show()
         app.processEvents()
         assert window._active == "Dashboard"
@@ -1227,3 +1230,67 @@ def test_vol_lab_heavy_noise_still_renders(qt_app):
     wait_for(app, lambda: lab._fit is not first)
     assert lab._header._status.property("role") == "statusInfo"
     assert lab._table.rowCount() == len(lab._fit.slices)
+
+
+# -------------------------------------------------------------------- Review
+def _review(app, window, tmp_path):
+    """The Review page over made-up holdings: two stored exports (the later
+    one adds to BBB and buys CCC), two years of "file" bars ending today with
+    CCC's planted jump, and the review tests' rules at the fixture's path."""
+    from test_review_service import RULES, bars, export
+    core = window._core
+    bars(core.store, end=pd.Timestamp.today().normalize())
+    for name, day, holdings, cash in (
+            ("older.csv", "10/15/2026", {"AAA": 40, "BBB": 10}, 4000),
+            ("newer.csv", "10/22/2026", {"AAA": 40, "BBB": 20, "CCC": 10}, 3000)):
+        path = tmp_path / name
+        path.write_text(export(day, holdings, cash), encoding="utf-8")
+        core.portfolio.import_positions(path)
+    core.config.regime_path.write_text(RULES, encoding="utf-8")
+    page = window.show_page("Review")
+    wait_for(app, lambda: page._rules is not None, timeout_s=30)
+    return page
+
+
+def test_review_runs_the_checklist_and_keeps_the_journal(qt_app, tmp_path):
+    app, window = qt_app
+    page = _review(app, window, tmp_path)
+    assert page._version_note.isVisibleTo(page) and "Version 1" in page._version_note._text.text()
+    assert list(page._ticks) == ["credit calm"]
+    page._ticks["credit calm"].setChecked(True)
+    page._run()
+    wait_for(app, lambda: page._last is not None, timeout_s=90)
+    assert page._header._status.full_text().startswith(f"Review #{page._last.review_id}")
+    assert int(page._tiles["fail"].value_text()) >= 1                  # AAA over the 25% cap
+    assert page._checklist.rowCount() > 10
+    first = [page._checklist.item(0, c).text() for c in range(page._checklist.columnCount())]
+    assert first[3].startswith("fail")                                 # breaches first
+    assert page._streams.rowCount() == 2 and page._dominance.rowCount() == 1
+    assert page._dominance.item(0, 0).text() == "CCC"
+    assert page._dominance_card.subtitle.full_text().startswith("Graded without")
+    assert page._market.rowCount() == 3                                 # calm, volatility, indicator
+    assert [page._drafts.item(r, 0).text() for r in range(page._drafts.rowCount())] == ["BBB", "CCC"]
+    wait_for(app, lambda: page._history.rowCount() == 1, timeout_s=30)
+
+    page._draft_to_form(1)
+    assert (page._symbol.text(), page._quantity.text()) == ("CCC", "10")
+    page._reason.set_text("opened the second stream")
+    page._record_trade()
+    wait_for(app, lambda: page._trades.rowCount() == 1 and page._trades.item(0, 1) is not None
+             and page._trades.item(0, 1).text() == "CCC", timeout_s=30)
+    page._notes.setPlainText("first review")
+    page._save_notes()
+    wait_for(app, lambda: page._header._status.full_text() == "Notes saved.", timeout_s=30)
+    assert window._core.regime_store.review(page._last.review_id).notes == "first review"
+
+
+def test_review_names_an_unreadable_rules_line(qt_app, tmp_path):
+    from test_review_service import RULES
+    from test_regime_md import row
+    app, window = qt_app
+    window._core.config.regime_path.write_text(
+        RULES.replace(row("weight", "25", "fail"), row("weight", "25", "maybe")), encoding="utf-8")
+    page = window.show_page("Review")
+    wait_for(app, lambda: page._error_note.isVisibleTo(page), timeout_s=30)
+    assert "REGIME.md line" in page._error_note._text.text()
+    assert page._rules is None

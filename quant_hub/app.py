@@ -28,6 +28,7 @@ from quant_hub.gui.pages.markov_lab import MarkovLabPage
 from quant_hub.gui.pages.options_lab import OptionsLabPage
 from quant_hub.gui.pages.research import ResearchPage
 from quant_hub.gui.pages.portfolio import PortfolioPage
+from quant_hub.gui.pages.review import ReviewPage
 from quant_hub.gui.pages.simulator import SimulatorPage
 from quant_hub.gui.pages.valuation import ValuationPage
 from quant_hub.gui.pages.volatility_lab import VolatilityLabPage
@@ -56,10 +57,11 @@ def _sections(core: Core) -> PageSections:
         core.portfolio, core.market_service, core.tasks, core.state_store))
     valuation = ("Valuation", "ph.scales", lambda _shell: ValuationPage(
         core.valuation, core.portfolio, core.tasks, core.state_store))
+    review = ("Review", "ph.clipboard-text", lambda _shell: ReviewPage(core.review, core.tasks))
     research = ("Research", "ph.file-text", lambda _shell: ResearchPage(
         core.research, core.market_service, core.tasks, core.state_store))
     return [
-        (None, [dashboard, markets, portfolio, valuation, simulator, options]),
+        (None, [dashboard, review, markets, portfolio, valuation, simulator, options]),
         ("Research", [garch, vol_lab, kalman, markov, research]),
     ]
 

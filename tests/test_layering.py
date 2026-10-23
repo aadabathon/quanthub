@@ -55,7 +55,7 @@ RULES = {
             "quant_hub.broker.option_chain", "quant_hub.storage.bar_store",
             "quant_hub.storage.chain_store", "quant_hub.storage.position_store",
             "quant_hub.providers", "quant_hub.storage.fundamentals_store",
-            "quant_hub.storage.valuation_store"],
+            "quant_hub.storage.valuation_store", "quant_hub.storage.regime_store"],
 }
 
 QT_LIBRARIES = ("PySide6", "pyqtgraph", "qtawesome", "qtpy")
