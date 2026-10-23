@@ -232,6 +232,28 @@ account exists
   6. a checklist: pass, warn or fail, each with its number
   7. a journal entry: notes, and any trades you placed by hand
 - Decision support only. No orders.
+- Settled while filling in REGIME.md (2026-10-22):
+  - **The rules' source.** The filled-in copy is `~/.quant_hub/REGIME.md`,
+    beside `settings.toml`, because the repository is public. The
+    committed `REGIME.md` stays the blank template.
+  - **Reading it.** `importers/regime_md.py` reads the file. A changed
+    file (by hash) is stored as a new version with its reason. A value
+    it can't read stops the review and names the line.
+  - **Step 1, newest positions.** The newest export in a positions folder,
+    which is a setting: the folder the owner already exports to. "Newest"
+    means the as-of date printed inside the file, so file names don't
+    matter.
+  - **The journal's trade drafts.** Consecutive snapshots are compared,
+    and each symbol whose quantity changed becomes a draft "after a
+    trade" entry for the owner to complete.
+  - **The cash rate** is entered by hand: the 3-month Treasury yield.
+    Fetching it from FRED would be a new provider, for discussion first.
+- **The checks' derivation** is in `models/regime.py`, for review before
+  any code:
+  - evidence levels for estimated measures
+  - persistence as a delay
+  - a flag when one day dominates a holding's variance
+  - the market-state gates
 
 **Order**
 - W0 comes first because everything runs on your real holdings.

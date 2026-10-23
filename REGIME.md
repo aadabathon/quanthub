@@ -6,9 +6,10 @@ Until then it's the spec that W2–W6 are built to answer.
 
 - **The values are yours.** The app measures and reports against them. It
   doesn't choose them, and nothing here recommends a number.
-- **Keep your copy private if you like.** If this repository is or may
-  become public, keep the filled-in copy at `personal/REGIME.md`
-  (gitignored) and leave this file as the blank template.
+- **Keep your filled-in copy private.** The repository is public, so the
+  filled-in copy lives at `~/.quant_hub/REGIME.md`, beside
+  `settings.toml`, and W7 reads it from there. This file stays the blank
+  template.
 - **"Measured by"** names the number the app compares against. A tag says
   when it exists: *today* (v1.0), or the milestone that adds it (W2, W3,
   W6, W7).
@@ -38,9 +39,9 @@ the W2 residual correlation rises, …): ___
 | Positions refresh | ___ | Fidelity is a manual CSV download; how often you'll export |
 | History source | ___ | `ibkr` (needs TWS open for windows ending today) or `file` (CSV imports) |
 | Benchmark (the core's yardstick) | ___ | Portfolio page *Benchmark*; SPY by default |
-| Cash rate | ___ % | Portfolio page *Rate %*; used for excess returns and option pricing |
+| Cash rate | ___ % | Portfolio page *Rate %*; used for excess returns, the hurdle and option pricing. Usually the 3-month Treasury yield (FRED `DGS3MO`) |
 | Lookback for risk numbers | ___ calendar days | Portfolio page *Lookback*; 730 by default, at least 120 |
-| Regression window | ___ years | W2. Longer means smaller standard errors, slower to notice change |
+| Regression window | ___ | W2 fits over the lookback; rolling β uses 126 trading days. Longer means smaller standard errors, slower to notice change |
 
 ## 3. Sleeves
 
@@ -112,7 +113,7 @@ another symbol you name) each review.
 | Max terminal share of EV | ≤ ___ % | PV(terminal) / EV (W6) | ___ |
 | Implied growth vs history | ≤ ___ × trailing revenue CAGR | Reverse DCF, every root shown (W6) | ___ |
 | Missing filing fields allowed | ___ | The loud-failure list: missing fields named, never filled in (W5) | ___ |
-| Valuation refresh | ___ | After each 10-K / 10-Q (W5 notices newer filings) | — |
+| Valuation refresh | ___ | W5 refetches filings after a day or on Refresh; a saved valuation's fingerprint says when its filings changed | — |
 
 ## 9. Routine
 

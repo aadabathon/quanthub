@@ -898,3 +898,24 @@ pytest. Environment:
      - **Not live yet:** real companies need the owner's `[sec]
        identity`. Also open: which conventions become the page's
        defaults.
+   - **W7 started (2026-10-22): REGIME.md and the checks' derivation.**
+     - The owner is filling in REGIME.md, section by section. Sections 1
+       and 2 are done; sections 3–10 are open. The filled-in copy lives at
+       `~/.quant_hub/REGIME.md`, outside the public repository. The
+       template's stale lines were corrected (where the copy lives, the
+       regression window, the cash rate, valuation refresh).
+     - W2 ran on the owner's real holdings for the first time, on a copy
+       of the store with history fetched through TWS. One holding's
+       variance came almost entirely from a single news day. That led to
+       the one-day-dominance flag in the derivation.
+     - **W7 derivation written for review** (`models/regime.py`, docstring
+       only). It covers:
+       - breaches at an evidence level k, with the noise rate 1 − Φ(k) at
+         the boundary
+       - persistence as a delay, not a filter
+       - the one-day-dominance flag, calibrated on a t(3) null
+       - the filtered HMM and GARCH gates
+       - the screen checks
+     - WORKSTATION_PLAN's W7 records what was settled along the way: the
+       rules' source and parser, the positions folder, journal trade
+       drafts, and the cash rate.
