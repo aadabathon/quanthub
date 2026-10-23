@@ -25,6 +25,9 @@ broker/         Infrastructure. The ONLY package allowed to import ibapi.
 importers/      File readers (CSV bars and positions): files into data/ types with
                 pandas + stdlib. No other layer; services store what they
                 read, and the GUI reaches them only through services.
+providers/      Online providers (the SEC's companyfacts): fetches into data/
+                types with the stdlib only. No other layer; services cache
+                and store what they fetch (D47).
 storage/        SQLite persistence (stdlib sqlite3). Knows data/ only —
                 no broker, no GUI, no services.
 visualization/  Matplotlib figures for scripts and notebooks. Never GUI.
@@ -89,8 +92,8 @@ quant_hub/
 │                              dashboard.py, markets.py, garch_lab.py,
 │                              simulator.py, options_lab/ (page, underlying,
 │                              pricer, strategy, monte_carlo), volatility_lab.py,
-│                              kalman_lab.py, markov_lab.py,
-│                              research/ (page, history, library)
+│                              kalman_lab.py, markov_lab.py, valuation.py,
+│                              review.py, research/ (page, history, library)
 ├── config.py                  AppConfig
 ├── events.py                  EventBus (thread-safe), LogEvent, log handler
 ├── broker/
@@ -109,6 +112,11 @@ quant_hub/
 │   ├── sources.py             DataSource + BarSource protocols, SyntheticSource
 │   ├── bars.py                canonical OHLCV validation for ACQUIRED data
 │   │                          (structural raise vs row-drop + report)
+│   ├── fundamentals.py        YearData/FinancialHistory: a filer's statements
+│   │                          with provenance and null reasons (the loud-
+│   │                          failure contract); FundamentalsSource (D46)
+│   ├── regime.py              Rule/Limit/Measure, Grade/Effect, RuleSet: the
+│   │                          owner's REGIME.md as data (W7, D49)
 │   ├── positions.py           Position/OptionContract/PositionSnapshot: what an
 │   │                          account holds, broker-agnostic (D39);
 │   │                          combine_snapshots: one export per account, one
@@ -134,6 +142,14 @@ quant_hub/
 │   │                          (MinimizeResult); callers reparameterize
 │   ├── garch.py               stationary GARCH(1,1): simulation, Gaussian
 │   │                          QMLE fit, conditional variance diagnostics
+│   ├── regime.py              the review's checks: evidence-level breaches,
+│   │                          Fisher-scale correlation limits, persistence,
+│   │                          one-day dominance (t(3)-calibrated), the HMM and
+│   │                          GARCH gates, implied growth (W7, D49)
+│   ├── dcf.py                 unlevered-FCF DCF (the owner's, ported):
+│   │                          projection, terminal conventions, valuation
+│   │                          date, sensitivity, multiples, margin of safety,
+│   │                          reverse DCF with every root, seeding (D46)
 │   ├── black_scholes.py       Black-Scholes-Merton (dividend yield q):
 │   │                          MarketInputs, vectorized price/Greeks (D25
 │   │                          scaling), no-arbitrage bounds, bracketed-Newton IV
@@ -160,6 +176,14 @@ quant_hub/
 │   │                          beta, historical (options repriced) and
 │   │                          Gaussian VaR/ES, drawdown of today's mix,
 │   │                          N_eff, Kelly with its error (D39)
+│   ├── growth.py              growth from the replay's per-position series:
+│   │                          exact attribution, hurdles and verdicts,
+│   │                          min-variance and growth-optimal sleeve sizes
+│   │                          with errors, what-if, book greeks (W3, D45)
+│   ├── regression.py          OLS of daily excess returns: classical, White
+│   │                          and Newey–West errors, Dimson sum beta, causal
+│   │                          rolling fits, Fisher-z residual correlations
+│   │                          (W2, D44)
 │   ├── strategies.py          six causal daily rules, rolling fits and
 │   │                          capped portfolio risk sizing (D42)
 │   ├── research_worlds.py     seeded null, trend and reversion controls
@@ -177,10 +201,20 @@ quant_hub/
 │   ├── option_chains.py       ChainService: chains by named source, every
 │   │                          live fetch saved; "stored" = latest snapshot
 │   ├── portfolio.py           PortfolioService: positions imports kept,
-│   │                          holdings valued, options priced, risk run;
-│   │                          gaps named; the example portfolio
+│   │                          holdings valued, options priced, risk run,
+│   │                          regressions on the benchmark (D44), growth
+│   │                          and book greeks (D45); gaps
+│   │                          named; the example portfolio
 │   ├── research.py            exact experiment snapshots/replay, matched
 │   │                          tests, sweep manifests and paper imports (D42)
+│   ├── review.py              the daily review: rules → newest export →
+│   │                          risk/regressions/growth → gates → valuations →
+│   │                          checklist → journal; trade drafts (W7, D49)
+│   ├── valuation.py           the Valuation page's data: companies, prices
+│   │                          (quote else last close), the screen ranked
+│   │                          cheapest first, saved records, CSV (D48)
+│   ├── fundamentals.py        ticker/CIK → FinancialHistory: SEC facts kept a
+│   │                          day, refetched on demand, mapped offline (D47)
 │   ├── file_import.py         CSV bars validated into the store under
 │   │                          "file" (all or nothing per file); FileSource
 │   │                          serves them; FileImportService for the GUI
@@ -193,6 +227,19 @@ quant_hub/
 │                              presets (Portfolio Positions; Positions view,
 │                              no account column, D43), option symbols parsed
 │                              (D39)
+├── importers/regime_md.py     REGIME.md → RuleSet: rows by their label, blanks
+│                              off, "by k SE", every bad value names its line
+│                              (W7, D49)
+├── providers/sec_edgar.py     SEC companyfacts through the stdlib: the client
+│                              (identity, gzip, 10/s, typed errors), facts as
+│                              filed, and the mapping to FinancialHistory (D47)
+├── storage/regime_store.py    regime versions (by text hash), immutable
+│                              reviews with notes, hand-placed trades
+│                              (schema v6, D49)
+├── storage/valuation_store.py  saved valuations, immutable records with a
+│                              filing-data fingerprint (schema v5, D48)
+├── storage/fundamentals_store.py  SEC facts as filed, filers, the ticker map
+│                              (schema v4, D47)
 ├── storage/position_store.py  imported position snapshots, kept (D39)
 ├── storage/research_store.py  immutable research payloads, mutable notes
 │                              and paper metadata; local PDF copies (D42)
@@ -255,7 +302,15 @@ Kalman Lab = local level / local linear trend on log prices: synthetic or source
 Markov Lab = hidden volatility regimes in returns (Gaussian HMM, BIC over 1–3):
              synthetic worlds or source history
 Portfolio  = imported positions (or the example): risk first: VaR/ES, risk
-             contributions, beta, the replayed drawdown, Kelly with its error
+             contributions, beta, the replayed drawdown, Kelly with its error;
+             then growth by sleeve with hedge sizes and the options book
+             (D45), α/β regressions, rolling β and residual links (D44)
+Valuation  = a DCF from SEC filings (the owner's modeler): seeded assumptions,
+             EV bridge, projection, WACC × g grid, reverse DCF with every
+             root, a screen, saved valuations (D46–D48)
+Review     = the front door (after Dashboard): the owner's REGIME.md checked
+             against the newest export: checklist, thesis by stream, gates,
+             one-day dominance, journal and trades (W7, D49)
 RESEARCH…  = GARCH Lab, Vol Lab, Kalman Lab, Markov Lab, Research
 ```
 

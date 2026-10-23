@@ -43,7 +43,8 @@ def qt_app(tmp_path):
         seed_store.insert_bars(InstrumentKey(symbol), "ibkr", "1 day", frame)
     seed_store.close()
 
-    app, window = create_app(AppConfig(db_path=db, default_symbol="BBB"), argv=["test"])
+    app, window = create_app(AppConfig(db_path=db, default_symbol="BBB",
+                                       regime_path=tmp_path / "REGIME.md"), argv=["test"])
     window.show()
     yield app, window
     _close(app, window)
@@ -68,7 +69,8 @@ def test_the_store_is_versioned_and_backed_up_before_the_stores_open(qt_app, tmp
 
 def test_ibkr_turned_off_leaves_no_controls_or_sources(tmp_path):
     # D34: someone who doesn't use IBKR sets enabled = false in settings.toml.
-    app, window = create_app(AppConfig(db_path=tmp_path / "s.db", ibkr_enabled=False),
+    app, window = create_app(AppConfig(db_path=tmp_path / "s.db", ibkr_enabled=False,
+                                       regime_path=tmp_path / "REGIME.md"),
                              argv=["test"])
     try:
         window.show()
@@ -225,7 +227,8 @@ def test_startup_and_first_visits_do_not_show_temporary_windows(tmp_path, monkey
     app.installEventFilter(observer)
     window = None
     try:
-        app, window = create_app(AppConfig(db_path=tmp_path / "startup.db", ibkr_enabled=False))
+        app, window = create_app(AppConfig(db_path=tmp_path / "startup.db", ibkr_enabled=False,
+                                       regime_path=tmp_path / "REGIME.md"))
         window.show()
         app.processEvents()
         assert window._active == "Dashboard"
@@ -496,6 +499,75 @@ def test_portfolio_shows_the_example_before_any_import(qt_app):
     assert shares == sorted(shares, reverse=True)                   # led by risk
 
 
+def test_portfolio_regressions_rolling_beta_and_links(qt_app):
+    app, window = qt_app
+    page = _portfolio(app, window, lags="Off")
+    reg = page._view.regressions
+    assert reg is not None and reg.dimson_lags == 0
+    table = page._regress_table
+    assert table.rowCount() == len(reg.fits)
+    assert table.item(table.rowCount() - 1, 0).text() == "Portfolio"
+    assert table.columnCount() == 5                                  # fits at 1280 px
+    assert not page._exposure_table.isVisibleTo(page)                # no factors, no lag
+    assert page._rolling_stack.currentWidget() is page._rolling      # the portfolio's
+    page._on_regression_row(0)
+    assert page._rolling_key == page._regression_keys[0]
+    n = len(page._view.report.symbols)
+    assert page._links.rowCount() == n * (n - 1) // 2
+    page._lags.select.set_current("1 day")
+    wait_for(app, lambda: page._view.regressions.dimson_lags == 1, timeout_s=30)
+    others = page._exposure_table
+    assert others.isVisibleTo(page) and others.horizontalHeaderItem(1).text() == "Lag β"
+    assert others.item(0, 1).text() != "—"
+    assert page._rolling_key == page._regression_keys[0]             # the choice is kept
+
+
+def test_portfolio_growth_sleeves_and_what_if(qt_app):
+    app, window = qt_app
+    page = _portfolio(app, window)
+    growth = page._view.growth
+    assert growth is not None
+    assert page._sleeves.rowCount() == len(growth.sleeves)
+    assert page._growth_tiles["growth"].value_text().endswith("%")
+    assert not page._book_card.isVisibleTo(page)                     # the example holds no options
+    page._on_sleeve_row(1)
+    assert page._what_sleeve.current() == page._sleeve_names[1]
+    assert "today's size" in page._what_result.text()
+    page._what_scale.set_text("lots")
+    page._what_scale.committed.emit()
+    assert "must be a number" in page._what_result.text()
+
+
+def test_portfolio_options_book_appears_with_options(qt_app, tmp_path):
+    app, window = qt_app
+    page = _portfolio(app, window)
+    path = tmp_path / "book.csv"
+    path.write_text("symbol,quantity,price,account\nSPY,10,500,Brokerage\n"
+                    "-SPY271217P450,2,12.50,Brokerage\n", encoding="utf-8")
+    page.import_file(path)
+    wait_for(app, lambda: page._view.snapshot.name == "book.csv", timeout_s=30)
+    assert page._book_card.isVisibleTo(page)
+    assert page._view.book.contracts == 1 and page._view.book.delta < 0
+    assert page._book_tiles["carry"].value_text().endswith("%")
+
+
+def test_portfolio_extra_factors_add_beta_columns(qt_app):
+    app, window = qt_app
+    page = _portfolio(app, window, lags="Off")
+    table = page._regress_table
+    page._factors.set_text("tlt, gld")
+    page._factors.committed.emit()
+    wait_for(app, lambda: page._view.regressions.factors == ("TLT", "GLD"), timeout_s=30)
+    assert table.horizontalHeaderItem(2).text() == "β SPY"
+    others = page._exposure_table
+    assert [others.horizontalHeaderItem(c).text() for c in range(others.columnCount())] == [
+        "Holding", "β TLT", "β GLD"]                                 # lag off: no lag column
+    assert others.rowCount() == table.rowCount()
+    page._factors.set_text("QQQ TLT GLD IWM")
+    page._factors.committed.emit()
+    assert "at most 3" in page._header._status.full_text()
+
+
 def test_portfolio_imports_a_fidelity_file_and_splits_accounts(qt_app, tmp_path):
     from test_positions_csv import FIDELITY
     app, window = qt_app
@@ -525,6 +597,79 @@ def test_portfolio_imports_one_export_per_account_together(qt_app, tmp_path):
     assert "in 2 accounts" in page._header._status.full_text()
     page._accounts.select.set_current("ROTH IRA")
     wait_for(app, lambda: page._view.account == "ROTH IRA", timeout_s=30)
+
+
+# ----------------------------------------------------------------- Valuation
+def _valuation(app, window, **state):
+    """The Valuation page over a stored filer (no SEC identity in tests, so the
+    store serves): the made-up DEMO filings, ten shares."""
+    from datetime import datetime
+    from test_sec_edgar import companyfacts, flow
+    from quant_hub.providers.sec_edgar import facts_from_companyfacts
+    core = window._core
+    now = datetime.now()
+    shares = {"WeightedAverageNumberOfDilutedSharesOutstanding": {"shares": [
+        flow(2025, 10.0, "A25")]}}
+    core.fundamentals_store.save_tickers({"DEMO": (1234, "DEMO Corp")}, now)
+    core.fundamentals_store.save_facts(1234, "DEMO Corp",
+                                       facts_from_companyfacts(companyfacts(**shares)), now)
+    core.state_store.save("valuation", {"price_source": "synthetic", **state})
+    page = window.show_page("Valuation")
+    page._identifier.set_text("DEMO")
+    page._load(False)
+    wait_for(app, lambda: page._result is not None, timeout_s=30)
+    return page
+
+
+def test_valuation_loads_values_prices_saves_and_reopens(qt_app):
+    app, window = qt_app
+    page = _valuation(app, window)
+    assert page._identity_note.isVisibleTo(page)                      # no identity here
+    assert page._tiles["value"].value_text().startswith("$")
+    assert page._filings.rowCount() == 6                               # five years + trailing
+    assert page._projection.rowCount() == 6                            # five years + terminal
+    assert page._fields["growth"].text() == "5.7"                      # seeded: the CAGR
+    page._get_price()
+    wait_for(app, lambda: page._tiles["margin"].value_text() != "—", timeout_s=30)
+    assert page._price.text() and "synthetic" in page._price_caption.text()
+    assert page._implied.rowCount() == 2
+    assert page._implied.item(0, 0).text() == "Flat revenue growth"
+    assert page._sources.isVisibleTo(page)                             # provenance, side panel
+    page._save()
+    wait_for(app, lambda: page._saved.rowCount() == 1 and page._saved_ids, timeout_s=30)
+    page._fields["growth"].set_text("1")
+    page._reopen(0)
+    wait_for(app, lambda: page._saved_note.isVisibleTo(page), timeout_s=30)
+    assert "unchanged" in page._saved_note._text.text()
+    assert page._fields["growth"].text() == "5.7"                      # the saved assumption
+
+
+def test_valuation_per_year_paths_overrides_and_bad_input(qt_app):
+    app, window = qt_app
+    page = _valuation(app, window)
+    page._fields["growth"].set_text("10, 8, 6, 4, 2")
+    page._recompute()
+    assert page._assumed.revenue_growth == pytest.approx([0.10, 0.08, 0.06, 0.04, 0.02])
+    before = page._result.value_per_share
+    page._fields["net_debt"].set_text("0")
+    page._recompute()
+    assert page._result.value_per_share > before                       # net debt was 130
+    page._fields["growth"].set_text("10 8")
+    page._recompute()
+    assert "2 values for 5 years" in page._header._status.full_text()
+
+
+def test_valuation_screen_and_export(qt_app, tmp_path):
+    app, window = qt_app
+    page = _valuation(app, window)
+    page._screen_list.set_text("DEMO NOPE")
+    page._run_screen()
+    wait_for(app, lambda: page._screen.rowCount() == 2, timeout_s=30)
+    assert page._screen.item(0, 0).text() == "DEMO"
+    path = tmp_path / "screen.csv"
+    page.export_screen(path)
+    wait_for(app, lambda: path.exists(), timeout_s=30)
+    assert path.read_text(encoding="utf-8").splitlines()[0].startswith("ticker,company")
 
 # ------------------------------------------------------------------- Markets
 
@@ -1085,3 +1230,67 @@ def test_vol_lab_heavy_noise_still_renders(qt_app):
     wait_for(app, lambda: lab._fit is not first)
     assert lab._header._status.property("role") == "statusInfo"
     assert lab._table.rowCount() == len(lab._fit.slices)
+
+
+# -------------------------------------------------------------------- Review
+def _review(app, window, tmp_path):
+    """The Review page over made-up holdings: two stored exports (the later
+    one adds to BBB and buys CCC), two years of "file" bars ending today with
+    CCC's planted jump, and the review tests' rules at the fixture's path."""
+    from test_review_service import RULES, bars, export
+    core = window._core
+    bars(core.store, end=pd.Timestamp.today().normalize())
+    for name, day, holdings, cash in (
+            ("older.csv", "10/15/2026", {"AAA": 40, "BBB": 10}, 4000),
+            ("newer.csv", "10/22/2026", {"AAA": 40, "BBB": 20, "CCC": 10}, 3000)):
+        path = tmp_path / name
+        path.write_text(export(day, holdings, cash), encoding="utf-8")
+        core.portfolio.import_positions(path)
+    core.config.regime_path.write_text(RULES, encoding="utf-8")
+    page = window.show_page("Review")
+    wait_for(app, lambda: page._rules is not None, timeout_s=30)
+    return page
+
+
+def test_review_runs_the_checklist_and_keeps_the_journal(qt_app, tmp_path):
+    app, window = qt_app
+    page = _review(app, window, tmp_path)
+    assert page._version_note.isVisibleTo(page) and "Version 1" in page._version_note._text.text()
+    assert list(page._ticks) == ["credit calm"]
+    page._ticks["credit calm"].setChecked(True)
+    page._run()
+    wait_for(app, lambda: page._last is not None, timeout_s=90)
+    assert page._header._status.full_text().startswith(f"Review #{page._last.review_id}")
+    assert int(page._tiles["fail"].value_text()) >= 1                  # AAA over the 25% cap
+    assert page._checklist.rowCount() > 10
+    first = [page._checklist.item(0, c).text() for c in range(page._checklist.columnCount())]
+    assert first[3].startswith("fail")                                 # breaches first
+    assert page._streams.rowCount() == 2 and page._dominance.rowCount() == 1
+    assert page._dominance.item(0, 0).text() == "CCC"
+    assert page._dominance_card.subtitle.full_text().startswith("Graded without")
+    assert page._market.rowCount() == 3                                 # calm, volatility, indicator
+    assert [page._drafts.item(r, 0).text() for r in range(page._drafts.rowCount())] == ["BBB", "CCC"]
+    wait_for(app, lambda: page._history.rowCount() == 1, timeout_s=30)
+
+    page._draft_to_form(1)
+    assert (page._symbol.text(), page._quantity.text()) == ("CCC", "10")
+    page._reason.set_text("opened the second stream")
+    page._record_trade()
+    wait_for(app, lambda: page._trades.rowCount() == 1 and page._trades.item(0, 1) is not None
+             and page._trades.item(0, 1).text() == "CCC", timeout_s=30)
+    page._notes.setPlainText("first review")
+    page._save_notes()
+    wait_for(app, lambda: page._header._status.full_text() == "Notes saved.", timeout_s=30)
+    assert window._core.regime_store.review(page._last.review_id).notes == "first review"
+
+
+def test_review_names_an_unreadable_rules_line(qt_app, tmp_path):
+    from test_review_service import RULES
+    from test_regime_md import row
+    app, window = qt_app
+    window._core.config.regime_path.write_text(
+        RULES.replace(row("weight", "25", "fail"), row("weight", "25", "maybe")), encoding="utf-8")
+    page = window.show_page("Review")
+    wait_for(app, lambda: page._error_note.isVisibleTo(page), timeout_s=30)
+    assert "REGIME.md line" in page._error_note._text.text()
+    assert page._rules is None

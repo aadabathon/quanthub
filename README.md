@@ -111,7 +111,9 @@ CURRENT_STATE.md (done / untested).
 
 The first run writes `~/.quant_hub/settings.toml`, a commented file of the
 defaults. Edit it and restart. It sets where the market-data store lives,
-and whether and how to reach Interactive Brokers. Don't use IBKR? Set
+whether and how to reach Interactive Brokers, your SEC identity
+(Valuation), and where the Review page finds your `REGIME.md` and your
+exports. Don't use IBKR? Set
 `enabled = false` under `[ibkr]`, and its controls and sources disappear.
 The app is complete on synthetic data without it. A mistake in the file
 never stops the app: it's reported in the log, and that setting keeps its
@@ -156,6 +158,19 @@ and shows its risk.
 - **Holdings table:** each holding's share of the value beside its share of
   the risk, sorted by risk.
 - **Sizing:** Kelly leverage, shown with its standard error.
+- **Growth:** today's mix's growth rate, CAGR and vol drag, from the
+  replay with options repriced in full.
+  - Each sleeve's contribution and verdict: adds, oversized, undersized
+    or costs.
+  - Its minimum-variance size (the hedge ratio, well estimated) and its
+    growth-optimal size (shown with its much larger error).
+  - A read-only what-if, and the options book's greeks and annual carry.
+- **Regressions:** each holding's and the portfolio's α and β on the
+  benchmark, and on up to three extra factor ETFs, with Newey–West errors
+  (optionally the Dimson sum β for stale prices); a rolling β for any row;
+  and the residual links between
+  holdings, strongest first, answering whether the streams are
+  orthogonal.
 
 Fidelity's downloads are read as they are:
 - the Portfolio Positions download, one account per row
@@ -178,6 +193,84 @@ CASH,1250,,,Brokerage
 - Options are `ROOT YYMMDD C|P STRIKE`, contracts negative when short.
 - Imports are kept as dated snapshots.
 - Before any import, the page shows a $100,000 example portfolio.
+
+## Valuation
+
+A discounted cash flow from a company's SEC filings: the owner's DCF
+modeler, inside the app.
+
+- **Company:** type a ticker or CIK. Its 10-K facts come from the SEC's free
+  companyfacts API and are kept in the local store; Refresh refetches.
+  Every gap in the filings is named with its reason, never filled in.
+- **Assumptions:** seeded from the company's own trailing averages, and
+  editable as one number for every year, or one per year
+  (`12, 10, 8, 6, 5`).
+  - The conventions are choices: the terminal cash flow (the original's
+    last-year, or steady-state), value as of the year end or today, and
+    netting marketable securities.
+- **Result:** value per share, the EV bridge with the terminal value's share
+  of it, the projection, a WACC × terminal-growth grid, and what the price
+  implies: every growth rate and WACC that gives it, and whether there can
+  be only one.
+- **Price:** from a source (its quote, else its last close) or typed, for the
+  margin of safety.
+- **Screen:** your holdings or a list of tickers, each seeded from its own
+  filings, ranked cheapest first, exported as CSV.
+- **Saved valuations:** immutable records. Reopening one says whether the
+  filings have changed since.
+
+The SEC asks every program that downloads its filings to say who is asking,
+so add your name and email to `settings.toml`:
+
+```toml
+[sec]
+identity = "Your Name you@example.com"
+```
+
+Filings already in the store work without it. An unlevered DCF is the
+wrong model for banks, insurers and REITs. IFRS filers aren't mapped yet.
+
+## Review
+
+Your trading regime, written down in `REGIME.md` and checked against your
+book every time you press **Run review**. It's decision support only: it
+records trades you place by hand and never places one.
+
+1. Copy the repository's `REGIME.md` to `~/.quant_hub/REGIME.md` and fill in
+   the `___` values. Keep the filled-in copy out of the repository. A blank
+   leaves its rule off, so start with a few rules.
+2. Optionally, point the review at the folder you save broker exports to.
+   It reads the newest one by the date printed inside it:
+
+   ```toml
+   [positions]
+   folder = "~/Documents/exports"
+   ```
+
+   Without a folder, it uses the newest snapshot imported on the Portfolio
+   page.
+3. Press **Run review**. It does the following:
+   - reads your rules, storing each new version of the file
+   - loads the positions and their history
+   - runs the risk, regressions and growth by your sleeves
+   - fits the market-state gates on the benchmark
+   - re-runs your saved valuations on today's filings and price
+   - grades every rule
+
+What the page shows:
+- **Checklist:** every rule over what it governs, breaches first. A rule
+  that reads an estimate shows how many standard errors past its limit it
+  is. With `by k SE` in its value, it breaches only beyond k.
+- **Thesis by stream:** section 1's tests (growth hurdle, orthogonality,
+  beta creep), and how many reviews in a row each stream has failed.
+- **Market state:** the calm regime's filtered probability, its odds ahead,
+  and the volatility forecast.
+- **One day dominating:** a holding whose variance is mostly one day's,
+  such as a takeover or approval jump. Section 4 says whether the checks
+  read the numbers with that day or without it.
+- **Journal:** trades drafted from the change since the export before,
+  notes, and trades you record by hand. Every review is kept whole, with
+  the rules it ran under.
 
 ## Research workspace
 

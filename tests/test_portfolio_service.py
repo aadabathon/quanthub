@@ -4,6 +4,7 @@ valued and risked, gaps named rather than hidden."""
 import io
 from datetime import date, datetime
 
+import numpy as np
 import pytest
 
 from quant_hub.data.positions import Holding, OptionContract, Position, PositionSnapshot
@@ -126,6 +127,112 @@ class TestAnalyse:
         both = service.analyse(snap, None, "synthetic", "SPY", 730, 0.04, now=NOW)
         roth = service.analyse(snap, "ROTH IRA", "synthetic", "SPY", 730, 0.04, now=NOW)
         assert both.equity == pytest.approx(2 * roth.equity)           # identical made-up files
+
+
+class TestRegressions:
+    def test_holdings_and_the_portfolio_on_the_benchmark(self, service):
+        from quant_hub.services.portfolio import PORTFOLIO_ROW
+        snap = snapshot(equity("AAA", 100, 50.0), equity("BBB", 200, 25.0),
+                        Position("CASH", Holding.CASH, 5_000.0, "Brokerage", value=5_000.0))
+        view = service.analyse(snap, None, "synthetic", "SPY", 730, 0.04, now=NOW)
+        reg = view.regressions
+        assert reg is not None and view.regression_note == ""
+        assert list(reg.fits) == [*view.report.symbols, PORTFOLIO_ROW]
+        # Stocks only: the portfolio's coefficients are the weighted holdings'.
+        w = dict(zip(view.report.symbols, view.report.weights))
+        for i in range(2):
+            assert reg.fits[PORTFOLIO_ROW].coef[i] == pytest.approx(
+                sum(w[s] * reg.fits[s].coef[i] for s in w), abs=1e-12)
+        beta, error = reg.beta(PORTFOLIO_ROW)
+        assert beta == pytest.approx(view.report.beta, abs=1e-9) and error > 0
+        assert set(reg.rolling) == set(reg.fits) and list(reg.rolling["AAA"].columns) == ["beta", "se"]
+        assert list(reg.correlation.columns) == list(view.report.symbols)
+        assert reg.lag_beta("AAA") is None
+
+    def test_the_benchmark_held_has_no_residual_links(self, service):
+        snap = snapshot(equity("SPY", 10, 500.0), equity("AAA", 100, 50.0),
+                        equity("BBB", 200, 25.0))
+        reg = service.analyse(snap, None, "synthetic", "SPY", 730, 0.04, now=NOW).regressions
+        assert reg.fits["SPY"].r2 == pytest.approx(1.0)
+        assert reg.correlation.loc["SPY"].isna().all()
+        assert np.isfinite(reg.correlation.loc["AAA", "BBB"])
+
+    def test_a_lag_makes_beta_the_dimson_sum(self, service):
+        snap = snapshot(equity("AAA", 100, 50.0))
+        reg = service.analyse(snap, None, "synthetic", "SPY", 730, 0.04, now=NOW,
+                              dimson_lags=1).regressions
+        fit = reg.fits["AAA"]
+        lag = reg.lag_beta("AAA")
+        assert reg.beta("AAA")[0] == pytest.approx(fit.value("SPY") + lag[0])
+
+    def test_extra_factors_are_partial_betas_and_leave_the_risk_alone(self, service):
+        snap = snapshot(equity("AAA", 100, 50.0), equity("BBB", 200, 25.0))
+        plain = service.analyse(snap, None, "synthetic", "SPY", 730, 0.04, now=NOW)
+        both = service.analyse(snap, None, "synthetic", "SPY", 730, 0.04, now=NOW,
+                               factors=("QQQ", "SPY", "TLT", "QQQ"))   # the benchmark and repeats drop
+        reg = both.regressions
+        assert reg.factors == ("QQQ", "TLT")
+        assert reg.fits["AAA"].names == ("alpha", "SPY", "QQQ", "TLT")
+        value, error = reg.factor_beta("AAA", "QQQ")
+        assert np.isfinite(value) and error > 0
+        assert both.report.vol == plain.report.vol                       # the risk model is untouched
+        assert both.report.beta == plain.report.beta
+
+    def test_a_factor_without_history_is_named(self, store):
+        from quant_hub.services.file_import import FileSource
+        from quant_hub.storage.bar_store import BarStore, InstrumentKey
+        import pandas as pd
+        bars = BarStore(":memory:")
+        dates = pd.bdate_range("2024-06-03", "2026-10-16")
+        rng = np.random.default_rng(2)
+        for symbol in ("AAA", "SPY"):
+            closes = 50 * np.exp(np.cumsum(rng.normal(0, 0.01, len(dates))))
+            bars.insert_bars(InstrumentKey(symbol), "file", "1 day",
+                             pd.DataFrame({"close": closes}, index=dates))
+        service = PortfolioService(MarketService(sources=[FileSource(bars)]), store)
+        view = service.analyse(snapshot(equity("AAA", 100, 50.0)), None, "file", "SPY", 730,
+                               0.04, now=NOW, factors=("ZZZ",))
+        assert view.regressions is not None and view.regressions.factors == ()
+        assert "ZZZ" in view.regression_note
+
+    def test_no_benchmark_history_means_no_regressions(self, store):
+        from quant_hub.services.file_import import FileSource
+        from quant_hub.storage.bar_store import BarStore, InstrumentKey
+        import numpy as np
+        import pandas as pd
+        bars = BarStore(":memory:")
+        dates = pd.bdate_range("2024-06-03", "2026-10-16")
+        closes = 50 * np.exp(np.cumsum(np.random.default_rng(1).normal(0, 0.01, len(dates))))
+        bars.insert_bars(InstrumentKey("AAA"), "file", "1 day",
+                         pd.DataFrame({"close": closes}, index=dates))
+        service = PortfolioService(MarketService(sources=[FileSource(bars)]), store)
+        view = service.analyse(snapshot(equity("AAA", 100, 50.0)), None, "file", "SPY", 730,
+                               0.04, now=NOW)
+        assert view.regressions is None and "No SPY history" in view.regression_note
+
+
+class TestGrowth:
+    def test_sleeves_are_underlyings_and_the_attribution_adds_up(self, service):
+        put = Position("AAA261218P45", Holding.OPTION, 2, "Brokerage", 1.20, 240.0, None, "",
+                       OptionContract("AAA", "put", 45.0, date(2026, 12, 18)))
+        snap = snapshot(equity("AAA", 100, 50.0), equity("BBB", 200, 25.0), put)
+        view = service.analyse(snap, None, "synthetic", "SPY", 730, 0.04, now=NOW)
+        growth = view.growth
+        assert growth is not None and view.growth_note == ""
+        assert {s.name for s in growth.sleeves} == {"AAA", "BBB"}
+        assert len(growth.sleeve("AAA").positions) == 2                # its shares and its put
+        assert sum(s.contribution for s in growth.sleeves) == pytest.approx(
+            growth.growth - 0.04, abs=1e-12)
+        assert view.book is not None and view.book.contracts == 1
+        assert view.book.delta < 0                                      # long puts: short delta
+
+    def test_stocks_only_growth_equals_the_sizing_card(self, service):
+        snap = snapshot(equity("AAA", 100, 50.0), equity("BBB", 200, 25.0),
+                        Position("CASH", Holding.CASH, 5_000.0, "Brokerage", value=5_000.0))
+        view = service.analyse(snap, None, "synthetic", "SPY", 730, 0.04, now=NOW)
+        r = view.report
+        assert view.growth.growth == pytest.approx(r.growth(r.net_exposure), abs=1e-12)
+        assert view.book is None
 
 
 class TestHistoryProblems:

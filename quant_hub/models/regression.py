@@ -1,9 +1,7 @@
 r"""Regressions of daily returns: α, β and honest errors (W2).
 
-**Status: derivation for owner review (milestone W2).** The implementation
-follows once this is approved; nothing below is code yet.
-
-What it answers, for each holding and for the portfolio:
+The derivation below was reviewed before the code (2026-10-21), as K1's
+was. What it answers, for each holding and for the portfolio:
 - How much benchmark (and factor) exposure, β, and how sure are we?
 - Is there return beyond it, α, and is it distinguishable from zero?
 - Are the streams orthogonal, i.e. are the residuals uncorrelated?
@@ -272,3 +270,213 @@ benchmark and rate:
 """
 
 from __future__ import annotations
+
+import math
+from dataclasses import dataclass
+from statistics import NormalDist
+
+import numpy as np
+import pandas as pd
+
+from quant_hub.models.portfolio import MIN_DAYS, TRADING_DAYS
+
+CLASSICAL, WHITE, NEWEY_WEST = "classical", "white", "newey-west"
+METHODS = (CLASSICAL, WHITE, NEWEY_WEST)
+ALPHA = "alpha"
+ROLLING_WINDOW = 126
+"""Default rolling window: half a year of sessions (module docstring)."""
+
+Z95 = NormalDist().inv_cdf(0.975)
+"""The two-sided 95% normal quantile, 1.96: every interval on the page."""
+
+
+@dataclass(frozen=True)
+class Regression:
+    """One OLS fit (module docstring). Coefficients and errors are daily."""
+
+    names: tuple[str, ...]
+    coef: np.ndarray
+    covariance: dict[str, np.ndarray]     # by method: classical, white, newey-west
+    lags: int                             # Newey–West L
+    observations: int                     # T
+    r2: float
+    r2_adjusted: float
+    residual_sd: float                    # s, daily
+    condition: float                      # of X
+    residuals: pd.Series
+
+    def standard_errors(self, method: str = NEWEY_WEST) -> np.ndarray:
+        if method not in self.covariance:
+            raise ValueError(f"method must be one of {METHODS}, not {method!r}")
+        return np.sqrt(np.clip(np.diag(self.covariance[method]), 0.0, None))
+
+    def value(self, name: str) -> float:
+        return float(self.coef[self._index(name)])
+
+    def error(self, name: str, method: str = NEWEY_WEST) -> float:
+        return float(self.standard_errors(method)[self._index(name)])
+
+    def total(self, names: tuple[str, ...], method: str = NEWEY_WEST) -> tuple[float, float]:
+        """A sum of coefficients and its error, sqrt(1' V 1) over them: the
+        Dimson sum beta (module docstring)."""
+        idx = [self._index(n) for n in names]
+        block = self.covariance[method][np.ix_(idx, idx)]
+        return float(self.coef[idx].sum()), math.sqrt(max(float(block.sum()), 0.0))
+
+    @property
+    def alpha_annual(self) -> float:
+        return TRADING_DAYS * self.value(ALPHA)
+
+    def alpha_error_annual(self, method: str = NEWEY_WEST) -> float:
+        return TRADING_DAYS * self.error(ALPHA, method)
+
+    @property
+    def residual_vol_annual(self) -> float:
+        return self.residual_sd * math.sqrt(TRADING_DAYS)
+
+    def _index(self, name: str) -> int:
+        try:
+            return self.names.index(name)
+        except ValueError:
+            raise KeyError(f"no coefficient {name!r}; have {self.names}") from None
+
+
+def newey_west_lags(observations: int) -> int:
+    """L = floor(4 (T/100)^(2/9)): Newey and West (1994)'s plug-in rate."""
+    if observations < 1:
+        raise ValueError("observations must be positive")
+    return int(math.floor(4.0 * (observations / 100.0) ** (2.0 / 9.0)))
+
+
+def ols(y, X, names: tuple[str, ...] | None = None, lags: int | None = None,
+        index: pd.Index | None = None) -> Regression:
+    """OLS of ``y`` on the columns of ``X`` with all three covariances
+    (module docstring). ``X`` carries its own constant column; ``lags``
+    defaults to the plug-in rate."""
+    y = np.asarray(y, dtype=float)
+    X = np.asarray(X, dtype=float)
+    if y.ndim != 1 or X.ndim != 2 or X.shape[0] != len(y):
+        raise ValueError("y must be a vector and X a matrix with one row per observation")
+    T, p = X.shape
+    if T <= p:
+        raise ValueError(f"{T} observations can't fit {p} coefficients")
+    if not (np.isfinite(y).all() and np.isfinite(X).all()):
+        raise ValueError("y and X must be finite")
+    names = tuple(names) if names is not None else tuple(f"x{j}" for j in range(p))
+    if len(names) != p:
+        raise ValueError(f"{len(names)} names for {p} columns")
+    L = newey_west_lags(T) if lags is None else int(lags)
+    if not 0 <= L < T:
+        raise ValueError(f"Newey–West lags must be in [0, {T}), not {L}")
+
+    coef, _ssr, rank, singular = np.linalg.lstsq(X, y, rcond=None)
+    if rank < p:
+        raise ValueError(f"the regressors are collinear (rank {rank} of {p}): a factor is "
+                         "repeated, or constant beside the intercept")
+    residuals = y - X @ coef
+    ssr = float(residuals @ residuals)
+    s2 = ssr / (T - p)
+
+    # (X'X)^-1 from X = QR without forming X'X: R^-1 R^-T.
+    r_inverse = np.linalg.inv(np.linalg.qr(X, mode="r"))
+    bread = r_inverse @ r_inverse.T
+    g = X * residuals[:, None]
+    gamma0 = g.T @ g
+    S = gamma0.copy()
+    for lag in range(1, L + 1):
+        gamma = g[lag:].T @ g[:-lag]
+        S += (1.0 - lag / (L + 1.0)) * (gamma + gamma.T)
+    small_sample = T / (T - p)
+    covariance = {
+        CLASSICAL: s2 * bread,
+        WHITE: small_sample * bread @ gamma0 @ bread,
+        NEWEY_WEST: small_sample * bread @ S @ bread,
+    }
+    centered = y - y.mean()
+    tss = float(centered @ centered)
+    r2 = 1.0 - ssr / tss if tss > 0 else float("nan")
+    r2_adjusted = 1.0 - (1.0 - r2) * (T - 1) / (T - p)
+    return Regression(names, coef, covariance, L, T, r2, r2_adjusted, math.sqrt(s2),
+                      float(singular[0] / singular[-1]),
+                      pd.Series(residuals, index=index if index is not None else pd.RangeIndex(T)))
+
+
+def design(factors: pd.DataFrame, dimson_lags: int = 0) -> pd.DataFrame:
+    """X with its constant first, then the factors, then lags of the first
+    factor (the benchmark) for the Dimson sum beta. The first ``dimson_lags``
+    rows, which lack lagged values, are dropped."""
+    if dimson_lags < 0:
+        raise ValueError("dimson_lags must not be negative")
+    if factors.shape[1] == 0:
+        raise ValueError("at least one factor is needed")
+    columns = {ALPHA: pd.Series(1.0, index=factors.index)}
+    columns.update({str(name): factors[name] for name in factors.columns})
+    benchmark = factors.columns[0]
+    for j in range(1, dimson_lags + 1):
+        columns[lag_name(benchmark, j)] = factors[benchmark].shift(j)
+    return pd.DataFrame(columns).iloc[dimson_lags:]
+
+
+def lag_name(factor: str, lag: int) -> str:
+    return f"{factor} (t-{lag})"
+
+
+def regress_returns(returns: pd.DataFrame, factors: pd.DataFrame, rate: float, *,
+                    dimson_lags: int = 0, lags: int | None = None) -> dict[str, Regression]:
+    """Each column of ``returns`` on ``factors``, both daily simple returns,
+    in excess of cash at ``rate``/252 a day, on their common days."""
+    if not math.isfinite(rate):
+        raise ValueError("rate must be finite")
+    common = returns.index.intersection(factors.index)
+    returns, factors = returns.loc[common], factors.loc[common]
+    if returns.isna().any().any() or factors.isna().any().any():
+        raise ValueError("returns and factors must be complete on their common days")
+    cash = rate / TRADING_DAYS
+    X = design(factors - cash, dimson_lags)
+    if len(X) < MIN_DAYS:
+        raise ValueError(f"{len(X)} common days; a regression needs {MIN_DAYS}")
+    names = tuple(X.columns)
+    return {str(column): ols(returns.loc[X.index, column] - cash, X.to_numpy(), names, lags,
+                             index=X.index)
+            for column in returns.columns}
+
+
+def rolling_regression(y: pd.Series, X: pd.DataFrame, window: int = ROLLING_WINDOW,
+                       total: tuple[str, ...] = ()) -> pd.DataFrame:
+    """Each coefficient over the ``window`` days ending at each date, with
+    its Newey–West error (``<name> se``): causal, as the module docstring says.
+    With ``total``, also the sum of those coefficients (``total``, ``total se``),
+    e.g. the Dimson sum beta."""
+    if window < MIN_DAYS:
+        raise ValueError(f"a rolling window needs at least {MIN_DAYS} days, not {window}")
+    if len(y) != len(X) or not y.index.equals(X.index):
+        raise ValueError("y and X must share their index")
+    if len(y) < window:
+        raise ValueError(f"{len(y)} days are fewer than the {window}-day window")
+    names = tuple(X.columns)
+    values, targets = X.to_numpy(dtype=float), y.to_numpy(dtype=float)
+    lags = newey_west_lags(window)
+    rows = []
+    for end in range(window, len(y) + 1):
+        fit = ols(targets[end - window:end], values[end - window:end], names, lags)
+        rows.append([*fit.coef, *fit.standard_errors(NEWEY_WEST),
+                     *(fit.total(total) if total else ())])
+    columns = [*names, *(f"{name} se" for name in names), *(("total", "total se") if total else ())]
+    return pd.DataFrame(rows, index=y.index[window - 1:], columns=columns)
+
+
+def residual_correlation(residuals: pd.DataFrame
+                         ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """The residuals' correlations with Fisher-z 95% bounds (approximate under
+    volatility clustering; module docstring). A residual with no variance
+    has no correlation: NaN."""
+    T = len(residuals)
+    if T <= 3:
+        raise ValueError("Fisher intervals need more than three observations")
+    corr = residuals.corr()
+    half = Z95 / math.sqrt(T - 3)
+    z = np.arctanh(corr.clip(-1 + 1e-15, 1 - 1e-15))
+    lower, upper = np.tanh(z - half), np.tanh(z + half)
+    for i in range(len(corr)):
+        lower.iat[i, i] = upper.iat[i, i] = corr.iat[i, i]     # exactly 1 (or NaN)
+    return corr, lower, upper
