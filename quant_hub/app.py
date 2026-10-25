@@ -19,7 +19,6 @@ from PySide6.QtWidgets import QApplication
 from quant_hub import __version__
 from quant_hub.config import AppConfig
 from quant_hub.core import Core, build_core
-from quant_hub.gui.app_icon import APP_USER_MODEL_ID, app_icon
 from quant_hub.gui.main_window import MainWindow, PageSections
 from quant_hub.gui.pages.dashboard import DashboardPage
 from quant_hub.gui.pages.garch_lab import GARCHLabPage
@@ -73,7 +72,6 @@ def create_app(config: AppConfig | None = None,
     (smoke tests and screenshot scripts drive it from here)."""
     app = QApplication.instance() or QApplication(argv if argv is not None else sys.argv)
     app.setApplicationName("Quant Hub")
-    app.setWindowIcon(app_icon())
     apply_theme(app)
     core = build_core(config)
 
@@ -110,10 +108,6 @@ def create_app(config: AppConfig | None = None,
 
 
 def main() -> None:
-    if sys.platform == "win32":
-        # Before any window exists: see APP_USER_MODEL_ID.
-        import ctypes
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_USER_MODEL_ID)
     app, window = create_app()
     window.show()
     sys.exit(app.exec())

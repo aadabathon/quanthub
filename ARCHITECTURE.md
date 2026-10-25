@@ -85,9 +85,6 @@ quant_hub/
 │   ├── surface3d.py           3D vol surface (D32): SurfaceMesh → Plotly figure
 │   │                          dict → local plotly.js in Qt WebEngine; draws
 │   │                          only when shown, warm-up on load, Plotly.react
-│   ├── app_icon.py            the α app icon: painted from the palette, packed
-│   │                          into assets/quanthub.ico (window, taskbar and
-│   │                          desktop shortcut), taskbar AppUserModelID
 │   ├── main_window.py         shell + THE PUMP (QTimer, 16 ms)
 │   ├── sidebar.py / top_bar.py / status_bar.py   shell pieces (nav, Ctrl+K
 │   │                          search + IBKR control, status + log drawer)

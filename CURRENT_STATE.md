@@ -70,15 +70,6 @@ what the desktop shortcut targets. The GUI is `quant_hub/gui/` (Qt, D31) on
   - IBKR connect/disconnect
   - status bar with a log drawer that starts closed
   - opens at 88% of the screen, capped at 1920×1240
-  - app icon (2026-10-24): a blue α in a ring on a near-black tile, the
-    ML Cookbook β icon's layout (`gui/app_icon.py`, regenerate with
-    `py -3.12 -m quant_hub.gui.app_icon`). The window, taskbar and the
-    desktop shortcut use `assets/quanthub.ico`. `main()` sets an explicit
-    AppUserModelID so the taskbar shows it instead of Python's icon. The
-    desktop shortcut got the same ID from a one-off pywin32 script (the
-    Properties dialog can't set it). A recreated shortcut would lack it:
-    it still works, but a pin and the running window become two taskbar
-    buttons. Not yet checked on the real taskbar.
 - **Design system:** navy tokens and a generated stylesheet in `theme.py`,
   with the palette re-validated for CVD and contrast. Shared components
   share one control height, three field widths and a 340 px inspector
