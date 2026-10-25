@@ -25,8 +25,10 @@ a fast, modern Qt interface over a layered Python core.
   sandbox.
 
 Synthetic labs know the true process, so they show TRUE vs ESTIMATE
-side by side. Brokerage access is read-only by design: there is no order
-code anywhere.
+side by side. Brokerage access is read-only today: there is no order code
+anywhere. An approved paper-first track (D52,
+[EXECUTION_PLAN.md](EXECUTION_PLAN.md)) will add orders on one guarded path
+only, off by default.
 
 ## Getting started without a broker
 
@@ -64,7 +66,8 @@ data/           Pure domain: PriceHistory/Quote/OptionChain types, GBM
                 generator, simulation, return/risk analytics, validation.
                 Usable from notebooks/scripts with zero GUI machinery.
 broker/         Infrastructure. The ONLY package that imports ibapi.
-                Read-only: no order code exists anywhere.
+                Read-only today; orders will live only in broker/orders.py
+                (D52).
 storage/        SQLite persistence (stdlib sqlite3) for acquired bars and
                 per-page UI state; DB at ~/.quant_hub/market_data.db.
 visualization/  Matplotlib figures for scripts and notebooks.

@@ -7,7 +7,11 @@ what's next → [ROADMAP.md](ROADMAP.md) · what's done/untested →
 
 Non-negotiables, in brief:
 
-- **Read-only brokerage.** No order-placement code, ever, under any flag.
+- **Orders only on the execution path (D52).** `broker/orders.py`, called
+  only by `services/execution.py`. Off unless enabled, paper unless live is
+  decided. Journal before sending, never send twice, never auto-reconnect.
+  Everything else stays read-only. Until E2, no order code exists
+  ([EXECUTION_PLAN.md](EXECUTION_PLAN.md)).
 - **Layering is enforced** by `tests/test_layering.py` — if a change fights
   it, the change is wrong. Only `broker/` imports ibapi; `data/` imports no
   other layer.

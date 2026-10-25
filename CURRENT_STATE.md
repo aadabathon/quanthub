@@ -1,7 +1,16 @@
 # CURRENT_STATE.md
 
 **Update this file whenever meaningful work lands.** Last updated:
-**2026-10-24**: V0 landed (D50): data you can trust.
+**2026-10-25**: the execution track was approved, and E0 landed (D52,
+[EXECUTION_PLAN.md](EXECUTION_PLAN.md)).
+- D12 and hard rule 1 are amended: orders may exist only on one guarded
+  path. `tests/test_layering.py` now enforces that statically.
+- The settings and the order journal's schema are designed in the plan.
+- No order code exists yet; E1 (accounts, read-only) is next.
+- Still the owner's to settle: the money limits, the paper length, the
+  ordering against LENS_PLAN, and a paper login.
+
+Before that, **2026-10-24**: V0 landed (D50): data you can trust.
 - History loads serve the store's bars, labelled, when IBKR is offline.
 - Portfolio flags the days that decide its numbers, and shows the numbers
   without them beside the headline.
@@ -1028,3 +1037,18 @@ pytest. Environment:
        - A live review of the real book (TWS open, `[positions] folder`
          set).
        - Fetching the cash rate from FRED, a new provider, for discussion.
+7. **The execution track, paper first** (approved 2026-10-25, D52), E0 → E6.
+   See [EXECUTION_PLAN.md](EXECUTION_PLAN.md) and ROADMAP.md.
+   - **~~E0~~ landed (2026-10-25):**
+     - D12 and hard rule 1 amended (AGENTS.md, CLAUDE.md, README).
+     - `tests/test_layering.py` gained two static checks:
+       - `placeOrder`, `cancelOrder` and `reqGlobalCancel` appear only in
+         `broker/orders.py`
+       - only `services/execution.py` and `core.py` import it
+       Neither module exists yet, so today no order call exists anywhere.
+       Planted calls and imports were checked to fail, and look-alike
+       names to pass.
+     - The settings (`[execution]`, off by default, money limits fail
+       closed) and the journal's SQLite schema are designed for E2.
+   - **Next: E1** (absorbs W1), on approval. It needs a paper login and
+     the `ibapi` 10.x upgrade.

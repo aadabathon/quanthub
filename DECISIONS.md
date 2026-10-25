@@ -1335,3 +1335,67 @@ waits on the owner.
 - It flags one day. Without that day, the annual vol falls by almost half,
   and the largest risk share moves to a different holding.
 - VaR and ES don't change: the day was a gain.
+
+## D52 — Execution, paper first: amends D12 and hard rule 1 (2026-10-25)
+
+The owner approved [EXECUTION_PLAN.md](EXECUTION_PLAN.md) on 2026-10-25:
+- the execution track E0–E6
+- this amendment
+- timing (b)
+- a dedicated account
+
+This entry is E0. It contains no order code. Its parts are this decision,
+the rewritten hard rule, the settings and journal designs in the plan, and
+two layering checks that enforce the rule from today.
+
+**What changes:**
+- D12 said no order code anywhere. Now there is one guarded path for
+  orders, and nowhere else:
+  - `broker/orders.py` is the only module that calls `placeOrder`,
+    `cancelOrder` or `reqGlobalCancel`.
+  - Only `services/execution.py` (and the composition root) import it.
+  - The runner and the GUI's Orders page reach orders through that
+    service.
+- `tests/test_layering.py` checks both statically, comments and docstrings
+  included. Neither module exists yet, so today it asserts that no order
+  call exists anywhere.
+- AGENTS.md and CLAUDE.md carry the new hard rule 1.
+
+**What stays from D12:**
+- Everything outside that path is read-only: the pages, the models, the
+  Review page and every other service.
+- Nothing reconnects automatically. A dropped connection stops a run, and
+  the next run reconciles.
+- Nothing retries a send. A send that may have reached IBKR is matched by
+  its `orderRef` before anything else happens.
+- There is no login automation, and no stored IBKR credentials. TWS or IB
+  Gateway is logged in by hand, and IBKR's weekly re-login is the owner's.
+
+**Settled choices:**
+- **Timing (b).**
+  - Decide after the close of session t, from complete stored bars.
+  - Send market-on-close orders for session t+1.
+  - Every live decision can be replayed exactly from the store.
+  - Research gains an `execution_lag` option, at E4, so backtests show
+    what the lag costs.
+- **Dedicated accounts:** a paper account, then a live account, both
+  separate from hand-held positions. A run refuses any connected account
+  but the configured one.
+- **Scope:** US stocks and ETFs, long or cash. No shorts, options or
+  leverage.
+- **Every deployed algo is a saved Research run,** matched by its
+  fingerprint.
+- **Fail closed:**
+  - an unset money limit means nothing is sent
+  - so does an unreachable account, an unexpected account, or a failed
+    check
+  - a halt is cleared only by hand
+- **Modes:** `off` by default. `paper` from E2. `live` needs its own
+  decision entry at E6.
+
+**Still the owner's:**
+- the money limits (the plan proposes the rest of the defaults)
+- the paper length
+- where E0–E1 sit against LENS_PLAN
+- confirming a paper login linked to the account (E1 needs it)
+- the `ibapi` 10.x upgrade, confirmed at E1's start

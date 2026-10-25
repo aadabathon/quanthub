@@ -436,7 +436,8 @@ verification limits, not claims of completed live checks.
 
 ### After v1.0 (unordered)
 
-- Paper trading, then execution, as their own guarded design phase (D12).
+- ~~Paper trading, then execution, as their own guarded design phase (D12).~~
+  Now the execution track below (D52).
 - Option-strategy backtests on the stored chain snapshots.
 - Streaming market data, and intraday bars (needs a timezone policy, D19).
 - Pinned historical end-times (lifts D11).
@@ -517,6 +518,33 @@ sources. The plan:
   - offline reads from the store
   - influence flags, with a "without" sensitivity
   - histogram clipping
+
+## Execution track — paper first (approved 2026-10-25, D52)
+
+The owner asked to deploy algos, and approved
+[EXECUTION_PLAN.md](EXECUTION_PLAN.md), which amends D12 and hard rule 1:
+- Orders run on one guarded path (`broker/orders.py`, called only by
+  `services/execution.py`).
+- Timing (b): decide from complete bars through close t, and send
+  market-on-close orders on session t+1.
+- A dedicated paper account, then a dedicated live account.
+- US stocks and ETFs, long or cash.
+
+Each milestone needs approval before it starts:
+- **~~E0. The decision~~** (2026-10-25, D52):
+  - the new hard rule, enforced by `tests/test_layering.py`
+  - the settings and the journal schema, designed
+  - no order code
+- **E1. Accounts, read-only** (absorbs W1): `ibapi` 10.x, managed
+  accounts, positions and account summary.
+- **E2. Orders on paper, by hand:** what-if, a ticket, the journal and the
+  blotter.
+- **E3. Reconciliation,** the crash-at-every-write test, the kill switch
+  and the loss stop.
+- **E4. The runner in shadow mode** (decides, sends nothing), and
+  Research's `execution_lag`.
+- **E5. The runner on paper:** shortfall and tracking measured.
+- **E6. Live:** its own decision, a dedicated account, small capital.
 
 ## Intended stack flow (architecture already accommodates this)
 
