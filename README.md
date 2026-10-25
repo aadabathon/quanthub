@@ -25,8 +25,10 @@ a fast, modern Qt interface over a layered Python core.
   sandbox.
 
 Synthetic labs know the true process, so they show TRUE vs ESTIMATE
-side by side. Brokerage access is read-only by design: there is no order
-code anywhere.
+side by side. Brokerage access is read-only today: there is no order code
+anywhere. An approved paper-first track (D52,
+[EXECUTION_PLAN.md](EXECUTION_PLAN.md)) will add orders on one guarded path
+only, off by default.
 
 ## Getting started without a broker
 
@@ -64,7 +66,8 @@ data/           Pure domain: PriceHistory/Quote/OptionChain types, GBM
                 generator, simulation, return/risk analytics, validation.
                 Usable from notebooks/scripts with zero GUI machinery.
 broker/         Infrastructure. The ONLY package that imports ibapi.
-                Read-only: no order code exists anywhere.
+                Read-only today; orders will live only in broker/orders.py
+                (D52).
 storage/        SQLite persistence (stdlib sqlite3) for acquired bars and
                 per-page UI state; DB at ~/.quant_hub/market_data.db.
 visualization/  Matplotlib figures for scripts and notebooks.
@@ -346,10 +349,28 @@ Run TWS or IB Gateway with API access enabled (Configure → API → Settings �
 on `127.0.0.1:7496` with TWS's **Read-Only API** enabled — the app contains
 no order code, so a read-only socket loses nothing. Paper TWS is 7497, IB
 Gateway 4001 (live) or 4002 (paper): set `port` in settings.toml. The app is
-fully functional on synthetic data without TWS, and never places orders. PyPI's
-`ibapi` is the old 9.81 build; the current official API from
-<https://interactivebrokers.github.io> also works — the broker code tolerates
-both callback signatures.
+fully functional on synthetic data without TWS, and never places orders.
+
+**Your accounts (E1).** Portfolio's **From IBKR** button reads the login's
+accounts, positions and balances. The read is read-only, and is kept as a
+snapshot like a file import.
+- Stocks, ETFs and US equity options are modelled. Each account's cash
+  comes from its balances.
+- Anything else, and anything not in USD, is left out and named.
+- Positions are valued at the price source's last close.
+
+**The `ibapi` version.** PyPI's `ibapi` is the old 9.81 build. The
+execution track needs IBKR's current 10.x API, which isn't on PyPI.
+1. Download the TWS API from IBKR's site (it asks you to accept its
+   license).
+2. Install its Python client:
+
+       py -3.12 -m pip install "<the unpacked folder>/IBJts/source/pythonclient"
+
+3. Check the version: `py -3.12 -m pip show ibapi`.
+
+The broker code reads both versions. It checks the installed `error()`
+signature, because 10.33 inserted a timestamp before the error code.
 
 ## Quantitative code conventions
 

@@ -55,7 +55,7 @@ def _sections(core: Core) -> PageSections:
     markov = ("Markov Lab", "ph.share-network", lambda _shell: MarkovLabPage(
         core.market_service, core.tasks, core.state_store))
     portfolio = ("Portfolio", "ph.chart-pie-slice", lambda _shell: PortfolioPage(
-        core.portfolio, core.market_service, core.tasks, core.state_store))
+        core.portfolio, core.market_service, core.tasks, core.state_store, core.accounts))
     valuation = ("Valuation", "ph.scales", lambda _shell: ValuationPage(
         core.valuation, core.portfolio, core.tasks, core.state_store))
     review = ("Review", "ph.clipboard-text", lambda _shell: ReviewPage(core.review, core.tasks))

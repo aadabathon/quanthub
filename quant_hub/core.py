@@ -19,6 +19,7 @@ from quant_hub.config import AppConfig, load_config
 from quant_hub.data.sources import SyntheticSource
 from quant_hub.events import EventBus, EventBusLogHandler
 from quant_hub.tasks import TaskRunner
+from quant_hub.services.accounts import AccountService
 from quant_hub.services.cached_source import CachedSource
 from quant_hub.services.file_import import FileImportService, FileSource
 from quant_hub.services.fundamentals import FundamentalsService
@@ -65,6 +66,8 @@ class Core:
     regime_store: RegimeStore
     review: ReviewService
     tasks: TaskRunner
+    # Read-only IBKR accounts (E1); None when IBKR is off in settings.
+    accounts: AccountService | None = None
 
     def shutdown(self) -> None:
         """Stop the worker, drop the broker connection, close the stores.
@@ -181,4 +184,5 @@ def build_core(config: AppConfig | None = None) -> Core:
         valuation_store=valuation_store, valuation=valuation, regime_store=regime_store,
         review=ReviewService(portfolio, valuation, regime_store, config.regime_path,
                              config.positions_folder),
+        accounts=AccountService(broker) if ibkr else None,
     )

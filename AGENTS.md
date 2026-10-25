@@ -30,9 +30,21 @@ codebase themselves — the standing constraint is:
 
 ## Hard rules
 
-1. **Read-only with respect to brokerage activity.** No order-placement code
-   anywhere, under any flag. This is a deliberate safety posture, not an
-   unfinished feature. Do not add reconnect-automatically behavior either.
+1. **Orders exist only on the execution path (D52, amending D12).**
+   - `broker/orders.py` is the only module that calls `placeOrder`,
+     `cancelOrder` or `reqGlobalCancel`. Only `services/execution.py` and
+     the composition root import it. `tests/test_layering.py` enforces
+     both, comments included.
+   - Orders are off unless the settings file enables them, and paper unless
+     a live decision entry and the live account both match.
+   - Every order is journaled before it is sent. Nothing is sent twice.
+     Nothing reconnects or retries a send.
+   - Every deployed strategy is a saved Research run.
+   - Everything else is read-only with respect to the brokerage: pages,
+     models, the Review page and other services. Do not add
+     reconnect-automatically behavior anywhere.
+   - Until E2 lands, no order code exists at all
+     ([EXECUTION_PLAN.md](EXECUTION_PLAN.md)).
 2. **Layering is enforced by `tests/test_layering.py`** — Qt libraries
    appear only in `gui/` and `app.py` (and tkinter nowhere); `data/`
    imports nothing from other layers and never ibapi; only `broker/` may

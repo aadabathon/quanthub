@@ -20,29 +20,44 @@ Callers therefore see ordinary functions that return data or raise
 changes are pushed to the GUI via ``ConnectionEvent`` on the event bus (the
 one sanctioned thread crossing).
 
-Safety posture: read-only. No order methods exist. No automatic reconnection:
-a dropped connection flips state and logs; reconnecting is a deliberate user
-action.
+Safety posture: read-only. No order methods exist here. It reads quotes,
+history, chains and, since E1, accounts, positions and balances. Orders,
+from E2, live only in ``broker/orders.py`` (D52, hard rule 1). No automatic
+reconnection: a dropped connection flips state and logs; reconnecting is a
+deliberate user action.
 
-``ibapi`` note: PyPI currently ships the old 9.81 build, while IBKR
-distributes the current API at https://interactivebrokers.github.io. Callback
-signatures differ slightly between the two (e.g. ``error()`` gained
-parameters), so the wrapper methods below accept ``*extra`` to tolerate both.
+``ibapi`` versions: PyPI ships the old 9.81 build; IBKR distributes the
+current 10.x API from its own site. Two callbacks differ between them:
+
+* ``error()``: TWS API 10.33 added ``errorTime`` (epoch milliseconds) as
+  the *second* argument, before ``errorCode``. The installed wrapper's own
+  signature says which form arrives (``_ERROR_HAS_TIME``). Guessing from
+  the values could misread a timestamp as an error code, and every error
+  rule here keys on the code.
+* ``tickOptionComputation()``: newer APIs put ``tickAttrib`` first; the
+  argument count tells them apart.
+
+Quantities (bar volume, position size) are ``Decimal`` in 10.x and float in
+9.81; both are converted with ``float()``.
 """
 
 from __future__ import annotations
 
+import inspect
 import logging
 import math
 import threading
 import time
+from importlib.metadata import PackageNotFoundError, version
 from collections.abc import Sequence
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from quant_hub.broker.base import ConnectionEvent, ConnectionState
 from quant_hub.broker.types import (
+    AccountSummary,
     BrokerError,
+    BrokerPosition,
     BrokerUnavailableError,
     ContractSpec,
     HistoricalBar,
@@ -72,8 +87,11 @@ try:
     from ibapi.wrapper import EWrapper
 
     _HAVE_IBAPI = True
+    # TWS API 10.33+ passes errorTime before errorCode (module docstring).
+    _ERROR_HAS_TIME = "errorTime" in inspect.signature(EWrapper.error).parameters
 except ImportError:
     _HAVE_IBAPI = False
+    _ERROR_HAS_TIME = False
 
 # TWS error codes that are informational status messages, not failures.
 _INFO_CODES = {2104, 2106, 2107, 2108, 2119, 2158}
@@ -125,6 +143,74 @@ OPTION_QUOTE_BATCH = 50
 # burst (close/open/timestamp/mode arrive within milliseconds — observed
 # live) before reading the buffers.
 _QUOTE_BURST_GRACE_S = 0.35
+# Account summary tags read in E1: what an account is worth, its cash, and
+# what its positions are worth (net liquidation ≈ cash + positions).
+SUMMARY_TAGS = ("NetLiquidation", "TotalCashValue", "GrossPositionValue")
+# Positions have no request id in the API; their pending slot lives in the
+# same map under a key no request id can take (ids count up from 1).
+_POSITIONS_KEY = -100
+_OPTION_RIGHTS = {"C": "C", "CALL": "C", "P": "P", "PUT": "P"}
+
+
+def ibapi_version() -> str | None:
+    """The installed ``ibapi`` distribution's version, or None."""
+    try:
+        return version("ibapi")
+    except PackageNotFoundError:
+        return None
+
+
+def error_fields(args: Sequence[Any], has_time: bool,
+                 named: dict[str, Any] | None = None) -> tuple[int, str]:
+    """``(errorCode, errorString)`` from ``error()``'s arguments after
+    ``reqId``. Before TWS API 10.33 they are ``(errorCode, errorString[,
+    advancedOrderRejectJson])``; from 10.33, ``(errorTime, errorCode,
+    errorString, advancedOrderRejectJson)``. Keyword arguments, if a caller
+    uses them, win."""
+    rest = list(args[1:] if has_time else args)
+    named = named or {}
+    code = named.get("errorCode", rest[0] if rest else 0)
+    message = named.get("errorString", rest[1] if len(rest) > 1 else "")
+    return int(code), str(message)
+
+
+def broker_position(account: str, contract: Any, position: Any,
+                    average_cost: Any) -> BrokerPosition:
+    """One ``position()`` callback as a ``BrokerPosition``. Raises
+    ``ValueError`` on a field it can't read."""
+    sec_type = str(contract.secType)
+    right = strike = expiry = multiplier = None
+    if sec_type in ("OPT", "FOP"):
+        right = _OPTION_RIGHTS.get(str(contract.right).upper())
+        if right is None:
+            raise ValueError(f"unknown option right {contract.right!r}")
+        strike = float(contract.strike)
+        expiry = datetime.strptime(str(contract.lastTradeDateOrContractMonth)[:8],
+                                   "%Y%m%d").date()
+        multiplier = float(contract.multiplier or 100)
+    return BrokerPosition(
+        account=str(account), symbol=str(contract.symbol), sec_type=sec_type,
+        quantity=float(position), average_cost=float(average_cost),
+        con_id=int(contract.conId), currency=str(contract.currency), right=right,
+        strike=strike, expiry=expiry, multiplier=multiplier)
+
+
+def summaries_from_rows(rows: Sequence[tuple[str, str, str, str]]) -> list[AccountSummary]:
+    """``accountSummary()`` rows ``(account, tag, value, currency)`` grouped
+    into one ``AccountSummary`` per account, in the order accounts first
+    appear. A value that isn't a number is None."""
+    by_account: dict[str, dict[str, Any]] = {}
+    for account, tag, value, currency in rows:
+        entry = by_account.setdefault(account, {"currency": ""})
+        try:
+            entry[tag] = float(value)
+        except (TypeError, ValueError):
+            entry[tag] = None
+        if tag == "NetLiquidation" or not entry["currency"]:
+            entry["currency"] = currency
+    return [AccountSummary(account, entry["currency"], entry.get("NetLiquidation"),
+                           entry.get("TotalCashValue"), entry.get("GrossPositionValue"))
+            for account, entry in by_account.items()]
 
 
 def duration_string(start: datetime, end: datetime) -> str:
@@ -182,6 +268,8 @@ class _Pending:
         self.model_iv: float | None = None
         self.contracts: list[Any] = []  # ibapi Contract objects from contractDetails
         self.option_params: list[OptionParams] = []
+        self.positions: list[BrokerPosition] = []
+        self.summary_rows: list[tuple[str, str, str, str]] = []
 
 
 if _HAVE_IBAPI:
@@ -202,9 +290,28 @@ if _HAVE_IBAPI:
         def connectionClosed(self) -> None:
             self._owner._on_connection_closed()
 
-        def error(self, reqId: int, errorCode: int = 0, errorString: str = "", *extra: Any) -> None:
-            # Signature varies across ibapi versions; *extra absorbs new params.
-            self._owner._on_error(reqId, errorCode, str(errorString))
+        def error(self, reqId: int, *args: Any, **kwargs: Any) -> None:
+            # The installed API's own signature says where errorCode sits
+            # (module docstring); a 10.33 timestamp is never read as a code.
+            code, message = error_fields(args, _ERROR_HAS_TIME, kwargs)
+            self._owner._on_error(reqId, code, message)
+
+        # -- accounts (E1, read-only) ---------------------------------------
+        def managedAccounts(self, accountsList: str) -> None:
+            self._owner._on_managed_accounts(accountsList)
+
+        def position(self, account: str, contract: Any, position: Any, avgCost: float) -> None:
+            self._owner._on_position(account, contract, position, avgCost)
+
+        def positionEnd(self) -> None:
+            self._owner._on_request_done(_POSITIONS_KEY)
+
+        def accountSummary(self, reqId: int, account: str, tag: str, value: str,
+                           currency: str) -> None:
+            self._owner._on_account_summary(reqId, account, tag, value, currency)
+
+        def accountSummaryEnd(self, reqId: int) -> None:
+            self._owner._on_request_done(reqId)
 
         # -- historical data -------------------------------------------------
         def historicalData(self, reqId: int, bar: "BarData") -> None:
@@ -263,6 +370,9 @@ class IBKRBroker:
         self._ready = threading.Event()
         self._next_req_id = 1
         self._pending: dict[int, _Pending] = {}
+        self._accounts: tuple[str, ...] = ()
+        self._accounts_ready = threading.Event()
+        self._positions_lock = threading.Lock()  # positions have no request id
 
     # ------------------------------------------------------------------ state
     @property
@@ -292,6 +402,9 @@ class IBKRBroker:
         cfg = self._config
         self._set_state(ConnectionState.CONNECTING, f"{cfg.ibkr_host}:{cfg.ibkr_port}")
         self._ready.clear()
+        with self._lock:
+            self._accounts = ()            # TWS sends this login's list on connect
+        self._accounts_ready.clear()
         self._app = _IBApp(self)
         try:
             self._app.connect(cfg.ibkr_host, cfg.ibkr_port, cfg.ibkr_client_id)
@@ -317,6 +430,8 @@ class IBKRBroker:
         # subscriptions. 3 = delayed (free), falling back automatically
         # to real-time where entitled.
         self._app.reqMarketDataType(3)
+        _logger.info("ibapi %s, error callback %s", ibapi_version() or "unknown",
+                     "with errorTime (10.33+)" if _ERROR_HAS_TIME else "without errorTime")
         self._set_state(ConnectionState.CONNECTED)
 
     def disconnect(self) -> None:
@@ -437,6 +552,69 @@ class IBKRBroker:
         finally:
             with self._lock:
                 self._pending.pop(req_id, None)
+
+    # ------------------------------------------------- accounts (E1, read-only)
+    def get_managed_accounts(self) -> tuple[str, ...]:
+        """The accounts this login can see. TWS sends the list right after the
+        handshake (``managedAccounts``); it's asked for again if it hasn't
+        arrived."""
+        if self.state is not ConnectionState.CONNECTED:
+            raise NotConnectedError("not connected to IBKR")
+        with self._lock:
+            accounts = self._accounts
+        if accounts:
+            return accounts
+        self._app.reqManagedAccts()
+        if not self._accounts_ready.wait(timeout=self._config.request_timeout_s):
+            raise RequestTimeoutError("IBKR sent no account list")
+        with self._lock:
+            return self._accounts
+
+    def get_positions(self) -> list[BrokerPosition]:
+        """Every position in every account this login sees, read once.
+
+        ``reqPositions`` is a subscription: it sends every position, then
+        ``positionEnd``, then updates. It's cancelled as soon as the list is
+        complete. Positions carry no request id, so one positions request
+        runs at a time. Read-only.
+        """
+        if self.state is not ConnectionState.CONNECTED:
+            raise NotConnectedError("not connected to IBKR")
+        with self._positions_lock:
+            pending = _Pending()
+            with self._lock:
+                self._pending[_POSITIONS_KEY] = pending
+            try:
+                self._app.reqPositions()
+                if not pending.done.wait(timeout=self._config.request_timeout_s):
+                    raise RequestTimeoutError(
+                        f"IBKR positions timed out after {self._config.request_timeout_s:.0f}s")
+                if pending.error is not None:
+                    raise pending.error
+                return list(pending.positions)
+            finally:
+                with self._lock:
+                    self._pending.pop(_POSITIONS_KEY, None)
+                try:
+                    self._app.cancelPositions()
+                except Exception:
+                    _logger.debug("cancelPositions failed", exc_info=True)
+
+    def get_account_summary(self) -> list[AccountSummary]:
+        """Net liquidation, cash and position value for every account this
+        login sees (``reqAccountSummary`` over the "All" group), read once:
+        the subscription is cancelled when the first full answer is in.
+        Read-only."""
+        req_id, pending = self._register_request()
+        self._app.reqAccountSummary(req_id, "All", ",".join(SUMMARY_TAGS))
+        try:
+            self._await(req_id, pending, cancel=lambda _req_id: None)
+        finally:
+            try:
+                self._app.cancelAccountSummary(req_id)
+            except Exception:
+                _logger.debug("cancelAccountSummary failed for %d", req_id, exc_info=True)
+        return summaries_from_rows(pending.summary_rows)
 
     # ------------------------------------------------------------ option chains
     def get_contract_id(self, spec: ContractSpec) -> int:
@@ -741,6 +919,30 @@ class IBKRBroker:
             pending = self._pending.get(req_id)
         if pending is not None:
             pending.done.set()
+
+    def _on_managed_accounts(self, accounts_list: str) -> None:
+        accounts = tuple(a.strip() for a in str(accounts_list).split(",") if a.strip())
+        with self._lock:
+            self._accounts = accounts
+        self._accounts_ready.set()
+
+    def _on_position(self, account: str, contract: Any, position: Any, average_cost: Any) -> None:
+        with self._lock:
+            pending = self._pending.get(_POSITIONS_KEY)
+        if pending is None:
+            return                  # an update after the request ended
+        try:
+            pending.positions.append(broker_position(account, contract, position, average_cost))
+        except (ValueError, TypeError, AttributeError) as exc:
+            pending.error = BrokerError(f"unreadable position from IBKR: {exc}")
+            pending.done.set()
+
+    def _on_account_summary(self, req_id: int, account: str, tag: str, value: str,
+                            currency: str) -> None:
+        with self._lock:
+            pending = self._pending.get(req_id)
+        if pending is not None:
+            pending.summary_rows.append((str(account), str(tag), str(value), str(currency)))
 
 
 def _has_both_sides(pending: _Pending) -> bool:

@@ -11,7 +11,13 @@ from datetime import datetime
 from enum import Enum
 from typing import Protocol
 
-from quant_hub.broker.types import ContractSpec, HistoricalBar, QuoteResult
+from quant_hub.broker.types import (
+    AccountSummary,
+    BrokerPosition,
+    ContractSpec,
+    HistoricalBar,
+    QuoteResult,
+)
 
 
 class ConnectionState(Enum):
@@ -54,3 +60,10 @@ class Broker(Protocol):
     ) -> list[HistoricalBar]: ...
 
     def get_market_quote(self, spec: ContractSpec) -> QuoteResult: ...
+
+    # Accounts (E1): read-only, like everything here.
+    def get_managed_accounts(self) -> tuple[str, ...]: ...
+
+    def get_positions(self) -> list[BrokerPosition]: ...
+
+    def get_account_summary(self) -> list[AccountSummary]: ...

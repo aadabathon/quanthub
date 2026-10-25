@@ -81,6 +81,8 @@ def test_ibkr_turned_off_leaves_no_controls_or_sources(tmp_path):
         assert not window.status._ibkr.isVisibleTo(window)
         lab = window.show_page("Kalman Lab")
         assert lab._source.current() == "synthetic"     # its saved default was ibkr
+        assert core.accounts is None
+        assert not hasattr(window.show_page("Portfolio"), "_broker_button")   # E1
     finally:
         _close(app, window)
 
@@ -715,6 +717,47 @@ def test_valuation_screen_and_export(qt_app, tmp_path):
     page.export_screen(path)
     wait_for(app, lambda: path.exists(), timeout_s=30)
     assert path.read_text(encoding="utf-8").splitlines()[0].startswith("ticker,company")
+
+def test_portfolio_from_ibkr_while_disconnected_says_how_to_connect(qt_app):
+    """E1: the button reads the login's accounts; without a connection the
+    page says to connect rather than failing quietly."""
+    app, window = qt_app
+    page = _portfolio(app, window)
+    assert page._broker_button.isVisibleTo(page)
+    page.load_from_broker()
+    wait_for(app, lambda: page._broker_button.isEnabled()
+             and "IBKR" in page._header._status.full_text(), timeout_s=30)
+    status = page._header._status.full_text()
+    assert "not connected" in status and "Press Connect IBKR" in status
+
+
+def test_portfolio_from_ibkr_keeps_and_analyses_the_read(qt_app):
+    """E1 end to end through a stand-in for the account service: the read is
+    kept as a snapshot, analysed, and what IBKR's read left out is named."""
+    from datetime import datetime
+
+    from quant_hub.broker.types import AccountSummary, BrokerPosition
+    from quant_hub.services.accounts import broker_snapshot
+
+    class StandIn:
+        def snapshot(self):
+            positions = [BrokerPosition("DU0000001", "AAA", "STK", 100, 20.0, 1, "USD"),
+                         BrokerPosition("DU0000001", "ESZ6", "FUT", 1, 1.0, 3, "USD")]
+            return broker_snapshot(["DU0000001"], positions,
+                                   [AccountSummary("DU0000001", "USD", 9_000.0, 1_000.0,
+                                                   8_000.0)], datetime.now())
+
+    app, window = qt_app
+    page = _portfolio(app, window)
+    page._broker_accounts = StandIn()
+    page.load_from_broker()
+    wait_for(app, lambda: page._view is not None and page._view.snapshot.source == "IBKR",
+             timeout_s=30)
+    assert page._header._status.full_text().startswith("Read from IBKR: 2 positions")
+    assert "net liquidation $9,000" in page._header._status.full_text()
+    assert [r.symbol for r in page._view.rows] == ["AAA"]
+    assert page._warning.isVisibleTo(page) and "ESZ6" in page._warning._text.text()
+
 
 # ------------------------------------------------------------------- Markets
 
