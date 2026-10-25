@@ -72,7 +72,9 @@ would put a fake jump at the seam. So adjusted bars are kept whole:
   sessions, the ratio :math:`r_t = A_t / P_t` of today's adjusted prices to
   the stored traded ones must be a dividend step function: at most 1, and
   rising from one day to the next by at most ``MAX_DIVIDEND_STEP`` (20%: a
-  dividend :math:`D` steps it by :math:`D/(C - D)`), never falling.
+  dividend :math:`D` steps it by :math:`D/(C - D)`), never falling. "At
+  most" and "never" allow a cent's rounding at each day's price
+  (``PRICE_TICK``), which a split (a factor of 2 or 10) dwarfs.
   A stored traded series that fails was written before a split or other
   corporate action, so it is refetched whole and replaced. A false alarm
   (a special dividend over 20%) only costs that refetch.
@@ -106,8 +108,15 @@ MAX_DIVIDEND_STEP = 0.20
 """Largest one-day rise in adjusted/traded taken as a dividend (split guard)."""
 
 RATIO_TOLERANCE = 1e-4
-"""Slack in the split guard's checks: IBKR's ratio holds to ~1e-7 between
-ex-dates, and stored prices are rounded to cents."""
+"""Slack in the split guard's checks for numerical noise: IBKR's ratio holds
+to ~1e-7 between ex-dates."""
+
+PRICE_TICK = 0.01
+"""Prices are rounded to the cent, which moves adjusted/traded by up to
+``PRICE_TICK / price`` a day: 0.04% at a split-adjusted $13. The guard
+allows that on top of ``RATIO_TOLERANCE`` (found live, 2026-10-22: a
+stock's split-adjusted early history, refetched two months apart, differed
+by up to 0.04%, and a fixed 0.01% tolerance called it a corporate action)."""
 
 
 class CachedSource:
@@ -304,8 +313,12 @@ def dividend_steps_only(traded: pd.DataFrame, adjusted: pd.DataFrame, today: dat
     common = common[common < today]
     if len(common) < 2:
         return True
-    ratio = (adjusted.loc[common, "close"] / traded.loc[common, "close"]).to_numpy()
+    a = adjusted.loc[common, "close"].to_numpy(dtype=float)
+    p = traded.loc[common, "close"].to_numpy(dtype=float)
+    ratio = a / p
+    # Each day's slack: noise, plus a cent's rounding at that day's price.
+    slack = RATIO_TOLERANCE + PRICE_TICK / np.minimum(a, p)
     steps = ratio[1:] / ratio[:-1]
-    return bool(np.all(ratio <= 1 + RATIO_TOLERANCE)
-                and np.all(steps >= 1 - RATIO_TOLERANCE)
+    return bool(np.all(ratio <= 1 + slack)
+                and np.all(steps >= 1 - (slack[1:] + slack[:-1]))
                 and np.all(steps <= 1 + MAX_DIVIDEND_STEP))

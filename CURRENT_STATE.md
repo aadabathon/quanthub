@@ -709,8 +709,8 @@ pytest. Environment:
        flags at |z| > 10, drivers, the "without" report
      - `Histogram` clip
      - Portfolio's "Days that decide the numbers" card
-     - Full suite: 1,032 passed, 1 skipped (131 s). That includes a fix to
-       a W0 test that passed only on its fixture's own date (Oct 21).
+     - Full suite after merging main (PR #3): 1,037 passed, 1 skipped
+       (136 s).
      - Tests: 10 cache, 4 ranges, 7 influence, 1 service, and one GUI test
        of the whole offline path.
      - Checked on a copy of the owner's store with TWS closed and the real
@@ -759,10 +759,28 @@ pytest. Environment:
        simulation first: in two variance regimes, classical intervals
        cover 78.9% against the 78.4% closed form; under AR(1) residuals,
        White covers 84.9% against 85.0%.
+     - **The analysis with TWS open (2026-10-22).**
+       - The owner's in-app imports had failed. Their checkout predated
+         this preset, so the Oct 21 export was read as generic and its cash
+         lines as stocks.
+       - The analysis then said "0 common days of returns; the model needs
+         60". The app wasn't connected to IBKR, so every history failed.
+       - Now, on a copy of the store with IBKR connected: every holding
+         loads (adjusted, 500 common days, ~5 s).
+       - Two fixes came out of it:
+         - **Clear load errors.** When no holding loads, the error says so
+           and gives the first reason; for "not connected" it points at
+           Connect IBKR (TWS being open isn't enough). A holding with fewer
+           than 60 days in the lookback is named and left out, instead of
+           shrinking every holding's window to its own. An all-cash
+           account says it has no market risk.
+         - **The split guard allows a cent's rounding.** The first live
+           adjusted refresh flagged a holding as a corporate action. Its
+           pre-split history, split-adjusted to low prices, had come back
+           rounded differently two months apart, by up to 0.04%, against a
+           fixed 0.01% tolerance. The slack is now that plus a cent at each
+           day's price; a split still fails by orders of magnitude.
      - **Not yet done:**
-       - the in-app import, with TWS open
-       - the fresh adjusted-cache check: the store has no adjusted bars
-         yet, and no bars at all for five of the holdings
        - checking the import's total against Fidelity's site
      - Note: the page analyses the most recently *imported* snapshot, so
        import older exports first.

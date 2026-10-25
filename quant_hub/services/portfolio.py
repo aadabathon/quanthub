@@ -19,9 +19,16 @@
     last close; at the underlying's realized vol (annualized log-return sd
     over the lookback), the page's rate, and calendar days to expiry from
     the snapshot's date. Expired ones are left out and named.
-  - A holding whose history won't load is left out of the risk model and
-    named, with the share of equity it leaves unmodelled. Its value still
-    counts in the equity.
+  - A holding whose history won't load, or holds fewer than the model's
+    ``MIN_DAYS`` returns in the lookback (a recent listing, a thin OTC
+    name), is left out of the risk model and named, with the share of
+    equity it leaves unmodelled. Its value still counts in the equity. Left
+    in, one short history would shrink every holding's window to its own,
+    since returns are aligned on the days every holding traded.
+  - When no holding loads at all, the error says so and gives the first
+    reason (for IBKR, usually that the app isn't connected: TWS being open
+    isn't enough). An account of nothing but cash has no market risk to
+    model, and says that.
   - **Offline** (V0): when the source can't be reached, its stored bars
     are used. The view says why, and how many weekday sessions the data
     lacks since its last day (``data.ranges.weekdays_missed``).
@@ -46,6 +53,7 @@ from quant_hub.data.ranges import weekdays_missed
 from quant_hub.data.types import PriceBasis
 from quant_hub.importers.positions_csv import read_positions_files
 from quant_hub.models.portfolio import (
+    MIN_DAYS,
     TRADING_DAYS,
     Exposures,
     OptionExposure,
@@ -144,10 +152,26 @@ class PortfolioService:
                 if symbol != benchmark:
                     left_out.append(f"{symbol}: no history from {source} ({exc})")
                 continue
+            if len(history.closes) <= MIN_DAYS:          # returns are one fewer than closes
+                reason = (f"{symbol}: only {len(history.closes) - 1} days of history from "
+                          f"{source} in the lookback; the model needs {MIN_DAYS}")
+                _logger.warning("portfolio: %s", reason)
+                if symbol != benchmark:
+                    left_out.append(reason)
+                continue
             closes[symbol] = history.closes
             if history.basis is PriceBasis.TRADED:
                 basis = PriceBasis.TRADED
             offline = offline or history.offline_reason
+
+        if not underlyings:
+            raise ValueError("this account holds only cash: there's no market risk to model")
+        if not any(symbol in closes for symbol in underlyings):
+            first = left_out[0] if left_out else f"no history from {source}"
+            hint = (" Press Connect IBKR (top right): TWS being open isn't enough."
+                    if "not connected" in first.lower() else "")
+            raise ValueError(f"No holding's price history loaded from {source}, so there's "
+                             f"nothing to model. {first}.{hint}")
 
         equity = sum(p.market_value or 0.0 for p in positions)
         cash = sum(p.market_value or 0.0 for p in positions if p.kind is Holding.CASH)
