@@ -6,7 +6,7 @@ as W2's and W3's were. The rules are the owner's ``REGIME.md`` (sections
 - Which rules hold, and which are breached, each with its number?
 - When a rule reads an estimate, is the breach evidence or noise?
 - Has a stream failed long enough to count against the thesis?
-- Is a holding's variance one day's doing?
+- Does one day decide the numbers? (``models/portfolio.py``, D53)
 - Is the market's state calm, and what is volatility expected to be?
 
 The checks are pure functions of a rule set and the measures. Everything
@@ -94,45 +94,27 @@ evidence:
 - What N does filter is a jump: a day entering or leaving the window.
   It is a delay measured in days, so the owner should set N as one.
 
-One day dominating a series
----------------------------
-For a holding's daily returns r_t over the window:
+One day deciding the numbers
+----------------------------
+The rule is in ``models/portfolio.py`` (module docstring, Influence),
+one rule for the Portfolio and Review pages (D53). A day decides a
+series (the mix, or a holding's own) when its robust share
+z² / (z² + n − 1) is above one half: its squared move outweighs the
+ordinary variance of all the other days together. Variance-based
+measures (volatility, risk shares, R², Kelly, the growth figures) then
+follow that day. Loss-based ones (VaR, ES, drawdown) aren't moved by an
+upside jump, though a crash moves both.
 
-    D = max_t r_t² / Σ_t r_t²
+W7 first flagged a holding when its largest day's share of the sum of
+squares, D = max r_t² / Σ r_t², passed the 99.9% point of an iid t(3)
+null (0.875 at T = 500). D53 replaced it for two reasons:
+- The null was so strict that realistic noise couldn't reach it: a
+  single day needed 59σ at T = 500.
+- Two equal huge days hid each other: each carries about half the sum
+  of squares, so D is about a half.
 
-D is the largest day's share of the sum of squares, which is the variance
-for a mean near zero.
-- **A huge day pushes D to 1.** One day of size x, among T − 1 days of
-  variance σ², gives D = x² / (x² + (T − 1)σ²). For example, a +1,000%
-  day in a stock that otherwise moves 3% a day, with T = 500, gives
-  D ≈ 0.996.
-- **Variance-based measures are then that day's.** Volatility, risk
-  shares, R², Kelly and the growth figures all follow it. Loss-based ones
-  (VaR, ES, drawdown) aren't moved by an upside jump, though a crash moves
-  both.
-
-What D is under the null, at T = 500 iid days:
-
-| Null | Median | 95% | 99% | 99.9% |
-|---|---|---|---|---|
-| Gaussian | 0.020 | 0.030 | 0.035 | 0.045 |
-| Student t(3) | 0.099 | 0.364 | 0.624 | 0.875 |
-
-The Gaussian row is from 20,000 runs. The t(3) row is from the
-calibration's 100,000 runs (seed 20261023); its 99.9% point has a 99.8%
-band of [0.860, 0.897]. D is scale-free, so t(3)'s variance doesn't
-matter.
-
-The Gaussian null is far too thin for equities. SPY's own D from
-2024-10-24 to 2026-10-21 is 0.20, from one +10.5% day. Eight other
-stocks and ETFs measured over that window ran from 0.04 to 0.20.
-
-The flag: D above the t(3) null's 99.9% quantile at the series' length.
-That's about 0.88 at T = 500. It's calibrated by a fixed-seed simulation
-on a grid of T (``DOMINANCE_NULL``), interpolated in log T, and tested. A
-flagged holding's variance-based measures are shown twice: as measured,
-and with that day removed. Which of the two is graded is the owner's
-choice.
+The review removes the flagged days in a second analysis. Which of the
+two analyses is graded is the owner's choice (section 4).
 
 Market-state gates (section 7)
 ------------------------------
@@ -178,8 +160,6 @@ API
 - ``breach_rate(k, shift=0)``: 1 − Φ(k − shift).
 - ``run_length(reviews)`` and ``persistence(run, required)``: section 1's
   count and its grade.
-- ``dominance(returns) -> Dominance``, ``dominance_threshold(T)`` and
-  ``dominance_null(T, runs, seed)``.
 - ``calm_regime(log_returns, regimes) -> CalmGate`` and
   ``volatility_forecast(log_returns, horizon)``: section 7's gates.
 - ``implied_growth_check(rule, roots, trailing_cagr) -> Check``: section 8's
@@ -194,8 +174,6 @@ Tests, written with the code
   {0, 1, 1.645, 2}; the power matches 1 − Φ(k − δ/s).
 - The Fisher-scale breach agrees with W2's interval at k = 1.96.
 - Run lengths: resets, several reviews in one day, gaps.
-- D: the null quantiles reproduce the table at the fixed seed, and one
-  huge day gives D = x² / (x² + (T − 1)σ²).
 - The gate history is filtered: it equals the smoothed probability at T
   and differs before T on a simulated two-regime path.
 - The GARCH average matches a Monte Carlo of the recursion.
@@ -207,8 +185,8 @@ For the owner to decide
 1. **Evidence k** for each estimated rule. k = 0 is the estimate alone,
    which breaches half the time on the boundary.
 2. **N for section 1, in days**, given that persistence is a delay.
-3. **Dominated series:** grade the variance-based measures as measured,
-   or with the day removed.
+3. **Days that decide the numbers:** grade the variance-based measures
+   as measured, or with those days removed.
 4. **Unchanged from REGIME.md:** sections 4–8's values, and section 7's K
    and horizon.
 """
@@ -227,19 +205,9 @@ import numpy as np
 from quant_hub.data.regime import Consequence, Grade, Limit, Measure, Rule
 from quant_hub.models.garch import average_variance_forecast, fit_garch11, next_variance
 from quant_hub.models.markov import HMMFit, fit_hmm, hmm_filter, regime_forecast
-from quant_hub.models.portfolio import MIN_DAYS, TRADING_DAYS
+from quant_hub.models.portfolio import TRADING_DAYS
 
 _NORMAL = NormalDist()
-
-DOMINANCE_QUANTILE = 0.999
-DOMINANCE_SEED = 20261023
-DOMINANCE_NULL: tuple[tuple[int, float], ...] = (
-    (60, 0.952), (125, 0.935), (250, 0.907), (500, 0.875),
-    (750, 0.863), (1000, 0.852), (1500, 0.848), (2500, 0.798),
-)
-"""(T, the 99.9% quantile of D) for iid t(3) days: ``calibrate_dominance()``,
-100,000 runs per T from one generator seeded ``DOMINANCE_SEED``, in this
-order (module docstring, One day dominating)."""
 
 
 class Outcome(Enum):
@@ -356,79 +324,6 @@ def persistence(run: int, required: int) -> Grade | None:
     if run == 0:
         return None
     return Grade.FAIL if run >= required else Grade.WARN
-
-
-# --------------------------------------------------------------------------
-# One day dominating
-# --------------------------------------------------------------------------
-
-@dataclass(frozen=True)
-class Dominance:
-    """The largest day's share of a series' sum of squares (module docstring)."""
-
-    share: float           # D
-    day: int               # the largest day's position in the series
-    value: float           # its return
-    observations: int      # T
-    threshold: float       # the t(3) null's 99.9% quantile at T
-
-    @property
-    def flagged(self) -> bool:
-        return self.share > self.threshold
-
-
-def dominance(returns) -> Dominance:
-    """D = max r² / Σ r² for one holding's daily returns, with its flag."""
-    r = np.asarray(returns, dtype=float)
-    if r.ndim != 1:
-        raise ValueError("returns must be one series")
-    if len(r) < MIN_DAYS:
-        raise ValueError(f"{len(r)} days; the dominance check needs {MIN_DAYS}")
-    if not np.isfinite(r).all():
-        raise ValueError("returns must be finite")
-    squares = r * r
-    total = float(squares.sum())
-    if total <= 0:
-        raise ValueError("a series with no movement has no dominant day")
-    day = int(np.argmax(squares))
-    return Dominance(float(squares[day] / total), day, float(r[day]), len(r),
-                     dominance_threshold(len(r)))
-
-
-def dominance_threshold(observations: int) -> float:
-    """The t(3) null's 99.9% quantile of D at T days: ``DOMINANCE_NULL``
-    interpolated in log T, and held at its last value beyond 2,500 days."""
-    if observations < DOMINANCE_NULL[0][0]:
-        raise ValueError(f"the threshold is calibrated from {DOMINANCE_NULL[0][0]} days, "
-                         f"not {observations}")
-    days = np.log([t for t, _ in DOMINANCE_NULL])
-    quantiles = [q for _, q in DOMINANCE_NULL]
-    return float(np.interp(math.log(observations), days, quantiles))
-
-
-def dominance_null(observations: int, runs: int, rng=None, *, chunk: int = 10_000
-                   ) -> np.ndarray:
-    """D for ``runs`` series of ``observations`` iid t(3) days, drawn
-    ``chunk`` series at a time. ``rng`` is a seed or a Generator."""
-    if observations < 2 or runs < 1 or chunk < 1:
-        raise ValueError("observations must be at least 2, runs and chunk at least 1")
-    generator = np.random.default_rng(rng)
-    shares = []
-    for start in range(0, runs, chunk):
-        squares = generator.standard_t(3, (min(chunk, runs - start), observations)) ** 2
-        shares.append(squares.max(axis=1) / squares.sum(axis=1))
-    return np.concatenate(shares)
-
-
-def calibrate_dominance(runs: int = 100_000, seed: int = DOMINANCE_SEED,
-                        grid: Sequence[int] = tuple(t for t, _ in DOMINANCE_NULL)
-                        ) -> tuple[tuple[int, float], ...]:
-    """``DOMINANCE_NULL`` from scratch: one generator across the grid, in
-    order, each quantile to three places. About 20 seconds at the defaults."""
-    generator = np.random.default_rng(seed)
-    return tuple((int(t), round(float(np.quantile(dominance_null(t, runs, generator),
-                                                  DOMINANCE_QUANTILE)), 3))
-                 for t in grid)
 
 
 # --------------------------------------------------------------------------

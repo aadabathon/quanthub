@@ -1,6 +1,7 @@
 """Regime checks (W7), following the module docstring's test plan: breaches
-and their noise rate, Fisher's scale, persistence, one day dominating, the
-market-state gates, the screen's implied growth, rejections."""
+and their noise rate, Fisher's scale, persistence, the market-state gates,
+the screen's implied growth, rejections. One day dominating moved to
+test_portfolio.py's TestInfluence (D53)."""
 
 import math
 from datetime import date, datetime
@@ -19,16 +20,10 @@ from quant_hub.models.garch import (
 )
 from quant_hub.models.markov import GaussianHMM, hmm_filter, hmm_smoother, simulate_hmm
 from quant_hub.models.regime import (
-    DOMINANCE_NULL,
-    DOMINANCE_SEED,
     Outcome,
     breach_rate,
-    calibrate_dominance,
     calm_regime,
     check,
-    dominance,
-    dominance_null,
-    dominance_threshold,
     implied_growth_check,
     persistence,
     run_length,
@@ -151,58 +146,6 @@ def test_persistence_warns_until_n_then_fails():
         persistence(1, 0)
     with pytest.raises(ValueError):
         persistence(-1, 5)
-
-
-# ------------------------------------------------------- one day dominating
-
-def test_one_huge_day_gives_the_closed_form_share():
-    T, sigma, x = 500, 0.03, 10.0
-    r = np.where(np.arange(T) % 2 == 0, sigma, -sigma)
-    r[123] = x
-    d = dominance(r)
-    assert d.share == pytest.approx(x**2 / (x**2 + (T - 1) * sigma**2), abs=1e-12)
-    assert (d.day, d.value, d.observations) == (123, x, T)
-    assert d.flagged and d.threshold == pytest.approx(0.875)
-
-
-def test_the_share_is_scale_free_and_a_gaussian_series_is_not_flagged():
-    r = np.random.default_rng(14).standard_normal(500) * 0.01
-    assert dominance(r).share == pytest.approx(dominance(r * 37.0).share, rel=1e-12)
-    assert not dominance(r).flagged
-
-
-def test_the_null_exceeds_its_threshold_one_time_in_a_thousand():
-    runs, T = 20_000, 500
-    shares = dominance_null(T, runs, rng=99)                # a fresh seed, not the table's
-    exceed = int((shares > dominance_threshold(T)).sum())
-    # Expected 20; the band allows for the table's own sampling error.
-    assert 5 <= exceed <= 40
-
-
-def test_the_calibration_reproduces_its_first_row_exactly():
-    assert DOMINANCE_SEED == 20261023
-    assert calibrate_dominance(grid=(60,)) == (DOMINANCE_NULL[0],)
-
-
-def test_the_threshold_interpolates_in_log_days_and_holds_past_the_grid():
-    for t, q in DOMINANCE_NULL:
-        assert dominance_threshold(t) == pytest.approx(q)
-    between = dominance_threshold(354)                       # √(250·500): halfway in log T
-    assert between == pytest.approx((0.907 + 0.875) / 2, abs=1e-3)
-    assert dominance_threshold(10_000) == pytest.approx(DOMINANCE_NULL[-1][1])
-    with pytest.raises(ValueError, match="calibrated from 60"):
-        dominance_threshold(59)
-
-
-def test_dominance_rejects_short_flat_or_bad_series():
-    with pytest.raises(ValueError, match="needs 60"):
-        dominance(np.ones(10))
-    with pytest.raises(ValueError, match="no movement"):
-        dominance(np.zeros(100))
-    with pytest.raises(ValueError, match="finite"):
-        dominance(np.r_[np.ones(99), np.nan])
-    with pytest.raises(ValueError, match="one series"):
-        dominance(np.ones((100, 2)))
 
 
 # --------------------------------------------------------- market-state gates

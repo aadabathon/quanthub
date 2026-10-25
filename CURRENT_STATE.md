@@ -1,7 +1,12 @@
 # CURRENT_STATE.md
 
 **Update this file whenever meaningful work lands.** Last updated:
-**2026-10-24**: V0 landed (D50): data you can trust.
+**2026-10-25**: one rule for "one day decides the numbers" (D53). The
+Portfolio and Review pages now read the same flags. A day is flagged when
+it outweighs the rest of the mix's series or of a holding's own:
+z² > n − 1. V0's |z| > 10 and W7's t(3) null are gone.
+
+Before that, **2026-10-24**: V0 landed (D50): data you can trust.
 - History loads serve the store's bars, labelled, when IBKR is offline.
 - Portfolio flags the days that decide its numbers, and shows the numbers
   without them beside the headline.
@@ -731,6 +736,30 @@ pytest. Environment:
      - Checked on a copy of the owner's store with TWS closed and the real
        clock. The page ran on stored bars through the last session and
        flagged one day.
+   - **One rule for both pages (2026-10-25, D53; amends D49 and D50):**
+     - The comparison and the derivation came first. The owner approved
+       the robust share ŝ = z² / (z² + n − 1) > ½, on the mix and on each
+       holding.
+     - `models/portfolio.py` gained:
+       - `INFLUENCE_SHARE`, replacing `INFLUENCE_Z`
+       - `robust_share`, `influential_days` and `variance_shares`
+       - `HoldingDay`, and on `InfluentialDay` the fields `holdings` and
+         `robust_share`
+     - `models/regime.py` lost `Dominance` and its t(3) calibration.
+     - `services/review.py` reads `view.report.influence` and removes
+       those days. The Review card shows one row per series a day decides.
+     - Tests:
+       - `TestInfluence` covers the holding-only flag, masking at both
+         levels, the deletion identity, the closed form, z > √(n − 1),
+         t(3)'s rate in a binomial band, and rejections.
+       - The review test checks that the graded numbers equal Portfolio's
+         WITHOUT.
+       - The W7 dominance tests are gone.
+     - Measured on a copy of the owner's store: the one day V0 found is
+       still the only flag, across the mix and every holding. SPY's
+       Apr 9, 2025 is no longer flagged by itself.
+     - Not yet seen on screen with the owner's real book. The GUI smoke
+       tests cover both cards.
    - **Open (LENS_PLAN decisions):**
      - the visual direction (the spike)
      - the order after V0
@@ -990,7 +1019,8 @@ pytest. Environment:
      derivation: the Review page, the workflow's front door.
      - `models/regime.py`: the checks, with `data/regime.py` holding the
        records (Rule, Limit, Measure, RuleSet). The dominance calibration
-       is a 100,000-run table that `calibrate_dominance()` reproduces.
+       was a 100,000-run table that `calibrate_dominance()` reproduced;
+       D53 replaced it.
      - `importers/regime_md.py` reads REGIME.md. The template gained what
        parsing needed: section 7's units, `by k SE`, the sleeve-size grade,
        the dominant-day choice, and section 1's N. The owner's private copy

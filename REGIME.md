@@ -93,8 +93,9 @@ Sleeve size outside its intended range: ___ (fail / warn / note)
 | Minimum effective holdings | ___ | count | *Effective holdings* N_eff (*today*) | ___ |
 | Sizing cap | ___ | fraction f of estimated Kelly | Kelly f\* and its SE (*today*; per sleeve in W3) | ___ |
 
-When one day carries most of a holding's variance (the review flags it,
-`models/regime.py`), grade the return-based numbers: ___ (as measured /
+When a day carries most of the variance of the mix or of a holding (the
+review flags it, the same days the Portfolio page flags,
+`models/portfolio.py`), grade the return-based numbers: ___ (as measured /
 without that day; blank is as measured)
 
 ## 5. Hedges and options

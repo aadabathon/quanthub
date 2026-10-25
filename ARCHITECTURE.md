@@ -147,8 +147,9 @@ quant_hub/
 │   │                          QMLE fit, conditional variance diagnostics
 │   ├── regime.py              the review's checks: evidence-level breaches,
 │   │                          Fisher-scale correlation limits, persistence,
-│   │                          one-day dominance (t(3)-calibrated), the HMM and
-│   │                          GARCH gates, implied growth (W7, D49)
+│   │                          the HMM and GARCH gates, implied growth (W7,
+│   │                          D49); the days that decide the numbers are
+│   │                          portfolio.py's (D53)
 │   ├── dcf.py                 unlevered-FCF DCF (the owner's, ported):
 │   │                          projection, terminal conventions, valuation
 │   │                          date, sensitivity, multiples, margin of safety,
@@ -178,7 +179,9 @@ quant_hub/
 │   ├── portfolio.py           portfolio risk: vol, Euler risk contributions,
 │   │                          beta, historical (options repriced) and
 │   │                          Gaussian VaR/ES, drawdown of today's mix,
-│   │                          N_eff, Kelly with its error (D39)
+│   │                          N_eff, Kelly with its error (D39); the days
+│   │                          that decide the numbers, for Portfolio and
+│   │                          Review alike (D50, D53)
 │   ├── growth.py              growth from the replay's per-position series:
 │   │                          exact attribution, hurdles and verdicts,
 │   │                          min-variance and growth-optimal sleeve sizes
@@ -313,7 +316,8 @@ Valuation  = a DCF from SEC filings (the owner's modeler): seeded assumptions,
              root, a screen, saved valuations (D46–D48)
 Review     = the front door (after Dashboard): the owner's REGIME.md checked
              against the newest export: checklist, thesis by stream, gates,
-             one-day dominance, journal and trades (W7, D49)
+             the days that decide the numbers (Portfolio's, D53), journal
+             and trades (W7, D49)
 RESEARCH…  = GARCH Lab, Vol Lab, Kalman Lab, Markov Lab, Research
 ```
 

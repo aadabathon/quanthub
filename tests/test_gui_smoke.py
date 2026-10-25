@@ -1310,9 +1310,10 @@ def test_review_runs_the_checklist_and_keeps_the_journal(qt_app, tmp_path):
     assert page._checklist.rowCount() > 10
     first = [page._checklist.item(0, c).text() for c in range(page._checklist.columnCount())]
     assert first[3].startswith("fail")                                 # breaches first
-    assert page._streams.rowCount() == 2 and page._dominance.rowCount() == 1
-    assert page._dominance.item(0, 0).text() == "CCC"
-    assert page._dominance_card.subtitle.full_text().startswith("Graded without")
+    # CCC's +500% day decides the mix and CCC's own series: a row for each (D53).
+    assert page._streams.rowCount() == 2 and page._influence.rowCount() == 2
+    assert [page._influence.item(r, 1).text() for r in range(2)] == ["the mix", "CCC"]
+    assert page._influence_card.subtitle.full_text().startswith("Graded without")
     assert page._market.rowCount() == 3                                 # calm, volatility, indicator
     assert [page._drafts.item(r, 0).text() for r in range(page._drafts.rowCount())] == ["BBB", "CCC"]
     wait_for(app, lambda: page._history.rowCount() == 1, timeout_s=30)

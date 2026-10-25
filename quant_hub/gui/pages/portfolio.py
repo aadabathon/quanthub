@@ -24,10 +24,11 @@ Risk first, for a stock and ETF portfolio that uses options sparingly:
   rolling β with its band for the
   selected row, and the residual links between holdings, strongest first:
   are the streams orthogonal?
-* the days that decide the numbers (V0): any day flagged for its outsized
-  share of the variance, with its driver, and the headline numbers beside
-  the same numbers without it. The histogram draws the other days, and
-  counts the flagged ones at its edge.
+* the days that decide the numbers (V0, D53): any day that outweighs the
+  rest of the mix's series or of a holding's own, with its driver, and the
+  headline numbers beside the same numbers without it. The Review grades
+  without the same days when told to. The histogram draws the other days,
+  and counts the flagged ones at its edge.
 
 When the price source is offline, the stored bars are used and a note says
 through which day, and how many weekday sessions are missing since.
@@ -77,6 +78,7 @@ from quant_hub.gui.components import (
 from quant_hub.gui.pages.base import ScrollPage
 from quant_hub.gui.theme import PALETTE, SIDE_PANEL_WIDTH, SPACE_L, SPACE_M
 from quant_hub.models.growth import ADDS, COSTS, GrowthReport, what_if
+from quant_hub.models.portfolio import InfluentialDay
 from quant_hub.models.regression import Z95
 from quant_hub.services.market_service import MarketService
 from quant_hub.services.portfolio import (
@@ -113,6 +115,18 @@ def _estimate(value: float, error: float, fmt: str = "{:+.2f}") -> str:
     if float(fmt.format(abs(value)).strip("+%")) == 0:
         shown = fmt.replace("+", "").format(0.0)
     return f"{shown} ± {fmt.replace('+', '').format(error)}"
+
+
+def _influence_line(day: InfluentialDay) -> str:
+    """A flagged day: what it does to the mix, or, when it decides only a
+    holding's own series, to that holding (D53)."""
+    when = f"{day.date:%b %d, %Y}"
+    if day.decides_mix or not day.holdings:
+        return (f"{when}: the mix {day.mix_return:+.1%}, {day.driver} "
+                f"{day.driver_return:+,.0%}. {day.variance_share:.0%} of the variance.")
+    holding = day.holdings[0]
+    return (f"{when}: {holding.symbol} {holding.holding_return:+,.0%}, "
+            f"{holding.variance_share:.0%} of its own variance; the mix {day.mix_return:+.1%}.")
 
 
 class PortfolioPage(ScrollPage):
@@ -602,13 +616,11 @@ class PortfolioPage(ScrollPage):
         elif not influence.flagged:
             day = influence.largest
             self._influence_text.setText(
-                f"No single day stands out. The largest, {day.date:%b %d, %Y}, carries "
+                f"No day outweighs the rest. The largest, {day.date:%b %d, %Y}, carries "
                 f"{day.variance_share:.1%} of the variance; an ordinary day carries "
                 f"{1 / len(view.report.pnl):.1%}.")
         else:
-            lines = [f"{d.date:%b %d, %Y}: the mix {d.mix_return:+.1%}, {d.driver} "
-                     f"{d.driver_return:+,.0%}. {d.variance_share:.0%} of the variance."
-                     for d in influence.flagged[:3]]
+            lines = [_influence_line(d) for d in influence.flagged[:3]]
             if len(influence.flagged) > 3:
                 lines.append(f"…and {len(influence.flagged) - 3} more.")
             count = len(influence.flagged)

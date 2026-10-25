@@ -1335,3 +1335,84 @@ waits on the owner.
 - It flags one day. Without that day, the annual vol falls by almost half,
   and the largest risk share moves to a different holding.
 - VaR and ES don't change: the day was a gain.
+
+## D53 — One rule for "one day decides the numbers" (2026-10-25; amends D49 and D50)
+
+D49 (W7, Review) and D50 (V0, Portfolio) landed a day apart, with two
+answers to the same question.
+- W7 used D = max r² / Σ r² per holding, flagged above the 99.9% point of
+  an iid t(3) null.
+- V0 used the mix's robust z, flagged at |z| > 10.
+
+The owner compared them on the same data and approved one rule
+(2026-10-25). (D51 is reserved for LENS_PLAN's phase, and D52 for the
+execution track.)
+
+**What each flagged on the same data:**
+- SPY's Apr 9, 2025 (+10.5%, z = 14.8, 20% of the variance): V0 yes, W7 no.
+- A +60% day in a 30% holding: V0 yes; W7 no (D = 0.67).
+- Two +500% days in one holding: V0 both; W7 neither. Each carries half
+  the sum of squares, so the two hide each other.
+- The owner's book: both flagged the same single day, V0 in the mix and
+  W7 in the small holding behind it.
+- Noise: on SPY-like GARCH-t(5) series of 500 days, V0 flagged something
+  in 17%. W7 never fired: it needs a 59σ day, and V0 a 10σ one.
+- D49 called SPY's D of 0.20 normal for equities. D50 cited the same day
+  as a correct flag. One definition can't keep both.
+
+**The rule** (`models/portfolio.py`, derivation in its docstring):
+- **The robust share.** ŝ_t = z_t² / (z_t² + n − 1) is the share of the
+  variance a day would carry if every other day were ordinary. It's W7's
+  closed form x² / (x² + (n−1)σ²), with V0's robust x and σ (median and
+  1.4826·MAD). Unlike a share of the sum of squares, other big days can't
+  dilute it.
+- **The flag is a size, not a surprise.** A day decides the series when
+  ŝ_t > ½ ⇔ |z_t| > √(n − 1) (`INFLUENCE_SHARE`): its squared move
+  outweighs the ordinary variance of all the other days together. That's
+  REGIME.md's "most of the variance".
+  - When the other days are ordinary, removing a flagged day at least
+    halves the variance and moves the mean by about one standard error.
+  - The z it takes grows with the sample: 15.8 at 250 days, 22.3 at 500,
+    31.6 at 1,000. A longer sample is harder to outweigh.
+- **Gone:** `INFLUENCE_Z` and W7's calibrated null (`DOMINANCE_NULL`,
+  `calibrate_dominance`, `Dominance`).
+- **Noise rates are measured, not set.** At 500 days a series flags with
+  these probabilities:
+  - t(4) 0.7%, t(3) 6.8%
+  - SPY-like GARCH-t(5) 0.9%
+  - the same with a quarterly earnings move of 4 (6) daily sds:
+    1.4% (8.4%)
+
+  A test reproduces the t(3) rate.
+- **The reported share stays V0's,** about the mean, which is exactly
+  what leaves with the day:
+  Σ_{s≠t}(v_s − v̄_{−t})² = Σd² − n/(n−1)·d_t². W7's raw share differs
+  by under 0.3 points in every case measured.
+- **Both levels.** A day is flagged when it decides the mix or any
+  holding's own series, and it records which (`InfluentialDay.holdings`).
+  The mix decides σ_p, VaR, ES, Kelly and β_p. A holding's series decides
+  its own vol, β and risk share, and its sleeve's stream numbers. A +60%
+  day in a 30% holding carries 67% of the holding's variance but only 38%
+  of the mix's.
+
+**One function, read by both pages:**
+- `risk_report(...).influence` computes the flags. Portfolio shows them
+  and the WITHOUT report beside the headline.
+- The Review reads the same object from its analysis, and removes those
+  days for the second analysis. A test checks that the graded numbers
+  equal Portfolio's WITHOUT. Section 4 still chooses which analysis
+  grades.
+- The Review's card became "Days that decide the numbers": one row per
+  series a day decides (the mix, then each holding), with the share and
+  the robust share.
+- The journal payload keeps `influence` in place of `dominance`. Older
+  payloads are left as they were.
+- REGIME.md section 4's sentence names the mix as well as holdings, and
+  `models/portfolio.py`. The parser reads only the choice.
+
+**What changes for the owner:**
+- SPY's Apr 9, 2025 is no longer flagged by itself (ŝ = 0.31). The
+  Portfolio card still names it as the largest day, with its share.
+- The owner's real day stays flagged (the mix's ŝ = 0.78, the holding's
+  0.996). It's the only flag across the mix and every holding. V0's
+  z > 10 applied to each holding would have raised several more.
