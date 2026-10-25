@@ -886,3 +886,72 @@ W7 (ROADMAP.md).
     terminal cash flow, the valuation date, net debt
   - the name and layering rule of the online-provider package (W5)
   - rule-set versioning (W7)
+
+## D44 — V0: data you can trust: offline reads and influence flags (2026-10-24)
+
+The owner approved V0 of [LENS_PLAN.md](LENS_PLAN.md), a proposal of the
+same day. It followed two findings on the Portfolio page:
+- With TWS closed, the page failed, though the store held every bar
+  through the day before.
+- One session of one small holding carried most of the replayed mix's
+  variance, and nothing flagged it.
+
+The rest of LENS_PLAN (its order, V1's design, the new providers) still
+waits on the owner.
+
+**Offline reads (amends D18's failure policy).**
+- A port-level `SourceOfflineError` (`data/sources.py`) means "can't be
+  reached". It says nothing about the data. The broker's
+  `NotConnectedError` is one; future providers raise it for "no network".
+- On it, `CachedSource` serves the stored bars instead of failing, under
+  three rules:
+  - **One stretch.** The covered ranges inside the request must form one
+    stretch. A gap that holds no weekday doesn't count, but a real
+    interior gap still fails: serving across it would turn several
+    sessions into one return.
+  - **Covered dates only.** A provisional same-day bar that an earlier sync
+    stored is left out.
+  - **Adjusted bars** are served through the day before their last
+    refresh, since that day's own bar was provisional. If none are stored,
+    it raises `BasisUnavailableError`, and return math falls back to
+    traded.
+- Every other failure still fails the whole request, as D18 says.
+
+**Never silent.**
+- `PriceHistory.offline_reason` says why, and the frame ends where the
+  store does.
+- Portfolio says through which day it has data, and how many weekday
+  sessions are missing since (`data.ranges.weekdays_missed`). Weekends
+  don't count; holidays do, which errs toward "stale". With none missing
+  it's an info note, otherwise a warning.
+- The GARCH, Kalman and Markov labs add "offline, stored bars through …"
+  to their run labels.
+- Markets' Sync 1Y reports an offline sync as failed, with what the store
+  holds.
+- Research runs record `offline` in their provenance.
+
+**Influence** (`models/portfolio.py`, derivation in its docstring):
+- **Each day's share** of the mix's variance.
+- **A robust z** from the median and 1.4826·MAD, which one huge day can't
+  inflate. The sample sd stands in when the MAD is 0.
+- **A flag at |z| > 10** (`INFLUENCE_Z`). The plan's starting point was 6,
+  but measured, 6 is too many to read:
+  - On two years of Student-t noise (ν = 4 and 3), 6 flags 1.4–3.2 days,
+    and it flags four SPY days in SPY's last two years.
+  - 10 flags 0.2–0.7 days on the same noise, and one SPY day (Apr 9, 2025).
+- **Each flagged day names its driver:** the holding with the largest
+  dollar move.
+- **A "without" report.** The whole report is recomputed without the
+  flagged days. It sits beside the headline, never instead of it, as a
+  sensitivity, not a better estimate.
+
+**Histogram clip.**
+- `Histogram.set_data(clip=…)` draws a range and counts the values beyond
+  it in the readout. Densities stay per all values.
+- Portfolio clips to the range of the unflagged days.
+
+**On the owner's portfolio (2026-10-24, TWS closed):**
+- The page runs on stored bars through the last completed session.
+- It flags one day. Without that day, the annual vol falls by almost half,
+  and the largest risk share moves to a different holding.
+- VaR and ES don't change: the day was a gain.

@@ -177,10 +177,14 @@ class TestOneExportPerAccount:
                                   files("roth.csv", view_export("ROTH IRA"))])
 
     def test_rows_without_an_account_are_refused(self, files):
+        # A generic file is dated when it's imported, so the export beside it
+        # is dated today too: otherwise the different-days rule fires first
+        # (this test passed only on Oct 21, 2026, the fixture's own date).
         generic = "symbol,quantity,price\nAAPL,5,250\n"
+        today = f"{datetime.now():%m/%d/%Y}"
         with pytest.raises(PositionFileError, match="rows without an account"):
             read_positions_files([files("g.csv", generic),
-                                  files("roth.csv", view_export("ROTH IRA"))])
+                                  files("roth.csv", view_export("ROTH IRA", today))])
 
 
 class TestGeneric:

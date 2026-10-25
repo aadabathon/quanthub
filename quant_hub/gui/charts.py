@@ -729,6 +729,11 @@ class Histogram(QWidget):
 
     Presentation math only: binning (``np.histogram``) and the normal pdf
     drawn from supplied moments, exactly as ``visualization.charts`` does.
+
+    ``clip`` bounds the drawn range so one extreme value can't squeeze the
+    rest into a few bars (V0). Values beyond it are counted in the readout,
+    never dropped: densities stay per *all* values, so the bars' area is the
+    share inside the range and a density overlay still matches.
     """
 
     def __init__(self, axis: str = "number", bin_fmt: str = "{:+.2f}") -> None:
@@ -755,6 +760,8 @@ class Histogram(QWidget):
         self._edges = np.empty(0)
         self._density = np.empty(0)
         self._counts = np.empty(0)
+        self._total = 0
+        self._beyond = (np.empty(0), np.empty(0))     # below, above the clip range
         self._normal: tuple[float, float] | None = None
         self._normal_name = ""
         self._highlight = pg.BarGraphItem(x0=[0], x1=[0], height=[0],
@@ -766,18 +773,31 @@ class Histogram(QWidget):
 
     def set_data(self, values: np.ndarray, normal: tuple[float, float] | None = None,
                  normal_name: str = "Normal", bins: int | None = None,
-                 markers: Sequence[tuple[Series, float]] = ()) -> None:
+                 markers: Sequence[tuple[Series, float]] = (),
+                 clip: tuple[float, float] | None = None) -> None:
         """``markers``: vertical reference lines ``(style, x)``; the style's
         name and ``fmt`` label it in the readout legend, not on the plot, so
-        close markers (mean vs. expectation) never collide."""
+        close markers (mean vs. expectation) never collide. ``clip``: the
+        drawn range, ``(low, high)`` (class docstring)."""
         for item in self._items:
             self._plot.removeItem(item)
         self._items = []
         values = np.asarray(values, dtype=float)
         values = values[np.isfinite(values)]
-        bins = bins or min(60, max(10, len(values) // 8))
-        self._density, self._edges = np.histogram(values, bins=bins, density=True)
-        self._counts = np.histogram(values, bins=self._edges)[0]
+        shown = values
+        self._beyond = (np.empty(0), np.empty(0))
+        if clip is not None:
+            low, high = clip
+            if not low < high:
+                raise ValueError(f"clip range must have low < high, got {clip}")
+            inside = (values >= low) & (values <= high)
+            shown = values[inside]
+            self._beyond = (values[values < low], values[values > high])
+        bins = bins or min(60, max(10, len(shown) // 8))
+        self._edges = np.histogram_bin_edges(shown, bins=bins, range=clip)
+        self._counts = np.histogram(shown, bins=self._edges)[0]
+        self._total = len(values)
+        self._density = self._counts / (self._total * np.diff(self._edges))
         self._normal, self._normal_name = normal, normal_name
         width = self._edges[1] - self._edges[0]
         gap = width * 0.08     # a hairline of surface between adjacent bars
@@ -823,11 +843,18 @@ class Histogram(QWidget):
 
     def _show_readout(self, i: int | None) -> None:
         strong = f"color:{PALETTE.text}"
-        total = int(self._counts.sum())
+        total = self._total
         sep = "&nbsp;&nbsp;·&nbsp;&nbsp;"
         if i is None:
             # With markers the legend needs the room; the card names the sample.
             parts = [] if self._markers else [f"{total:,} observations · hover a bar"]
+            below, above = self._beyond
+            if len(below):
+                parts.append(f"<b style='{strong}'>{len(below)}</b> below the chart, lowest "
+                             f"<b style='{strong}'>{self._bin_fmt.format(below.min())}</b>")
+            if len(above):
+                parts.append(f"<b style='{strong}'>{len(above)}</b> above the chart, highest "
+                             f"<b style='{strong}'>{self._bin_fmt.format(above.max())}</b>")
             if self._normal is not None:
                 parts.append(f"<span style='color:{PALETTE.text_secondary}'>╍</span> "
                              f"{self._normal_name}")

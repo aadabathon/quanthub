@@ -22,6 +22,9 @@
   - A holding whose history won't load is left out of the risk model and
     named, with the share of equity it leaves unmodelled. Its value still
     counts in the equity.
+  - **Offline** (V0): when the source can't be reached, its stored bars
+    are used. The view says why, and how many weekday sessions the data
+    lacks since its last day (``data.ranges.weekdays_missed``).
 
 Runs on the task-worker thread (database, files, maybe IBKR).
 """
@@ -39,6 +42,7 @@ import numpy as np
 import pandas as pd
 
 from quant_hub.data.positions import Holding, Position, PositionSnapshot
+from quant_hub.data.ranges import weekdays_missed
 from quant_hub.data.types import PriceBasis
 from quant_hub.importers.positions_csv import read_positions_files
 from quant_hub.models.portfolio import (
@@ -90,6 +94,8 @@ class PortfolioView:
     left_out: tuple[str, ...]          # holdings outside the model, with why
     unmodelled: float                   # their share of equity
     options: int                        # option positions in the model
+    offline_reason: str | None = None   # set when prices came from the store (V0)
+    sessions_missed: int = 0            # weekday sessions since the data's last day
 
     @property
     def equity(self) -> float:
@@ -129,7 +135,7 @@ class PortfolioService:
 
         underlyings = sorted({p.symbol for p in positions if p.kind is Holding.EQUITY}
                              | {p.option.underlying for p in positions if p.option})
-        closes, basis = {}, PriceBasis.ADJUSTED
+        closes, basis, offline = {}, PriceBasis.ADJUSTED, None
         for symbol in [*underlyings, benchmark]:
             try:
                 history = self._market.get_return_history(symbol, start, now, source=source)
@@ -141,6 +147,7 @@ class PortfolioService:
             closes[symbol] = history.closes
             if history.basis is PriceBasis.TRADED:
                 basis = PriceBasis.TRADED
+            offline = offline or history.offline_reason
 
         equity = sum(p.market_value or 0.0 for p in positions)
         cash = sum(p.market_value or 0.0 for p in positions if p.kind is Holding.CASH)
@@ -189,8 +196,9 @@ class PortfolioService:
             for i, symbol in enumerate(report.symbols))
         if bench is None:
             left_out.append(f"{benchmark} (the benchmark): no history from {source}, so no beta")
+        missed = weekdays_missed(returns.index[-1], now) if offline else 0
         return PortfolioView(snapshot, account, source, benchmark, basis, report, rows, cash,
-                             tuple(left_out), unmodelled / equity, len(options))
+                             tuple(left_out), unmodelled / equity, len(options), offline, missed)
 
 
 def example_snapshot(market: MarketService, source: str) -> PositionSnapshot:

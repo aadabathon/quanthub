@@ -89,12 +89,18 @@ class PriceHistory:
     The frame is copied and sorted at construction so instances are
     effectively immutable value objects; the dataclass is frozen and the
     internal frame is never handed out for mutation by reference intent.
+
+    ``offline_reason`` is set when the source couldn't be reached and these
+    are the bars it had stored (V0): why it was offline. The frame then ends
+    at the last stored completed session, which may be before the request's
+    end, so every caller that shows a result says so.
     """
 
     symbol: str
     source: str
     frame: pd.DataFrame = field(repr=False)
     basis: PriceBasis = PriceBasis.TRADED
+    offline_reason: str | None = None
 
     def __post_init__(self) -> None:
         if not self.symbol:

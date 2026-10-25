@@ -25,6 +25,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import QHBoxLayout, QLineEdit, QStackedWidget, QVBoxLayout, QWidget
 
+from quant_hub.data.sources import SourceOfflineError
 from quant_hub.data.types import MarketDataMode, PriceBasis, Quote
 from quant_hub.tasks import TaskRunner
 from quant_hub.gui.charts import Sparkline
@@ -398,6 +399,10 @@ class MarketsPage(ScrollPage):
         def work() -> str:
             history = self._market.get_history(symbol, start, end, source=source,
                                                basis=PriceBasis.TRADED)
+            if history.offline_reason:      # served from the store: nothing was synced
+                raise SourceOfflineError(
+                    f"{source} is offline ({history.offline_reason}); the store holds "
+                    f"{len(history):,} bars through {history.end:%Y-%m-%d}")
             return (f"{symbol}: {len(history):,} bars available "
                     f"{history.start:%Y-%m-%d} → {history.end:%Y-%m-%d} ({source})")
 

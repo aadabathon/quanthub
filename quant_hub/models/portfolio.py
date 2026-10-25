@@ -120,6 +120,52 @@ standard error :math:`\sigma/\sqrt{T}` over :math:`T` years, so
 isn't an estimate, it's noise: the case for fractional Kelly, and for not
 leaning on :math:`\hat\mu` at all.
 
+Influence: the days that decide the numbers (V0)
+------------------------------------------------
+Every number above is a sample statistic. One extreme day can carry most
+of the sample, and nothing in the statistic says so. Let
+:math:`y_t = R_{p,t}` be the mix's return on day :math:`t` (:math:`n`
+days). It's the series behind :math:`\sigma_p`, :math:`\hat\mu`,
+:math:`\beta_p` and Kelly.
+
+* **Share of the variance.** The sample variance is
+  :math:`\sum_t (y_t - \bar y)^2/(n-1)`, so day :math:`t` carries
+
+  .. math::  s_t = \frac{(y_t - \bar y)^2}{\sum_s (y_s - \bar y)^2},
+
+  and the shares sum to 1. An ordinary day carries about :math:`1/n`.
+* **Robust z.** The score is
+
+  .. math::  z_t = \frac{y_t - \operatorname{med}(y)}{1.4826\,\operatorname{MAD}(y)},
+             \qquad \operatorname{MAD}(y) = \operatorname{med}\lvert y -
+             \operatorname{med}(y)\rvert .
+
+  For a normal sample the MAD tends to :math:`\Phi^{-1}(3/4)\,\sigma
+  \approx 0.6745\,\sigma`, so :math:`1.4826\,\mathrm{MAD}` estimates
+  :math:`\sigma`. The sample sd won't do as the scale: a huge day inflates
+  the sd it's judged by, and several such days hide one another
+  ("masking"). The median and MAD ignore anything in up to half the
+  sample. If more than half the days sit exactly at the median (a mostly
+  idle account), the MAD is 0 and the sample sd stands in.
+* **The flag.** Day :math:`t` is flagged when :math:`|z_t| > k`, with
+  ``INFLUENCE_Z`` :math:`= 10`, a threshold measured rather than assumed.
+  Under normality anything above 6 never fires, but daily returns are
+  fat-tailed. On Student-t noise over 500 days (about two years),
+  :math:`k = 6` flags 3.2 days at :math:`\nu = 3` and 1.4 at
+  :math:`\nu = 4`; :math:`k = 10` flags 0.7 and 0.2. SPY's two years to
+  October 2026 hold one day beyond 10: April 9, 2025, +10.5%, about a
+  fifth of its variance. So a flag marks a day that alone carries a large
+  part of the numbers, and flags are rare enough to read.
+* **Each day's driver** is the holding with the largest dollar move
+  :math:`|X_i R_{t,i}|` that day.
+* **Without the flagged days,** the whole report is recomputed on the
+  other days, with the same holdings and definitions; its mean is the
+  leave-out mean :math:`\bar y_{-S} = (n \bar y - \sum_{t \in S} y_t)/(n -
+  |S|)`. It needs ``MIN_DAYS`` left, or it isn't computed. It's a
+  sensitivity, not a better estimate: the day happened, and can again. The
+  full sample stays the headline, and the "without" numbers sit beside it,
+  never instead of it.
+
 Limitations
 -----------
 * One lookback's covariance: it moves with regimes (the Markov Lab), and is
@@ -140,12 +186,17 @@ ES match their closed forms; the historical VaR is exceeded on about
 :math:`1-\alpha` of fresh days (binomial tolerance); the estimates recover
 the true covariance within sampling error. Options: the replay of a
 protective put loses less than its delta says on a crash day.
+Influence: a planted jump is flagged with its driver and its exact share;
+two equal jumps are both flagged (no masking); a clean Gaussian world
+flags nothing; :math:`1.4826\,\mathrm{MAD}` recovers :math:`\sigma`; the
+"without" report equals a report on the remaining days, and its mean obeys
+the leave-out identity.
 """
 
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from statistics import NormalDist
 
 import numpy as np
@@ -159,6 +210,11 @@ CONFIDENCE = (0.95, 0.99)
 MIN_DAYS = 60
 """Fewest common return days the model accepts: below about three months
 the covariance and the tails are guesses."""
+
+INFLUENCE_Z = 10.0
+"""Robust z beyond which a day is flagged (module docstring, Influence)."""
+MAD_TO_SD = 1.4826
+"""1/Phi^-1(3/4): turns a normal sample's MAD into an estimate of sigma."""
 
 _STANDARD_NORMAL = NormalDist()
 
@@ -216,6 +272,30 @@ class Exposures:
 
 
 @dataclass(frozen=True)
+class InfluentialDay:
+    """One day of the mix's returns (module docstring, Influence)."""
+
+    date: pd.Timestamp
+    mix_return: float        # y_t
+    robust_z: float          # z_t
+    variance_share: float    # s_t
+    driver: str              # the holding with the largest dollar move that day
+    driver_return: float     # its return that day
+
+
+@dataclass(frozen=True)
+class Influence:
+    """The days that decide the numbers: ``flagged`` (|z| beyond
+    ``INFLUENCE_Z``, largest share first), the ``largest`` day by share
+    whether flagged or not, and the report recomputed ``without`` the
+    flagged days (None when none are flagged or too few days remain)."""
+
+    flagged: tuple[InfluentialDay, ...]
+    largest: InfluentialDay
+    without: RiskReport | None
+
+
+@dataclass(frozen=True)
 class RiskReport:
     """Everything the module docstring defines, for one portfolio."""
 
@@ -243,6 +323,7 @@ class RiskReport:
     kelly: float                     # f*
     kelly_error: float               # its standard error
     rate: float
+    influence: Influence | None = None
 
     @property
     def vol_annual(self) -> float:
@@ -303,12 +384,14 @@ def simple_returns(closes: dict[str, pd.Series]) -> pd.DataFrame:
 
 
 def risk_report(exposures: Exposures, returns: pd.DataFrame, benchmark: pd.Series | None,
-                rate: float, confidence: tuple[float, ...] = CONFIDENCE) -> RiskReport:
+                rate: float, confidence: tuple[float, ...] = CONFIDENCE,
+                with_influence: bool = True) -> RiskReport:
     """The module docstring's quantities for ``exposures``.
 
     ``returns`` holds daily simple returns with a column for every
     underlying (stocks and options' alike); ``benchmark`` the benchmark's,
-    on the same days (or None).
+    on the same days (or None). ``with_influence`` adds the influence
+    diagnostics, whose "without" report is this function again, without them.
     """
     totals = exposures.by_underlying()
     symbols = tuple(sorted(totals, key=lambda s: -abs(totals[s])))
@@ -371,7 +454,7 @@ def risk_report(exposures: Exposures, returns: pd.DataFrame, benchmark: pd.Serie
         mean = mix_mean
         kelly = (mix_mean - rate) / mix_vol**2
         kelly_error = 1.0 / (mix_vol * math.sqrt(years))
-    return RiskReport(
+    report = RiskReport(
         equity=equity, symbols=symbols, exposures=x, weights=w,
         asset_vols=np.sqrt(np.diag(covariance)), covariance=covariance, vol=vol,
         contributions=contributions, betas=betas, beta=beta,
@@ -379,6 +462,47 @@ def risk_report(exposures: Exposures, returns: pd.DataFrame, benchmark: pd.Serie
         var_gaussian=var_g, es_gaussian=es_g, path=path, drawdown=drawdown,
         benchmark_path=benchmark_path, n_effective=n_effective, net_exposure=net,
         mean=mean, kelly=kelly, kelly_error=kelly_error, rate=rate)
+    if not with_influence:
+        return report
+    return replace(report, influence=_influence(exposures, returns, benchmark, rate,
+                                                confidence, symbols, r, x, portfolio))
+
+
+def robust_z(values: np.ndarray) -> np.ndarray:
+    """(v - median) / (1.4826 MAD), the sample sd standing in when the MAD
+    is 0; all zeros when the values don't vary (module docstring, Influence)."""
+    v = np.asarray(values, dtype=float)
+    median = float(np.median(v))
+    scale = MAD_TO_SD * float(np.median(np.abs(v - median)))
+    if scale <= 0:
+        scale = float(np.std(v, ddof=1)) if len(v) > 1 else 0.0
+    return (v - median) / scale if scale > 0 else np.zeros_like(v)
+
+
+def _influence(exposures: Exposures, returns: pd.DataFrame, benchmark: pd.Series | None,
+               rate: float, confidence: tuple[float, ...], symbols: tuple[str, ...],
+               r: np.ndarray, x: np.ndarray, y: np.ndarray) -> Influence:
+    """Shares, robust z, drivers and the report without the flagged days."""
+    deviation = y - y.mean()
+    total = float(deviation @ deviation)
+    shares = deviation**2 / total if total > 0 else np.zeros_like(y)
+    z = robust_z(y)
+    moves = np.abs(r * x)                      # dollars each holding moved, per day
+
+    def day(i: int) -> InfluentialDay:
+        j = int(np.argmax(moves[i]))
+        return InfluentialDay(returns.index[i], float(y[i]), float(z[i]), float(shares[i]),
+                              symbols[j], float(r[i, j]))
+
+    flagged = sorted(np.flatnonzero(np.abs(z) > INFLUENCE_Z), key=lambda i: -shares[i])
+    without = None
+    if flagged and len(y) - len(flagged) >= MIN_DAYS:
+        keep = np.ones(len(y), dtype=bool)
+        keep[flagged] = False
+        without = risk_report(exposures, returns[keep],
+                              None if benchmark is None else benchmark.reindex(returns.index)[keep],
+                              rate, confidence, with_influence=False)
+    return Influence(tuple(day(i) for i in flagged), day(int(np.argmax(shares))), without)
 
 
 def correlated_returns(vols: np.ndarray, correlation: np.ndarray, days: int, mean: np.ndarray,

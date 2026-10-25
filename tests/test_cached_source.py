@@ -12,6 +12,7 @@ import pandas as pd
 import pytest
 
 from quant_hub.data.ranges import DateRange
+from quant_hub.data.sources import BasisUnavailableError, SourceOfflineError
 from quant_hub.data.types import PriceHistory, Quote
 from quant_hub.services.cached_source import CachedSource
 from quant_hub.storage.bar_store import BarStore, InstrumentKey
@@ -46,10 +47,13 @@ class FakeSource:
         self.frame = master_frame() if frame is None else frame
         self.fetch_calls: list[tuple[datetime, datetime]] = []
         self.fail_next = False
+        self.offline = False
 
     def fetch_bars(self, symbol, start, end, bar_size) -> pd.DataFrame:
         if self.fail_next:
             raise ConnectionError("fake provider unavailable")
+        if self.offline:
+            raise SourceOfflineError("fake is disconnected")
         self.fetch_calls.append((start, end))
         return self.frame.loc[start:end]
 
@@ -188,6 +192,71 @@ class TestFailuresAndEdges:
 
     def test_name_is_transparent(self, cached):
         assert cached.name == "fake"
+
+
+class TestOffline:
+    """V0: an offline provider serves what the store holds, labelled, but
+    never across a hole (module docstring, Offline)."""
+
+    def test_offline_tail_serves_the_stored_stretch(self, cached, fake):
+        cached.get_history("SPY", datetime(2024, 1, 1), datetime(2024, 1, 31))
+        fake.offline = True
+        history = cached.get_history("SPY", datetime(2024, 1, 1), datetime(2024, 2, 29))
+        assert history.offline_reason == "fake is disconnected"
+        assert history.end == datetime(2024, 1, 31)
+        expected = master_frame().loc["2024-01-01":"2024-01-31", "close"]
+        assert history.closes.tolist() == expected.tolist()
+
+    def test_online_history_has_no_offline_reason(self, cached):
+        assert cached.get_history("SPY", datetime(2024, 1, 1),
+                                  datetime(2024, 1, 31)).offline_reason is None
+
+    def test_offline_with_nothing_stored_fails(self, cached, fake):
+        fake.offline = True
+        with pytest.raises(SourceOfflineError, match="disconnected"):
+            cached.get_history("SPY", datetime(2024, 1, 1), datetime(2024, 1, 31))
+
+    def test_other_failures_still_fail_with_stored_bars(self, cached, fake):
+        cached.get_history("SPY", datetime(2024, 1, 1), datetime(2024, 1, 31))
+        fake.fail_next = True          # not "offline": a refused or broken request
+        with pytest.raises(ConnectionError):
+            cached.get_history("SPY", datetime(2024, 1, 1), datetime(2024, 2, 29))
+
+    def test_offline_never_serves_across_an_interior_hole(self, cached, fake):
+        cached.get_history("SPY", datetime(2024, 1, 1), datetime(2024, 1, 31))
+        cached.get_history("SPY", datetime(2024, 3, 1), datetime(2024, 3, 29))
+        fake.offline = True
+        with pytest.raises(SourceOfflineError, match="2024-01-31.*2024-03-01"):
+            cached.get_history("SPY", datetime(2024, 1, 1), datetime(2024, 3, 29))
+
+    def test_a_weekend_between_stored_stretches_is_not_a_hole(self, cached, fake):
+        # Coverage Jan 1-Fri Jan 12, then Mon Jan 15-31: no weekday between.
+        cached.get_history("SPY", datetime(2024, 1, 1), datetime(2024, 1, 12))
+        cached.get_history("SPY", datetime(2024, 1, 15), datetime(2024, 1, 31))
+        fake.offline = True
+        history = cached.get_history("SPY", datetime(2024, 1, 1), datetime(2024, 1, 31))
+        assert history.offline_reason is not None
+        assert len(history) == 23      # every January business day
+
+    def test_offline_head_gap_serves_from_where_the_store_starts(self, cached, fake):
+        cached.get_history("SPY", datetime(2024, 2, 1), datetime(2024, 2, 29))
+        fake.offline = True
+        history = cached.get_history("SPY", datetime(2024, 1, 1), datetime(2024, 2, 29))
+        assert history.start == datetime(2024, 2, 1)
+        assert history.offline_reason is not None
+
+    def test_offline_leaves_out_a_stored_provisional_bar(self, store):
+        # A sync on Fri Mar 15 stores that day's provisional bar but covers
+        # only through Mar 14; offline on Monday, Mar 15 must not be served.
+        fake = FakeSource()
+        friday = datetime(2024, 3, 15, 14, 30)
+        CachedSource(fake, store, now=lambda: friday).get_history(
+            "SPY", datetime(2024, 3, 1), friday)
+        fake.offline = True
+        monday = datetime(2024, 3, 18, 10, 0)
+        history = CachedSource(fake, store, now=lambda: monday).get_history(
+            "SPY", datetime(2024, 3, 1), monday)
+        assert history.end == datetime(2024, 3, 14)
 
 
 class TestPersistenceAcrossRestart:
@@ -366,3 +435,34 @@ class TestDividendStepGuard:
         traded, adjusted = self.frames([1.0] * 6)
         adjusted.iloc[-1, 0] = 140.0                     # moved since it was stored
         assert dividend_steps_only(traded, adjusted, self.INDEX[-1].to_pydatetime())
+
+
+class TestAdjustedOffline:
+    def test_adjusted_serves_through_the_day_before_its_refresh(self, store):
+        fake = IBKRLikeFake({"2024-02-01": 1.5})
+        refresh_day = datetime(2024, 3, 6, 15, 0)       # a Wednesday, mid-session
+        fake.today = refresh_day
+        CachedSource(fake, store, now=lambda: refresh_day).get_history(
+            "SPY", datetime(2024, 1, 2), refresh_day, PriceBasis.ADJUSTED)
+
+        def offline(*_args, **_kwargs):
+            raise SourceOfflineError("not connected")
+        fake.fetch_bars = offline
+        later = datetime(2024, 3, 11, 9, 0)
+        history = CachedSource(fake, store, now=lambda: later).get_history(
+            "SPY", datetime(2024, 1, 2), later, PriceBasis.ADJUSTED)
+        assert history.basis is PriceBasis.ADJUSTED
+        assert history.offline_reason == "not connected"
+        assert history.end == datetime(2024, 3, 5)     # Mar 6 was provisional
+
+    def test_no_stored_adjusted_bars_is_basis_unavailable(self, store):
+        fake = IBKRLikeFake({})
+        cached = CachedSource(fake, store, now=lambda: NOW)
+        cached.get_history("SPY", datetime(2024, 1, 1), datetime(2024, 1, 31))   # traded only
+
+        def offline(*_args, **_kwargs):
+            raise SourceOfflineError("not connected")
+        fake.fetch_bars = offline
+        with pytest.raises(BasisUnavailableError, match="offline"):
+            cached.get_history("SPY", datetime(2024, 1, 1), datetime(2024, 1, 31),
+                               PriceBasis.ADJUSTED)

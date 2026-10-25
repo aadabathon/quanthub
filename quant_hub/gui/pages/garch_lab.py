@@ -38,7 +38,7 @@ from quant_hub.gui.components import (
     button,
     form_grid,
 )
-from quant_hub.gui.pages.base import PRICE_BASES, ScrollPage, basis_field
+from quant_hub.gui.pages.base import PRICE_BASES, ScrollPage, basis_field, offline_note
 from quant_hub.gui.theme import PALETTE, SIDE_PANEL_WIDTH, SPACE_L, SPACE_M
 from quant_hub.models.garch import (
     GARCH11Fit,
@@ -238,7 +238,7 @@ class GARCHLabPage(ScrollPage):
             returns = history.log_returns()
             return _Run(returns.index, returns.to_numpy(), fit_garch11(returns.to_numpy()), None,
                         f"{history.symbol} · {history.source} · {basis.value} · "
-                        f"{len(returns):,} daily log returns")
+                        f"{len(returns):,} daily log returns{offline_note(history)}")
         return work
 
     def _on_done(self, run: _Run) -> None:

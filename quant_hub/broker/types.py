@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime
 
+from quant_hub.data.sources import SourceOfflineError
 from quant_hub.data.types import MarketDataMode
 
 
@@ -97,8 +98,10 @@ class BrokerUnavailableError(BrokerError):
     """The broker backend (e.g. the ibapi package) is not installed."""
 
 
-class NotConnectedError(BrokerError):
-    """An operation requiring a live connection was attempted while disconnected."""
+class NotConnectedError(BrokerError, SourceOfflineError):
+    """An operation requiring a live connection was attempted while disconnected.
+
+    A ``SourceOfflineError``: the cache may answer from stored bars (V0)."""
 
 
 class RequestTimeoutError(BrokerError):

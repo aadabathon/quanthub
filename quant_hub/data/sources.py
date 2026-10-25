@@ -25,6 +25,16 @@ class BasisUnavailableError(LookupError):
     import with traded prices only, say)."""
 
 
+class SourceOfflineError(Exception):
+    """The provider can't be reached right now: disconnected, or no network.
+
+    Unlike every other failure, this one says nothing about the data, so
+    bars already stored can still answer. ``CachedSource`` serves them,
+    marked with ``PriceHistory.offline_reason`` (V0). Adapters raise it (or a
+    subclass) for "not reachable" only, never for a refused or bad request.
+    """
+
+
 @runtime_checkable
 class DataSource(Protocol):
     """Anything that can serve price history and quotes for a symbol."""

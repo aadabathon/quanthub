@@ -67,7 +67,7 @@ from quant_hub.gui.components import (
     button,
     form_grid,
 )
-from quant_hub.gui.pages.base import PRICE_BASES, ScrollPage, basis_field
+from quant_hub.gui.pages.base import PRICE_BASES, ScrollPage, basis_field, offline_note
 from quant_hub.gui.theme import PALETTE, SIDE_PANEL_WIDTH, SPACE_L, SPACE_M
 from quant_hub.models.markov import (
     MIN_OBSERVATIONS,
@@ -410,7 +410,7 @@ class MarkovLabPage(ScrollPage):
             prices = history.closes.loc[returns.index].to_numpy(dtype=float)
             return _analyse(returns.index, prices, returns.to_numpy(dtype=float), count, None,
                             f"{history.symbol} · {history.source} · {basis.value} · "
-                            f"{len(returns):,} daily returns")
+                            f"{len(returns):,} daily returns{offline_note(history)}")
         return work
 
     def _on_done(self, run: _Run) -> None:

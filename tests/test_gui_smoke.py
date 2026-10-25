@@ -526,6 +526,51 @@ def test_portfolio_imports_one_export_per_account_together(qt_app, tmp_path):
     page._accounts.select.set_current("ROTH IRA")
     wait_for(app, lambda: page._view.account == "ROTH IRA", timeout_s=30)
 
+def test_portfolio_offline_uses_the_store_and_flags_a_deciding_day(tmp_path):
+    """V0 end to end: IBKR isn't connected, so the page runs on the stored,
+    covered bars and says so; one planted +300% day is flagged, the numbers
+    without it shown, and the histogram counts it at its edge."""
+    from quant_hub.data.ranges import DateRange
+    db = tmp_path / "market_data.db"
+    store = BarStore(db)
+    dates = pd.bdate_range("2025-01-02", periods=300)
+    rng = np.random.default_rng(5)
+    for symbol in ("AAA", "BBB", "SPY"):
+        log_returns = rng.normal(0.0, 0.012, len(dates))
+        if symbol == "BBB":
+            log_returns[150] = np.log(4.0)
+        closes = 50 * np.exp(np.cumsum(log_returns))
+        frame = pd.DataFrame({"open": closes, "high": closes, "low": closes, "close": closes,
+                              "volume": np.full(len(dates), 1e6)}, index=dates)
+        store.insert_bars(InstrumentKey(symbol), "ibkr", "1 day", frame)
+        store.add_coverage(InstrumentKey(symbol), "ibkr", "1 day",
+                           DateRange(dates[0], dates[-1]))
+    store.close()
+    app, window = create_app(AppConfig(db_path=db), argv=["test"])
+    window.show()
+    try:
+        window._core.state_store.save("portfolio", {"source": "ibkr", "mode": "Imported"})
+        page = window.show_page("Portfolio")
+        positions = tmp_path / "positions.csv"
+        positions.write_text("symbol,quantity,price\nAAA,100,50\nBBB,10,50\n", encoding="utf-8")
+        page.import_file(positions)
+        wait_for(app, lambda: page._view is not None
+                 and page._view.snapshot.source != "Example", timeout_s=30)
+        view = page._view
+        assert view.offline_reason == "not connected to IBKR"
+        assert view.report.pnl.index[-1] == dates[-1]
+        assert view.sessions_missed > 0                       # the bars end months ago
+        assert "offline" in page._warning._text.text()
+        (day,) = view.report.influence.flagged
+        assert day.driver == "BBB" and day.date == dates[150]
+        assert page._without.isVisibleTo(page)
+        assert "BBB" in page._influence_text.text()
+        below, above = page._losses._beyond
+        assert len(below) + len(above) == 1
+    finally:
+        _close(app, window)
+
+
 # ------------------------------------------------------------------- Markets
 
 def test_markets_synthetic_quotes_add_and_remove(qt_app):

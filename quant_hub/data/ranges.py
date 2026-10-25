@@ -25,6 +25,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Iterable
 
+import numpy as np
+
 ONE_DAY = timedelta(days=1)
 
 
@@ -51,6 +53,11 @@ class DateRange:
 
     def contains(self, other: "DateRange") -> bool:
         return self.start <= other.start and other.end <= self.end
+
+    def intersection(self, other: "DateRange") -> "DateRange | None":
+        if not self.overlaps(other):
+            return None
+        return DateRange(max(self.start, other.start), min(self.end, other.end))
 
     def __str__(self) -> str:
         return f"{self.start:%Y-%m-%d}..{self.end:%Y-%m-%d}"
@@ -85,3 +92,18 @@ def subtract_ranges(target: DateRange, covered: Iterable[DateRange]) -> list[Dat
             return missing
     missing.append(DateRange(cursor, target.end))
     return missing
+
+
+def weekdays_missed(last: datetime, now: datetime) -> int:
+    """Weekday sessions completed since ``last`` that a series ending on
+    ``last`` lacks: the weekdays strictly after it and before today (today's
+    session is still provisional, as the cache treats it).
+
+    Weekends never count, so Friday's bar read on Saturday has missed
+    nothing. Exchange holidays aren't known here, so one counts as a missed
+    session: the error is on the side of saying "stale".
+    """
+    first, today = floor_day(last) + ONE_DAY, floor_day(now)
+    if first >= today:
+        return 0
+    return int(np.busday_count(first.date(), today.date()))
