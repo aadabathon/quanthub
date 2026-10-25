@@ -366,3 +366,7 @@ checks are a real Fidelity positions export and a fresh end-to-end adjusted
 history/cache run against TWS. Portfolio optimizers, streaming, option
 strategy backtests and richer personalization remain later work. See
 [ROADMAP.md](ROADMAP.md) and [CURRENT_STATE.md](CURRENT_STATE.md).
+
+## License
+
+MIT. See [LICENSE](LICENSE).
