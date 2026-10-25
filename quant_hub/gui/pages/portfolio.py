@@ -24,6 +24,13 @@ Risk first, for a stock and ETF portfolio that uses options sparingly:
   rolling β with its band for the
   selected row, and the residual links between holdings, strongest first:
   are the streams orthogonal?
+* the days that decide the numbers (V0): any day flagged for its outsized
+  share of the variance, with its driver, and the headline numbers beside
+  the same numbers without it. The histogram draws the other days, and
+  counts the flagged ones at its edge.
+
+When the price source is offline, the stored bars are used and a note says
+through which day, and how many weekday sessions are missing since.
 
 Holdings come from the latest imported positions file (a broker's CSV:
 Fidelity, or the generic layout; ``services/portfolio.py``), or a built-in
@@ -164,6 +171,7 @@ class PortfolioPage(ScrollPage):
             note.setVisible(False)
             side.addWidget(note)
         side.addWidget(self._build_sizing())
+        side.addWidget(self._build_influence())
         side.addStretch(1)
 
     # ------------------------------------------------------------- layout
@@ -347,6 +355,20 @@ class PortfolioPage(ScrollPage):
         card.body.addWidget(self._sizing)
         return card
 
+    def _build_influence(self) -> Card:
+        card = Card("Days that decide the numbers", "")
+        self._influence_text = label("", "secondary", wrap=True)
+        card.body.addWidget(self._influence_text)
+        self._without = StatTable([
+            (None, (("vol", "Volatility  annual"), ("mean", "Mean return  annual"),
+                    ("kelly", "Kelly leverage f*"), ("var", "1-day VaR 95%"),
+                    ("es", "Expected shortfall 99%"), ("top", "Largest risk share"))),
+        ], value_header="WITHOUT", truth_header="ALL DAYS")
+        self._without.show_truth(True)
+        card.body.addWidget(self._without)
+        self._influence_card = card
+        return card
+
     # ----------------------------------------------------------- lifecycle
     def on_show(self) -> None:
         if self._view is None:
@@ -454,6 +476,7 @@ class PortfolioPage(ScrollPage):
         self._render_replay(view)
         self._render_losses(view)
         self._render_sizing(view)
+        self._render_influence(view)
         self._render_notes(view, fallback)
         self._render_growth(view)
         self._render_book(view)
@@ -535,11 +558,17 @@ class PortfolioPage(ScrollPage):
                     -r.var_historical[0.95]),
                    (Series("VaR 99%", np.array([]), PALETTE.critical, fmt="{:+,.0f}"),
                     -r.var_historical[0.99])]
+        # Flagged days are counted at the edge, not drawn, so they can't
+        # squeeze every other day into a few bars (V0).
+        flagged = [d.date for d in r.influence.flagged] if r.influence else []
+        body = r.pnl.drop(flagged)
+        clip = (float(body.min()), float(body.max())) if flagged else None
         self._losses.set_data(r.pnl.to_numpy(), normal=(0.0, sd),
-                              normal_name="Gaussian, same vol", markers=markers)
+                              normal_name="Gaussian, same vol", markers=markers, clip=clip)
         self._losses_card.set_subtitle(
             f"{len(r.pnl):,} days replayed on today's holdings (options repriced in full) · "
-            "tails beyond the curve are fat tails")
+            + (f"{len(flagged)} flagged day{'s' if len(flagged) != 1 else ''} beyond the chart"
+               if flagged else "tails beyond the curve are fat tails"))
 
     def _render_sizing(self, view: PortfolioView) -> None:
         r = view.report
@@ -565,13 +594,64 @@ class PortfolioPage(ScrollPage):
         top = max(view.rows, key=lambda h: abs(h.weight)) if view.rows else None
         s.set_value("top", f"{top.symbol} {top.weight:.0%}" if top else "—")
 
+    def _render_influence(self, view: PortfolioView) -> None:
+        influence = view.report.influence
+        without = influence.without if influence else None
+        if influence is None:
+            self._influence_text.setText("")
+        elif not influence.flagged:
+            day = influence.largest
+            self._influence_text.setText(
+                f"No single day stands out. The largest, {day.date:%b %d, %Y}, carries "
+                f"{day.variance_share:.1%} of the variance; an ordinary day carries "
+                f"{1 / len(view.report.pnl):.1%}.")
+        else:
+            lines = [f"{d.date:%b %d, %Y}: the mix {d.mix_return:+.1%}, {d.driver} "
+                     f"{d.driver_return:+,.0%}. {d.variance_share:.0%} of the variance."
+                     for d in influence.flagged[:3]]
+            if len(influence.flagged) > 3:
+                lines.append(f"…and {len(influence.flagged) - 3} more.")
+            count = len(influence.flagged)
+            lines.append(
+                "Flagged, not removed. WITHOUT is a sensitivity, not a better estimate: a "
+                "real move can happen again, and a bad bar should be fixed at its source."
+                if without else f"Too few days would remain without "
+                f"{'it' if count == 1 else 'them'} to recompute the numbers.")
+            self._influence_text.setText("<br>".join(lines))
+        self._without.setVisible(without is not None)
+        if without is None:
+            return
+        r = view.report
+        self._without.set_value("vol", f"{without.vol_annual:.1%}", f"{r.vol_annual:.1%}")
+        self._without.set_value("mean", f"{without.mean:+.1%}", f"{r.mean:+.1%}")
+        self._without.set_value("kelly", f"{without.kelly:+.1f}×", f"{r.kelly:+.1f}×")
+        self._without.set_value("var", _money(without.var_historical[0.95]),
+                                _money(r.var_historical[0.95]))
+        self._without.set_value("es", _money(without.es_historical[0.99]),
+                                _money(r.es_historical[0.99]))
+
+        def top(report) -> str:
+            i = int(np.argmax(report.risk_shares))
+            return f"{report.symbols[i]} {report.risk_shares[i]:.0%}"
+        self._without.set_value("top", top(without), top(r))
+
     def _render_notes(self, view: PortfolioView, fallback: bool) -> None:
         warnings = list(view.left_out)
         if view.unmodelled > 0:
             warnings.append(f"{view.unmodelled:.1%} of equity is outside the risk model.")
+        offline = None
+        if view.offline_reason:
+            missed = view.sessions_missed
+            offline = (f"{view.source} is offline ({view.offline_reason}), so prices are the "
+                       f"stored bars, through {view.report.pnl.index[-1]:%b %d, %Y}"
+                       + (", the last completed weekday session." if missed == 0 else
+                          f": {missed} weekday session{'s' if missed != 1 else ''} since "
+                          "are missing."))
+            if missed:
+                warnings.append(offline)
         self._warning.set_text(" ".join(warnings))
         self._warning.setVisible(bool(warnings))
-        findings = []
+        findings = [offline] if offline and not view.sessions_missed else []
         if fallback:
             findings.append("No positions imported yet: this is the example portfolio. Import "
                             "a broker's positions CSV (Fidelity, or symbol,quantity,price).")

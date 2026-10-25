@@ -9,10 +9,14 @@ import pandas as pd
 import pytest
 
 from quant_hub.models.portfolio import (
+    INFLUENCE_Z,
+    MAD_TO_SD,
+    MIN_DAYS,
     Exposures,
     OptionExposure,
     correlated_returns,
     risk_report,
+    robust_z,
     simple_returns,
 )
 
@@ -184,3 +188,77 @@ class TestDrawdownAndInputs:
     def test_invalid_inputs_rejected(self, returns, bad):
         with pytest.raises(ValueError):
             bad(returns)
+
+
+class TestInfluence:
+    """V0: the days that decide the numbers (module docstring, Influence)."""
+
+    @staticmethod
+    def jumped(days=500, seed=3, jumps=((250, "BBB", 0.60),)):
+        returns = world(days, seed)
+        for i, symbol, move in jumps:
+            returns.iloc[i, returns.columns.get_loc(symbol)] = move
+        return returns
+
+    def test_a_clean_gaussian_world_flags_nothing(self, report):
+        assert report.influence.flagged == ()
+        assert report.influence.without is None
+        # The largest day is still named, with an ordinary share.
+        assert report.influence.largest.variance_share < 0.03
+
+    def test_a_planted_jump_is_flagged_with_its_driver_and_share(self):
+        returns = self.jumped()
+        report = risk_report(holdings(), returns, returns["SPY"], rate=0.04)
+        (day,) = report.influence.flagged
+        assert day.date == returns.index[250]
+        assert day.driver == "BBB" and day.driver_return == 0.60
+        assert day.robust_z > INFLUENCE_Z
+        y = returns[list(report.symbols)].to_numpy() @ report.weights
+        deviation = y - y.mean()
+        assert day.variance_share == pytest.approx(deviation[250] ** 2 / (deviation @ deviation),
+                                                   rel=1e-12)
+        assert day.mix_return == pytest.approx(y[250], rel=1e-12)
+        assert report.influence.largest == day
+
+    def test_two_equal_jumps_are_both_flagged(self):
+        # The sd is inflated by both, which would hide each (masking); the MAD isn't.
+        returns = self.jumped(jumps=((100, "AAA", 0.5), (300, "AAA", 0.5)))
+        report = risk_report(holdings(), returns, returns["SPY"], rate=0.04)
+        assert {d.date for d in report.influence.flagged} == {returns.index[100],
+                                                              returns.index[300]}
+
+    def test_without_is_the_report_on_the_remaining_days(self):
+        returns = self.jumped()
+        report = risk_report(holdings(), returns, returns["SPY"], rate=0.04)
+        without = report.influence.without
+        rest = returns.drop(returns.index[250])
+        direct = risk_report(holdings(), rest, rest["SPY"], rate=0.04, with_influence=False)
+        assert without.vol == pytest.approx(direct.vol, rel=1e-12)
+        assert without.var_historical == pytest.approx(direct.var_historical, rel=1e-12)
+        np.testing.assert_allclose(without.risk_shares, direct.risk_shares, rtol=1e-12)
+        assert without.influence is None
+        # The leave-out mean: (n ybar - y_S) / (n - 1), annualized per unit of exposure.
+        y = returns[list(report.symbols)].to_numpy() @ report.weights
+        leave_out = (len(y) * y.mean() - y[250]) / (len(y) - 1)
+        assert without.mean == pytest.approx(leave_out * 252 / report.net_exposure, rel=1e-12)
+        assert without.vol < report.vol
+
+    def test_too_few_remaining_days_gives_no_without(self):
+        returns = self.jumped(days=MIN_DAYS + 1, jumps=((10, "AAA", 0.5), (20, "AAA", 0.5)))
+        report = risk_report(holdings(), returns, returns["SPY"], rate=0.04)
+        assert len(report.influence.flagged) == 2
+        assert report.influence.without is None
+
+    def test_mad_recovers_sigma_on_a_normal_sample(self):
+        rng = np.random.default_rng(11)
+        sample = rng.normal(0.0, 0.02, 200_000)
+        mad = np.median(np.abs(sample - np.median(sample)))
+        # SE of the MAD's sigma estimate is about 1.17 sigma / sqrt(n): 0.26% here.
+        assert MAD_TO_SD * mad == pytest.approx(0.02, rel=0.01)
+        assert np.std(robust_z(sample)) == pytest.approx(1.0, rel=0.01)
+
+    def test_robust_z_with_a_zero_mad_falls_back_to_the_sd(self):
+        values = np.array([0.0] * 7 + [0.01, -0.01, 0.05])
+        z = robust_z(values)
+        assert z[-1] == pytest.approx(0.05 / np.std(values, ddof=1))
+        assert np.all(robust_z(np.zeros(5)) == 0)

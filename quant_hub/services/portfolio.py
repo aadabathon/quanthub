@@ -42,6 +42,9 @@
     over cash at the rate; sleeves are underlyings (shares plus their
     options) unless the review names the owner's (W7). Plus the options
     book's greeks and carry.
+  - **Offline** (V0): when the source can't be reached, its stored bars
+    are used. The view says why, and how many weekday sessions the data
+    lacks since its last day (``data.ranges.weekdays_missed``).
 
 Runs on the task-worker thread (database, files, maybe IBKR).
 """
@@ -59,6 +62,7 @@ import numpy as np
 import pandas as pd
 
 from quant_hub.data.positions import Holding, Position, PositionSnapshot
+from quant_hub.data.ranges import weekdays_missed
 from quant_hub.data.types import PriceBasis
 from quant_hub.importers.positions_csv import read_positions_files
 from quant_hub.models.portfolio import (
@@ -170,6 +174,8 @@ class PortfolioView:
     growth_note: str = ""               # why there is none
     book: BookGreeks | None = None      # when the book holds options
     returns: pd.DataFrame | None = None  # the risk model's daily returns, benchmark included
+    offline_reason: str | None = None   # set when prices came from the store (V0)
+    sessions_missed: int = 0            # weekday sessions since the data's last day
 
     @property
     def equity(self) -> float:
@@ -215,7 +221,7 @@ class PortfolioService:
 
         underlyings = sorted({p.symbol for p in positions if p.kind is Holding.EQUITY}
                              | {p.option.underlying for p in positions if p.option})
-        closes, basis = {}, PriceBasis.ADJUSTED
+        closes, basis, offline = {}, PriceBasis.ADJUSTED, None
         for symbol in [*underlyings, benchmark]:
             try:
                 history = self._market.get_return_history(symbol, start, now, source=source)
@@ -234,6 +240,7 @@ class PortfolioService:
             closes[symbol] = history.closes
             if history.basis is PriceBasis.TRADED:
                 basis = PriceBasis.TRADED
+            offline = offline or history.offline_reason
 
         if not underlyings:
             raise ValueError("this account holds only cash: there's no market risk to model")
@@ -324,10 +331,12 @@ class PortfolioService:
             growth = _growth(report, rate, sleeves)
         except ValueError as exc:
             growth_note = f"No growth report: {exc}."
+        missed = weekdays_missed(returns.index[-1], now) if offline else 0
         return PortfolioView(snapshot, account, source, benchmark, basis, report, rows, cash,
                              tuple(left_out), unmodelled / equity, len(options),
                              regressions, regression_note, growth, growth_note,
-                             book_greeks(options) if options else None, returns)
+                             book_greeks(options) if options else None, returns,
+                             offline_reason=offline, sessions_missed=missed)
 
 
 def _growth(report: RiskReport, rate: float,

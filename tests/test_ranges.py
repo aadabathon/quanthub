@@ -4,7 +4,7 @@ from datetime import datetime
 
 import pytest
 
-from quant_hub.data.ranges import DateRange, merge_ranges, subtract_ranges
+from quant_hub.data.ranges import DateRange, merge_ranges, subtract_ranges, weekdays_missed
 
 
 def r(start: str, end: str) -> DateRange:
@@ -103,3 +103,30 @@ class TestSubtract:
         day = r("2020-06-15", "2020-06-15")
         assert subtract_ranges(day, [r("2020-06-01", "2020-06-30")]) == []
         assert subtract_ranges(day, [r("2020-06-16", "2020-06-30")]) == [day]
+
+
+class TestWeekdaysMissed:
+    """V0: how stale a stored series is, counted in weekday sessions."""
+
+    def test_fridays_bar_read_on_the_weekend_has_missed_nothing(self):
+        friday = datetime(2026, 10, 23)
+        assert weekdays_missed(friday, datetime(2026, 10, 24, 9)) == 0   # Saturday
+        assert weekdays_missed(friday, datetime(2026, 10, 25, 9)) == 0   # Sunday
+        assert weekdays_missed(friday, datetime(2026, 10, 26, 9)) == 0   # Monday: provisional
+
+    def test_completed_weekdays_count(self):
+        friday = datetime(2026, 10, 23)
+        assert weekdays_missed(friday, datetime(2026, 10, 27, 9)) == 1   # Monday done
+        assert weekdays_missed(friday, datetime(2026, 11, 2, 9)) == 5    # a whole week
+
+    def test_a_series_through_yesterday_or_today_is_current(self):
+        assert weekdays_missed(datetime(2026, 10, 21), datetime(2026, 10, 22, 16)) == 0
+        assert weekdays_missed(datetime(2026, 10, 22), datetime(2026, 10, 22, 16)) == 0
+
+
+class TestIntersection:
+    def test_overlap_and_disjoint(self):
+        a = DateRange(datetime(2024, 1, 1), datetime(2024, 1, 31))
+        b = DateRange(datetime(2024, 1, 15), datetime(2024, 2, 15))
+        assert a.intersection(b) == DateRange(datetime(2024, 1, 15), datetime(2024, 1, 31))
+        assert a.intersection(DateRange(datetime(2024, 3, 1), datetime(2024, 3, 2))) is None

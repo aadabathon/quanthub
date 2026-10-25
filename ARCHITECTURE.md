@@ -406,6 +406,12 @@ Key properties (decisions D17–D21):
 - **Failure**: a failed fetch fails the whole request (no silently partial
   series); `BrokerError` subclasses distinguish not-connected / invalid
   contract / no data / pacing / timeout, and the GUI shows the message.
+- **Offline (D50)**: the exception is `SourceOfflineError` (TWS closed, no
+  network; `NotConnectedError` is one).
+  - The cache then serves the stored, covered bars, as long as they form
+    one stretch inside the request. A real interior gap still fails.
+  - The history carries `offline_reason`, and every page that shows the
+    result says so.
 - **Fetch semantics**: D11 stands — IBKR requests end "now" with a duration;
   the adapter slices. A leading/interior coverage gap therefore fetches
   from the gap to now; harmless, because inserts upsert and coverage merges.

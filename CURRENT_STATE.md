@@ -1,7 +1,16 @@
 # CURRENT_STATE.md
 
 **Update this file whenever meaningful work lands.** Last updated:
-**2026-10-20**: the personal workstation phase was approved (D43,
+**2026-10-24**: V0 landed (D50): data you can trust.
+- History loads serve the store's bars, labelled, when IBKR is offline.
+- Portfolio flags the days that decide its numbers, and shows the numbers
+  without them beside the headline.
+- The P&L histogram clips to the unflagged days.
+- V0 is the first milestone of a proposed reorder,
+  [LENS_PLAN.md](LENS_PLAN.md); the rest waits on the owner. Its visual
+  direction is a spike, `spikes/portfolio_v2.py` (gitignored).
+
+Before that, **2026-10-20**: the personal workstation phase was approved (D43,
 [WORKSTATION_PLAN.md](WORKSTATION_PLAN.md)). W0 has started: the
 `REGIME.md` template, and a dry run for the real Fidelity export. No app
 code has changed. Before that,
@@ -248,9 +257,12 @@ what the desktop shortcut targets. The GUI is `quant_hub/gui/` (Qt, D31) on
     `CachedSource` fetched the missing year: SPY now holds 1,297 bars from
     2021-08-16.
   - A re-audit found every series' coverage matching its bars.
-- **IBKR disconnected:** market-history loads on `ibkr` fail for any window
-  reaching today, because `CachedSource` must fetch the uncached tail. The
-  pages show the error and keep the previous chart labelled.
+- **IBKR disconnected (changed 2026-10-24, D50):** `ibkr` history loads
+  serve the stored, covered bars, labelled offline. They still fail when
+  nothing is stored for the window, or when the stored bars have a
+  weekday gap inside it.
+  - Exchange holidays count as missed sessions in the staleness note.
+  - Not yet checked against a live TWS session that drops mid-request.
 - **GUI details covered only by tests:** the Ctrl+K popup styling.
 - **Volatility Lab:** chains are synthetic only (no IBKR chain adapter yet).
   Independent per-expiry SVI fits overfit very noisy chains (several vol
@@ -687,6 +699,34 @@ pytest. Environment:
        Automatic schema backups copy the database, not the PDF folder.
 6. **The personal workstation phase** (approved 2026-10-20, D43), W0 → W7:
    see ROADMAP.md.
+   - **Reorder proposed (2026-10-24, [LENS_PLAN.md](LENS_PLAN.md)):**
+     V0 → V1 → W2 → L → W2b → O. Only V0 is approved. W2–W7 have since
+     landed through PR #2. What's left of the plan:
+     - V1
+     - the CAPM extras (security market line, GRS, Kalman β)
+     - L, W2b and O
+   - **~~V0~~ landed (2026-10-24, D50):**
+     - `SourceOfflineError` on the port; `CachedSource` serves one stored,
+       covered stretch when offline
+     - `PriceHistory.offline_reason`, shown by Portfolio, the labs,
+       Markets' sync and research provenance
+     - `weekdays_missed`
+     - influence diagnostics in `models/portfolio.py`: shares, robust z,
+       flags at |z| > 10, drivers, the "without" report
+     - `Histogram` clip
+     - Portfolio's "Days that decide the numbers" card
+     - Full suite after merging main (PRs #2 and #3): 1,252 passed,
+       1 skipped (172 s).
+     - Tests: 10 cache, 4 ranges, 7 influence, 1 service, and one GUI test
+       of the whole offline path.
+     - Checked on a copy of the owner's store with TWS closed and the real
+       clock. The page ran on stored bars through the last session and
+       flagged one day.
+   - **Open (LENS_PLAN decisions):**
+     - the visual direction (the spike)
+     - the order after V0
+     - the CAPM workshop's extras on top of the landed W2
+     - Ken French's library and FRED as providers
    - W0 in progress:
      - The `REGIME.md` template is drafted; the owner fills in the values.
      - A dry run for positions files (`spikes/fidelity_check.py`, local and

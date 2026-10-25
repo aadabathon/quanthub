@@ -54,7 +54,7 @@ from quant_hub.gui.components import (
     button,
     form_grid,
 )
-from quant_hub.gui.pages.base import PRICE_BASES, ScrollPage, basis_field
+from quant_hub.gui.pages.base import PRICE_BASES, ScrollPage, basis_field, offline_note
 from quant_hub.gui.theme import PALETTE, SIDE_PANEL_WIDTH, SPACE_L, SPACE_M
 from quant_hub.models.kalman import (
     LocalLevel,
@@ -333,7 +333,7 @@ class KalmanLabPage(ScrollPage):
             fit = fitter(y)
             return _Run(closes.index, y, fit, rts_smoother(fit.filtered), None, None, None,
                         f"{history.symbol} · {history.source} · {basis.value} · "
-                        f"{len(y):,} daily closes")
+                        f"{len(y):,} daily closes{offline_note(history)}")
         return work
 
     def _on_done(self, run: _Run) -> None:

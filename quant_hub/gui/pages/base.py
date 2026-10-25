@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from PySide6.QtCore import QObject, Qt, QTimer
 from PySide6.QtWidgets import QFrame, QScrollArea, QVBoxLayout, QWidget
 
-from quant_hub.data.types import PriceBasis
+from quant_hub.data.types import PriceBasis, PriceHistory
 from quant_hub.gui.components import SelectField
 from quant_hub.gui.theme import SPACE_L, SPACE_XL
 
@@ -27,6 +27,14 @@ LIVE_DELAY_MS = 150
 
 
 PRICE_BASES = {"Adjusted": PriceBasis.ADJUSTED, "Traded": PriceBasis.TRADED}
+
+
+def offline_note(history: PriceHistory) -> str:
+    """" · offline, stored through <day>" for a history the source served
+    from its store (V0), else "": appended wherever a page names its data."""
+    if history.offline_reason is None:
+        return ""
+    return f" · offline, stored bars through {history.end:%b %d, %Y}"
 
 
 def basis_field(saved: dict, width: int) -> SelectField:

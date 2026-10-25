@@ -97,6 +97,32 @@ class TestAnalyse:
         assert view.unmodelled == pytest.approx(0.5)
         assert any(note.startswith("BBB: no history") for note in view.left_out)
 
+    def test_offline_prices_are_named_with_their_staleness(self, store):
+        # V0: a source serving stored bars says so, and the view carries it.
+        from quant_hub.data.types import PriceBasis, PriceHistory
+
+        class StoredWhileOffline:
+            name = "stored"
+            last = datetime(2026, 10, 9)                     # a Friday
+
+            def get_history(self, symbol, start, end, basis=PriceBasis.TRADED):
+                h = SyntheticSource().get_history(symbol, start, self.last, basis)
+                return PriceHistory(h.symbol, self.name, h.frame, h.basis,
+                                    offline_reason="not connected")
+
+            def get_quote(self, symbol):
+                raise AssertionError("not used")
+
+        service = PortfolioService(MarketService(sources=[StoredWhileOffline()]), store)
+        snap = snapshot(equity("AAA", 100, 50.0), equity("BBB", 10, 25.0))
+        view = service.analyse(snap, None, "stored", "SPY", 730, 0.04, now=NOW)
+        assert view.offline_reason == "not connected"
+        assert view.report.pnl.index[-1] == datetime(2026, 10, 9)
+        assert view.sessions_missed == 4                     # Mon Oct 12 - Thu Oct 15
+        online = PortfolioService(MarketService(sources=[SyntheticSource()]), store)
+        fresh = online.analyse(snap, None, "synthetic", "SPY", 730, 0.04, now=NOW)
+        assert fresh.offline_reason is None and fresh.sessions_missed == 0
+
     def test_one_account_at_a_time(self, service):
         snap = snapshot(equity("AAA", 100, 50.0, "Individual"), equity("BBB", 10, 25.0, "ROTH"))
         view = service.analyse(snap, "ROTH", "synthetic", "SPY", 730, 0.04, now=NOW)

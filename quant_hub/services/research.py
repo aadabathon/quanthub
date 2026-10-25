@@ -130,9 +130,13 @@ class ResearchService:
         prices = pd.concat([h.frame["close"].rename(s) for h, s in zip(histories, experiment.symbols)], axis=1)
         original = len(prices)
         prices = prices.dropna().sort_index()
-        return prices, {"source": experiment.source, "basis": experiment.basis,
-                        "sessions": len(prices), "excluded_unmatched_sessions": original - len(prices),
-                        "calendar": "intersection of observed daily sessions"}
+        provenance = {"source": experiment.source, "basis": experiment.basis,
+                      "sessions": len(prices), "excluded_unmatched_sessions": original - len(prices),
+                      "calendar": "intersection of observed daily sessions"}
+        offline = next((h.offline_reason for h in histories if h.offline_reason), None)
+        if offline:                     # stored bars, served while the source was offline (V0)
+            provenance["offline"] = offline
+        return prices, provenance
 
     def run(self, experiment: Experiment, *, prices: pd.DataFrame | None = None,
             provenance: dict | None = None, first_decision: int | None = None) -> ResearchRun:

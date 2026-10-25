@@ -497,6 +497,27 @@ Order W0 → W7, each approved before the next:
 
 Versions: W1–W3 → v1.1, W4–W6 → v1.2, W7 → v1.3.
 
+**Proposed reorder (2026-10-24, [LENS_PLAN.md](LENS_PLAN.md)).** The owner
+asked for a workstation personalized to their portfolio: every lab as a
+lens on it, CAPM and Fama–French workshops, a more human UI, and more data
+sources. The plan:
+- The order as proposed: V0 → V1 → W2 (the CAPM workshop) → L (the
+  portfolio as a series in every lab) → W2b (Fama–French, with Ken French's
+  data library) → O (Outlook), then W3, W4–W6 and W7.
+- W2–W7 then landed through PR #2 (D44–D49), in the original order, in
+  another session. What LENS_PLAN still adds:
+  - V1, the design language
+  - the CAPM workshop's extras on top of W2: the security market line, the
+    GRS test, the Kalman β
+  - L, the lenses
+  - W2b, the Fama–French workshop and its provider
+  - O, the Outlook page
+- Only V0 is approved. The rest waits on the owner.
+- **~~V0. Data you can trust~~** (2026-10-24, D50):
+  - offline reads from the store
+  - influence flags, with a "without" sensitivity
+  - histogram clipping
+
 ## Intended stack flow (architecture already accommodates this)
 
 ```

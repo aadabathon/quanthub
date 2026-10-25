@@ -20,6 +20,27 @@ Pipeline for one request (runs entirely on the task-worker thread)::
 Failure policy: if any needed fetch fails, the whole request fails —
 returning a silently incomplete series would poison downstream analytics.
 The error notes when cached data exists so the user can narrow the window.
+The one exception is a provider that is *offline* (below).
+
+Offline (V0)
+------------
+A ``SourceOfflineError`` (TWS closed, no network) says nothing about the
+data, and the store may already hold what the request needs. So instead of
+failing, the cache serves the stored bars, provided they answer it without
+a hole:
+
+* The covered ranges inside the request must form **one** stretch. Gaps
+  between them that hold no weekday don't count. A real interior gap still
+  fails, because serving across it would turn several sessions into one
+  return.
+* Only covered dates are served. Coverage runs through the sync day's
+  yesterday, so a provisional same-day bar stored by that sync is left out.
+* Adjusted bars are served through the day before their last refresh,
+  since the refresh day's own bar was provisional. With none stored, it's
+  ``BasisUnavailableError``, and return math falls back to traded.
+* The history carries ``offline_reason``, and its frame ends where the
+  store does. The stretch may also start after the request's start. Callers
+  show both; nothing about it is silent.
 
 Same-day bars: a daily bar for *today* is provisional until the session
 closes, so coverage is only ever recorded up to **yesterday**. A request
@@ -73,8 +94,8 @@ import numpy as np
 import pandas as pd
 
 from quant_hub.data.bars import validate_ohlcv_frame
-from quant_hub.data.ranges import ONE_DAY, DateRange, floor_day
-from quant_hub.data.sources import BarSource
+from quant_hub.data.ranges import ONE_DAY, DateRange, floor_day, weekdays_missed
+from quant_hub.data.sources import BarSource, BasisUnavailableError, SourceOfflineError
 from quant_hub.data.types import PriceBasis, PriceHistory, Quote
 from quant_hub.services.sync import SyncStatus, plan_sync
 from quant_hub.storage.bar_store import BarStore, InstrumentKey
@@ -133,13 +154,16 @@ class CachedSource:
         plan = plan_sync(requested, covered)
         _logger.info("cache decision for %s: %s", symbol, plan.describe())
 
-        if plan.status is not SyncStatus.FULL_HIT:
-            self._sync_missing(key, plan.missing)
-        # An adjusted series refreshed today follows every traded sync, so it
-        # always spans the traded coverage; otherwise only an adjusted
-        # request refreshes it.
-        if basis is PriceBasis.ADJUSTED or self._adjusted_current(key):
-            self._sync_adjusted(key, plan.missing)
+        try:
+            if plan.status is not SyncStatus.FULL_HIT:
+                self._sync_missing(key, plan.missing)
+            # An adjusted series refreshed today follows every traded sync, so
+            # it always spans the traded coverage; otherwise only an adjusted
+            # request refreshes it.
+            if basis is PriceBasis.ADJUSTED or self._adjusted_current(key):
+                self._sync_adjusted(key, plan.missing)
+        except SourceOfflineError as exc:
+            return self._serve_offline(key, requested, basis, exc)
 
         frame = self._store.query_bars(key, self.name, self._bar_size, start, end, basis)
         if len(frame) == 0:
@@ -157,6 +181,42 @@ class CachedSource:
         """Quotes are moments, not history: always pass through, never cached."""
         return self._delegate.get_quote(symbol)
 
+    def _serve_offline(self, key: InstrumentKey, requested: DateRange, basis: PriceBasis,
+                       error: SourceOfflineError) -> PriceHistory:
+        """The stored bars for ``requested``, if they answer it without a
+        hole (module docstring, Offline); else the offline error."""
+        covered = self._store.coverage(key, self.name, self._bar_size)
+        pieces = [p for p in (c.intersection(requested) for c in covered) if p is not None]
+        if not pieces:
+            raise error
+        stretch = pieces[0]
+        for piece in pieces[1:]:
+            if weekdays_missed(stretch.end, piece.start):
+                raise SourceOfflineError(
+                    f"{self.name} is offline ({error}), and the stored {key.symbol} bars stop "
+                    f"at {stretch.end:%Y-%m-%d} and resume at {piece.start:%Y-%m-%d} inside "
+                    "the window; reconnect to fill the gap") from error
+            stretch = DateRange(stretch.start, piece.end)
+        if basis is PriceBasis.ADJUSTED:
+            refreshed = self._store.refreshed_on(key, self.name, self._bar_size,
+                                                 PriceBasis.ADJUSTED)
+            last = None if refreshed is None else floor_day(refreshed) - ONE_DAY
+            if last is None or last < stretch.start:
+                raise BasisUnavailableError(
+                    f"{self.name} is offline ({error}) and has no stored adjusted "
+                    f"{key.symbol} bars for {requested}")
+            stretch = DateRange(stretch.start, min(stretch.end, last))
+        frame = self._store.query_bars(key, self.name, self._bar_size, stretch.start,
+                                       stretch.end, basis)
+        if len(frame) == 0:
+            raise error
+        _logger.warning("%s is offline (%s): serving %d stored %s %s bars, %s..%s",
+                        self.name, error, len(frame), basis.value, key.symbol,
+                        f"{frame.index[0]:%Y-%m-%d}", f"{frame.index[-1]:%Y-%m-%d}")
+        return PriceHistory(symbol=key.symbol, source=self.name,
+                            frame=frame.dropna(axis=1, how="all"), basis=basis,
+                            offline_reason=str(error) or type(error).__name__)
+
     # ------------------------------------------------------------------- sync
     def _sync_missing(self, key: InstrumentKey, missing: tuple[DateRange, ...]) -> None:
         for gap in missing:
@@ -164,6 +224,8 @@ class CachedSource:
                 raw = self._delegate.fetch_bars(
                     key.symbol, gap.start, gap.end, self._bar_size
                 )
+            except SourceOfflineError:
+                raise                   # not a failure yet: the store may answer (Offline)
             except Exception:
                 _logger.error(
                     "fetch failed for %s %s; local store left unchanged for "
