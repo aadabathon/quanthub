@@ -19,6 +19,11 @@ The rules the whole design rests on:
                   services).
 * Qt libraries (PySide6, pyqtgraph, qtawesome, qtpy) are imported only by
   ``gui`` and the composition root ``app.py``; tkinter by nothing (retired).
+* Orders (hard rule 1, D52): ``placeOrder``, ``cancelOrder`` and
+  ``reqGlobalCancel`` are called only in ``broker/orders.py``, which only
+  ``services/execution.py`` and the composition root ``core.py`` import.
+  Neither module exists before E2, so today this asserts that no order
+  call exists anywhere.
 
 Source files are scanned as text (rather than imported) so the test needs no
 GUI display and cannot be fooled by import-time side effects.
@@ -59,6 +64,17 @@ RULES = {
 }
 
 QT_LIBRARIES = ("PySide6", "pyqtgraph", "qtawesome", "qtpy")
+
+# Hard rule 1 (D52): the one module that may place or cancel orders, and the
+# only modules that may import it.
+ORDER_MODULE = Path("broker") / "orders.py"
+ORDER_IMPORTERS = {Path("services") / "execution.py", Path("core.py")}
+_ORDER_CALL_RE = re.compile(r"\b(placeOrder|cancelOrder|reqGlobalCancel)\s*\(")
+_ORDER_IMPORT_RE = re.compile(
+    r"quant_hub\.broker\.orders\b"
+    r"|from\s+quant_hub\.broker\s+import\s+[^\n]*\borders\b"
+    r"|from\s+\.\s*import\s+[^\n]*\borders\b"
+    r"|from\s+\.orders\b")
 
 _IMPORT_RE = re.compile(
     r"^\s*(?:from\s+([A-Za-z_][\w.]*)\s+import|import\s+([A-Za-z_][\w.]*))",
@@ -114,3 +130,30 @@ def test_nothing_imports_tkinter():
     offenders = [str(path.relative_to(PACKAGE_ROOT)) for path in PACKAGE_ROOT.rglob("*.py")
                  if any(m.split(".")[0] == "tkinter" for m in imports_of(path))]
     assert not offenders, f"tkinter imported: {offenders}"
+
+
+def test_order_calls_exist_only_in_the_order_adapter():
+    """Hard rule 1 (D52): an order is placed or cancelled in one module, so
+    no other path can trade. Comments and docstrings count too: the rule is
+    that the call isn't spelled anywhere else."""
+    offenders = []
+    for path in PACKAGE_ROOT.rglob("*.py"):
+        relative = path.relative_to(PACKAGE_ROOT)
+        if relative == ORDER_MODULE:
+            continue
+        for match in _ORDER_CALL_RE.finditer(path.read_text(encoding="utf-8")):
+            offenders.append(f"{relative}: {match.group(1)}")
+    assert not offenders, "order calls outside broker/orders.py:\n" + "\n".join(offenders)
+
+
+def test_only_the_execution_service_imports_the_order_adapter():
+    """Hard rule 1 (D52): the GUI, the models and every other service reach
+    orders through ``services/execution.py``, which holds the checks."""
+    offenders = []
+    for path in PACKAGE_ROOT.rglob("*.py"):
+        relative = path.relative_to(PACKAGE_ROOT)
+        if relative in ORDER_IMPORTERS or relative == ORDER_MODULE:
+            continue
+        if _ORDER_IMPORT_RE.search(path.read_text(encoding="utf-8")):
+            offenders.append(str(relative))
+    assert not offenders, f"the order adapter imported outside the execution path: {offenders}"

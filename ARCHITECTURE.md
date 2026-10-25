@@ -33,6 +33,18 @@ storage/        SQLite persistence (stdlib sqlite3). Knows data/ only —
 visualization/  Matplotlib figures for scripts and notebooks. Never GUI.
 ```
 
+**The execution path (D52; nothing of it exists before E2).**
+- Orders go one way: the runner or the GUI's Orders page, then
+  `services/execution.py` (checks, journal, reconciliation, kill switch),
+  then `broker/orders.py`.
+- `broker/orders.py` is the only module that may call `placeOrder`,
+  `cancelOrder` or `reqGlobalCancel`. Only `services/execution.py` and
+  `core.py` may import it.
+- `tests/test_layering.py` checks both statically.
+- The journal goes in `storage/order_journal.py`, and the sizing math in
+  `models/rebalance.py`. The design and the schema are in
+  [EXECUTION_PLAN.md](EXECUTION_PLAN.md).
+
 Cross-cutting modules:
 
 - `config.py` — one frozen `AppConfig` dataclass (IBKR on/off, host, port,
@@ -206,6 +218,8 @@ quant_hub/
 │   │                          forecast fan (the Dashboard's data, D31)
 │   ├── option_chains.py       ChainService: chains by named source, every
 │   │                          live fetch saved; "stored" = latest snapshot
+│   ├── accounts.py            AccountService: IBKR accounts, positions and
+│   │                          balances, read-only, as a snapshot (E1, D54)
 │   ├── portfolio.py           PortfolioService: positions imports kept,
 │   │                          holdings valued, options priced, risk run,
 │   │                          regressions on the benchmark (D44), growth

@@ -66,6 +66,40 @@ class OptionQuoteResult:
 
 
 @dataclass(frozen=True)
+class BrokerPosition:
+    """One position as the broker reports it (E1, read-only).
+
+    ``quantity`` is signed: shares, or contracts for options. ``average_cost``
+    is IBKR's convention: per share for a stock, per *contract* (price times
+    multiplier) for an option. The option fields are set for options only.
+    """
+
+    account: str
+    symbol: str
+    sec_type: str            # IBKR's: "STK" (stocks and ETFs), "OPT", "FUT", ...
+    quantity: float
+    average_cost: float
+    con_id: int
+    currency: str
+    right: str | None = None          # "C" or "P"
+    strike: float | None = None
+    expiry: date | None = None
+    multiplier: float | None = None
+
+
+@dataclass(frozen=True)
+class AccountSummary:
+    """One account's balances from the broker (E1), in ``currency``, the
+    account's base currency. A value the broker didn't send is None."""
+
+    account: str
+    currency: str
+    net_liquidation: float | None
+    total_cash: float | None
+    gross_position_value: float | None
+
+
+@dataclass(frozen=True)
 class QuoteResult:
     """A broker's answer to a quote request: price + provenance + trade time.
 

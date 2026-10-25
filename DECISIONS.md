@@ -1336,6 +1336,70 @@ waits on the owner.
   and the largest risk share moves to a different holding.
 - VaR and ES don't change: the day was a gain.
 
+## D52 — Execution, paper first: amends D12 and hard rule 1 (2026-10-25)
+
+The owner approved [EXECUTION_PLAN.md](EXECUTION_PLAN.md) on 2026-10-25:
+- the execution track E0–E6
+- this amendment
+- timing (b)
+- a dedicated account
+
+This entry is E0. It contains no order code. Its parts are this decision,
+the rewritten hard rule, the settings and journal designs in the plan, and
+two layering checks that enforce the rule from today.
+
+**What changes:**
+- D12 said no order code anywhere. Now there is one guarded path for
+  orders, and nowhere else:
+  - `broker/orders.py` is the only module that calls `placeOrder`,
+    `cancelOrder` or `reqGlobalCancel`.
+  - Only `services/execution.py` (and the composition root) import it.
+  - The runner and the GUI's Orders page reach orders through that
+    service.
+- `tests/test_layering.py` checks both statically, comments and docstrings
+  included. Neither module exists yet, so today it asserts that no order
+  call exists anywhere.
+- AGENTS.md and CLAUDE.md carry the new hard rule 1.
+
+**What stays from D12:**
+- Everything outside that path is read-only: the pages, the models, the
+  Review page and every other service.
+- Nothing reconnects automatically. A dropped connection stops a run, and
+  the next run reconciles.
+- Nothing retries a send. A send that may have reached IBKR is matched by
+  its `orderRef` before anything else happens.
+- There is no login automation, and no stored IBKR credentials. TWS or IB
+  Gateway is logged in by hand, and IBKR's weekly re-login is the owner's.
+
+**Settled choices:**
+- **Timing (b).**
+  - Decide after the close of session t, from complete stored bars.
+  - Send market-on-close orders for session t+1.
+  - Every live decision can be replayed exactly from the store.
+  - Research gains an `execution_lag` option, at E4, so backtests show
+    what the lag costs.
+- **Dedicated accounts:** a paper account, then a live account, both
+  separate from hand-held positions. A run refuses any connected account
+  but the configured one.
+- **Scope:** US stocks and ETFs, long or cash. No shorts, options or
+  leverage.
+- **Every deployed algo is a saved Research run,** matched by its
+  fingerprint.
+- **Fail closed:**
+  - an unset money limit means nothing is sent
+  - so does an unreachable account, an unexpected account, or a failed
+    check
+  - a halt is cleared only by hand
+- **Modes:** `off` by default. `paper` from E2. `live` needs its own
+  decision entry at E6.
+
+**Still the owner's:**
+- the money limits (the plan proposes the rest of the defaults)
+- the paper length
+- where E0–E1 sit against LENS_PLAN
+- confirming a paper login linked to the account (E1 needs it)
+- the `ibapi` 10.x upgrade, confirmed at E1's start
+
 ## D53 — One rule for "one day decides the numbers" (2026-10-25; amends D49 and D50)
 
 D49 (W7, Review) and D50 (V0, Portfolio) landed a day apart, with two
@@ -1345,8 +1409,8 @@ answers to the same question.
 - V0 used the mix's robust z, flagged at |z| > 10.
 
 The owner compared them on the same data and approved one rule
-(2026-10-25). (D51 is reserved for LENS_PLAN's phase, and D52 for the
-execution track.)
+(2026-10-25). (D51 is reserved for LENS_PLAN's phase; D52 and D54 are
+the execution track's.)
 
 **What each flagged on the same data:**
 - SPY's Apr 9, 2025 (+10.5%, z = 14.8, 20% of the variance): V0 yes, W7 no.
@@ -1416,3 +1480,66 @@ execution track.)
 - The owner's real day stays flagged (the mix's ŝ = 0.78, the holding's
   0.996). It's the only flag across the mix and every holding. V0's
   z > 10 applied to each holding would have raised several more.
+
+## D54 — E1: accounts read from IBKR, read-only (2026-10-25)
+
+The execution track's first code milestone (D52). It absorbs W1 (D43). The
+number skips D53, which the unify-day-flags work holds.
+
+**The broker reads accounts.** `IBKRBroker` gains three read-only methods,
+on the `Broker` protocol too:
+- `get_managed_accounts`: the list TWS sends on connect, asked for again if
+  it's missing.
+- `get_positions`: `reqPositions`, read once.
+- `get_account_summary`: `reqAccountSummary` over "All", for net
+  liquidation, cash and position value.
+
+Both requests are subscriptions in the API, and each is cancelled as soon
+as its first full answer is in, including after a timeout or an error.
+Positions carry no request id, so:
+- one positions read runs at a time
+- its slot sits in the pending map under a key no request id can take,
+  so a dropped connection fails it like any other
+- updates that arrive after the read are ignored
+
+**`ibapi` 9.81 and 10.x.**
+- TWS API 10.33 inserted `errorTime` before `errorCode` in `error()`. The
+  old wrapper read the first argument as the code, so on 10.33 it would
+  have read a timestamp instead. That would have broken every rule keyed on
+  codes: not-connected, no-data, pacing and the market-data advisories.
+- The installed wrapper's own signature now decides (`_ERROR_HAS_TIME`),
+  with tests for both forms.
+- Quantities, which are `Decimal` in 10.x, go through `float()`.
+- The connect log names the `ibapi` version.
+
+**The snapshot** (`services/accounts.py`):
+- Stocks and ETFs become equity positions. Their cost basis is IBKR's
+  per-share average cost times the shares.
+- US equity options (multiplier 100) become option positions. Their cost
+  basis is the per-contract average cost times the contracts.
+- Cash comes from each account's `TotalCashValue`.
+- Futures, forex, bonds, funds, other option multipliers, and anything not
+  in USD are left out and named. The risk model prices US instruments in
+  dollars.
+- Closed positions (zero) are dropped.
+- The snapshot carries no prices. The portfolio service values each
+  holding at the source's last close, as it does for imports without
+  prices.
+- It's dated today (D19), source "IBKR", and is kept by
+  `PortfolioService.keep` like a file import.
+- The notes on what was left out show on the Portfolio page for that read.
+  They aren't stored.
+
+**The page.**
+- Portfolio's **From IBKR** button appears only when IBKR is on in
+  settings.
+- It reads, keeps and analyses the snapshot, and states the accounts' net
+  liquidation.
+- Without a connection, it says to press Connect.
+
+**Not done here:**
+- Installing `ibapi` 10.x needs IBKR's license accepted on their site, so
+  the owner does it. README has the steps.
+- The live read-only check, on paper and then live: `spikes/e1_check.py`,
+  local, masks ids and amounts by default. It waits on the owner's paper
+  login and TWS.

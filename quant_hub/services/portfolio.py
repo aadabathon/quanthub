@@ -195,6 +195,11 @@ class PortfolioService:
         snapshot = read_positions_files(files)
         return self._store.save(snapshot), snapshot
 
+    def keep(self, snapshot: PositionSnapshot) -> int:
+        """Keep a snapshot read from somewhere other than a file (the broker,
+        E1) exactly as an import is kept."""
+        return self._store.save(snapshot)
+
     def snapshots(self) -> list[PositionSnapshotSummary]:
         return self._store.snapshots()
 

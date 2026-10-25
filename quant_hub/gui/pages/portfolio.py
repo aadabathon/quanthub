@@ -80,6 +80,7 @@ from quant_hub.gui.theme import PALETTE, SIDE_PANEL_WIDTH, SPACE_L, SPACE_M
 from quant_hub.models.growth import ADDS, COSTS, GrowthReport, what_if
 from quant_hub.models.portfolio import InfluentialDay
 from quant_hub.models.regression import Z95
+from quant_hub.services.accounts import AccountService
 from quant_hub.services.market_service import MarketService
 from quant_hub.services.portfolio import (
     PORTFOLIO_ROW,
@@ -131,10 +132,13 @@ def _influence_line(day: InfluentialDay) -> str:
 
 class PortfolioPage(ScrollPage):
     def __init__(self, portfolio: PortfolioService, market_service: MarketService,
-                 tasks: TaskRunner, state_store: ViewStateStore) -> None:
+                 tasks: TaskRunner, state_store: ViewStateStore,
+                 broker_accounts: AccountService | None = None) -> None:
         super().__init__()
         self._portfolio = portfolio
         self._market = market_service
+        self._broker_accounts = broker_accounts     # None when IBKR is off (E1)
+        self._broker_left_out: tuple[str, ...] = ()
         self._tasks = tasks
         self._state_store = state_store
         self._view: PortfolioView | None = None
@@ -347,13 +351,26 @@ class PortfolioPage(ScrollPage):
             field.committed.connect(self._analyse)
         buttons = QHBoxLayout()
         buttons.setSpacing(SPACE_M)
-        self._import_button = button("Import positions…", icon_name="ph.upload-simple",
+        self._import_button = button("Import…", icon_name="ph.upload-simple",
                                      on_click=self._choose_file)
+        self._import_button.setToolTip("Import positions: one export, or one per account "
+                                       "from the same day")
         self._analyse_button = button("Analyse", "primary", "ph.lightning",
                                       on_click=self._analyse)
         buttons.addWidget(self._import_button, 1)
-        buttons.addWidget(self._analyse_button, 1)
+        if self._broker_accounts is None:
+            buttons.addWidget(self._analyse_button, 1)
+            card.body.addLayout(buttons)
+            return card
+        # Three don't fit the inspector's width: the two sources of holdings
+        # share a row, and Analyse takes the next one.
+        self._broker_button = button("From IBKR", icon_name="ph.bank",
+                                     on_click=self.load_from_broker)
+        self._broker_button.setToolTip("Read this login's accounts and positions from "
+                                       "IBKR (read-only) and keep them as a snapshot")
+        buttons.addWidget(self._broker_button, 1)
         card.body.addLayout(buttons)
+        card.body.addWidget(self._analyse_button)
         return card
 
     def _build_sizing(self) -> Card:
@@ -432,6 +449,45 @@ class PortfolioPage(ScrollPage):
         self._account = _ALL_ACCOUNTS
         self._keep_status = True
         self._analyse()
+
+    def load_from_broker(self) -> None:
+        """Read the IBKR login's positions and balances (read-only, E1), keep
+        them as a snapshot, then analyse it."""
+        if self._broker_accounts is None:
+            return
+        self._header.set_status("Reading accounts and positions from IBKR…")
+        self._broker_button.setEnabled(False)
+        accounts, portfolio = self._broker_accounts, self._portfolio
+
+        def work():
+            read = accounts.snapshot()
+            return portfolio.keep(read.snapshot), read
+
+        self._tasks.submit(work, on_done=self._on_broker_loaded, on_error=self._on_broker_error)
+
+    def _on_broker_loaded(self, result) -> None:
+        snapshot_id, read = result
+        self._broker_button.setEnabled(True)
+        snapshot, count = read.snapshot, len(read.snapshot.accounts)
+        nlv = read.net_liquidation
+        self._header.set_status(
+            f"Read from IBKR: {len(snapshot.positions)} positions"
+            + (f" in {count} accounts" if count > 1 else "")
+            + (f", net liquidation {_money(nlv)}" if nlv is not None else "")
+            + f" (#{snapshot_id})")
+        self._broker_left_out = read.left_out
+        self._mode = _IMPORTED
+        self._modes.set_current(_IMPORTED)
+        self._account = _ALL_ACCOUNTS
+        self._keep_status = True
+        self._analyse()
+
+    def _on_broker_error(self, exc: Exception) -> None:
+        self._broker_button.setEnabled(True)
+        hint = (" Press Connect IBKR (top right): TWS being open isn't enough."
+                if "not connected" in str(exc).lower() else "")
+        self._header.set_status(f"IBKR: {exc}.{hint}", error=True)
+        _logger.error("portfolio: IBKR accounts: %s", exc)
 
     # ------------------------------------------------------------- analyse
     def _analyse(self) -> None:
@@ -649,6 +705,8 @@ class PortfolioPage(ScrollPage):
 
     def _render_notes(self, view: PortfolioView, fallback: bool) -> None:
         warnings = list(view.left_out)
+        if view.snapshot.source == "IBKR":
+            warnings.extend(f"Left out by IBKR's read: {note}." for note in self._broker_left_out)
         if view.unmodelled > 0:
             warnings.append(f"{view.unmodelled:.1%} of equity is outside the risk model.")
         offline = None

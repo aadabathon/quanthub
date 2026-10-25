@@ -6,6 +6,19 @@ Portfolio and Review pages now read the same flags. A day is flagged when
 it outweighs the rest of the mix's series or of a holding's own:
 z² > n − 1. V0's |z| > 10 and W7's t(3) null are gone.
 
+Also **2026-10-25**: E1's code landed (D54). Portfolio's **From IBKR** reads
+the login's accounts, positions and balances, read-only, into a kept
+snapshot. The broker callbacks read both `ibapi` 9.81 and 10.x (10.33 moved
+`error()`'s code). Still the owner's: the 10.x install and the live check.
+Earlier the same day, the execution track was approved and E0 landed (D52,
+[EXECUTION_PLAN.md](EXECUTION_PLAN.md)).
+- D12 and hard rule 1 are amended: orders may exist only on one guarded
+  path. `tests/test_layering.py` now enforces that statically.
+- The settings and the order journal's schema are designed in the plan.
+- No order code exists yet; E1 (accounts, read-only) is next.
+- Still the owner's to settle: the money limits, the paper length, the
+  ordering against LENS_PLAN, and a paper login.
+
 Before that, **2026-10-24**: V0 landed (D50): data you can trust.
 - History loads serve the store's bars, labelled, when IBKR is offline.
 - Portfolio flags the days that decide its numbers, and shows the numbers
@@ -1058,3 +1071,37 @@ pytest. Environment:
        - A live review of the real book (TWS open, `[positions] folder`
          set).
        - Fetching the cash rate from FRED, a new provider, for discussion.
+7. **The execution track, paper first** (approved 2026-10-25, D52), E0 → E6.
+   See [EXECUTION_PLAN.md](EXECUTION_PLAN.md) and ROADMAP.md.
+   - **~~E0~~ landed (2026-10-25):**
+     - D12 and hard rule 1 amended (AGENTS.md, CLAUDE.md, README).
+     - `tests/test_layering.py` gained two static checks:
+       - `placeOrder`, `cancelOrder` and `reqGlobalCancel` appear only in
+         `broker/orders.py`
+       - only `services/execution.py` and `core.py` import it
+       Neither module exists yet, so today no order call exists anywhere.
+       Planted calls and imports were checked to fail, and look-alike
+       names to pass.
+     - The settings (`[execution]`, off by default, money limits fail
+       closed) and the journal's SQLite schema are designed for E2.
+   - **E1 code landed (2026-10-25, D54):**
+     - `IBKRBroker.get_managed_accounts`, `get_positions` and
+       `get_account_summary`, read-only, with subscriptions always
+       cancelled
+     - `error()` decoding chosen by the installed `ibapi`'s signature
+     - `services/accounts.py` maps positions and balances to a snapshot,
+       naming what it leaves out
+     - `PortfolioService.keep`
+     - Portfolio's **From IBKR** button (only with IBKR on)
+     - Tests, 34 new:
+       - `tests/test_ibkr_accounts.py` (25): both error forms, Decimal
+         quantities, option rights and expiries, and the plumbing against
+         a fake network (timeouts, a mid-read disconnect, late updates,
+         cancels)
+       - `tests/test_accounts_service.py` (7): the mapping, what's left
+         out, and a kept read analysed like an import
+       - 2 GUI tests, plus the IBKR-off test extended
+     - **Not yet verified live.** TWS wasn't running, and 10.x isn't
+       installed (it needs IBKR's license accepted).
+       `spikes/e1_check.py` (local) does the read-only check: by default
+       it masks account ids and hides amounts.
