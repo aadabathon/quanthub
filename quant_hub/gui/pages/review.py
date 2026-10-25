@@ -12,7 +12,9 @@ the checklist, and a journal record. The page shows:
 * **Thesis by stream** (section 1): today's breaches, the run, the verdict.
 * **Market state** (section 7): the calm regime's filtered probability over
   the lookback, its odds ahead, and the volatility forecast.
-* **One day dominating:** the flagged holdings, and which numbers were graded.
+* **Days that decide the numbers:** the days the Portfolio page flags
+  (D53), each with the mix or holding it decides, and which numbers were
+  graded.
 * **Journal:** trades drafted from the export before, notes, and trades
   recorded by hand. Nothing here places an order (D12).
 * **Past reviews**, newest first.
@@ -174,7 +176,7 @@ class ReviewPage(ScrollPage):
         column.addWidget(self._build_checklist())
         column.addWidget(self._build_streams())
         column.addWidget(self._build_market())
-        column.addWidget(self._build_dominance())
+        column.addWidget(self._build_influence())
         column.addWidget(self._build_journal())
         column.addWidget(self._build_history())
 
@@ -224,14 +226,14 @@ class ReviewPage(ScrollPage):
         self._market_card.body.addWidget(self._market)
         return self._market_card
 
-    def _build_dominance(self) -> Card:
-        self._dominance_card = Card("One day dominating", "")
-        self._dominance = DataTable([("Holding", "left"), ("Day", "left"), ("Return", "right"),
-                                     ("Share of variance", "right"), ("Flag above", "right")],
+    def _build_influence(self) -> Card:
+        self._influence_card = Card("Days that decide the numbers", "")
+        self._influence = DataTable([("Day", "left"), ("Decides", "left"), ("Move", "right"),
+                                     ("Share of variance", "right"), ("Robust share", "right")],
                                     row_height=_ROW)
-        self._dominance.balance_columns()
-        self._dominance_card.body.addWidget(self._dominance)
-        return self._dominance_card
+        self._influence.balance_columns()
+        self._influence_card.body.addWidget(self._influence)
+        return self._influence_card
 
     def _build_journal(self) -> Card:
         self._journal_card = Card("Journal", "Trades drafted from the export before; notes; "
@@ -376,7 +378,7 @@ class ReviewPage(ScrollPage):
         self._render_checklist(review)
         self._render_streams(review)
         self._render_market(review)
-        self._render_dominance(review)
+        self._render_influence(review)
         self._render_drafts(review)
         self._notes.setPlainText("")
         notes = list(review.notes) + [f"Skipped: {s}" for s in review.skipped]
@@ -418,18 +420,23 @@ class ReviewPage(ScrollPage):
         self._market.set_rows(rows or [[("No gates on in section 7", PALETTE.muted), "", "", ""]])
         self._market.setFixedHeight(_HEADER + max(len(rows), 1) * _ROW)
 
-    def _render_dominance(self, review: Review) -> None:
-        flagged = {s: d for s, d in review.dominance.items() if d.flagged}
-        returns = review.view.returns
-        rows = [[symbol, f"{returns.index[d.day]:%Y-%m-%d}" if returns is not None else "—",
-                 f"{d.value:+.1%}", (f"{d.share:.1%}", PALETTE.critical), f"{d.threshold:.1%}"]
-                for symbol, d in sorted(flagged.items())]
-        self._dominance_card.set_subtitle(
+    def _render_influence(self, review: Review) -> None:
+        # One row per series a day decides: the mix's, then each holding's own
+        # (models/portfolio.py, D53). A robust share beyond 50% is the flag.
+        rows = []
+        for d in review.influential:
+            when = f"{d.date:%Y-%m-%d}"
+            if d.decides_mix:
+                rows.append([when, "the mix", f"{d.mix_return:+.1%}", f"{d.variance_share:.1%}",
+                             (f"{d.robust_share:.1%}", PALETTE.critical)])
+            rows.extend([when, h.symbol, f"{h.holding_return:+.1%}", f"{h.variance_share:.1%}",
+                         (f"{h.robust_share:.1%}", PALETTE.critical)] for h in d.holdings)
+        self._influence_card.set_subtitle(
             ("Graded without these days (section 4)" if review.graded is not review.view
-             else "Graded as measured (section 4)") if flagged
-            else "No holding's variance is one day's doing")
-        self._dominance.set_rows(rows)
-        self._dominance.setFixedHeight(_HEADER + max(len(rows), 1) * _ROW)
+             else "Graded as measured (section 4)") if rows
+            else "No day outweighs the rest of the mix or of a holding")
+        self._influence.set_rows(rows)
+        self._influence.setFixedHeight(_HEADER + max(len(rows), 1) * _ROW)
 
     def _render_drafts(self, review: Review) -> None:
         rows = [[d.symbol, f"{d.before:g}", f"{d.after:g}",
@@ -505,8 +512,8 @@ class ReviewPage(ScrollPage):
         for key in ("fail", "warn", "gates"):
             self._tiles[key].set_value("—")
         self._tiles["rules"].set_value("—")
-        for table in (self._checklist, self._streams, self._market, self._dominance,
+        for table in (self._checklist, self._streams, self._market, self._influence,
                       self._drafts, self._trades, self._history):
             table.setFixedHeight(_HEADER + _ROW)
-        self._dominance_card.set_subtitle("Run a review to see it")
+        self._influence_card.set_subtitle("Run a review to see it")
         self._header.set_status("Run a review: it reads your rules and the newest export.")

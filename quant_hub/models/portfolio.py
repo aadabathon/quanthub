@@ -120,25 +120,40 @@ standard error :math:`\sigma/\sqrt{T}` over :math:`T` years, so
 isn't an estimate, it's noise: the case for fractional Kelly, and for not
 leaning on :math:`\hat\mu` at all.
 
-Influence: the days that decide the numbers (V0)
-------------------------------------------------
+Influence: the days that decide the numbers (V0; one rule, D53)
+----------------------------------------------------------------
 Every number above is a sample statistic. One extreme day can carry most
-of the sample, and nothing in the statistic says so. Let
-:math:`y_t = R_{p,t}` be the mix's return on day :math:`t` (:math:`n`
-days). It's the series behind :math:`\sigma_p`, :math:`\hat\mu`,
-:math:`\beta_p` and Kelly.
+of the sample, and nothing in the statistic says so. This one rule
+answers it for both the Portfolio and Review pages (approved 2026-10-25;
+it replaces V0's fixed z and W7's per-holding null). It runs on any daily
+return series :math:`v_1, \dots, v_n`:
 
-* **Share of the variance.** The sample variance is
-  :math:`\sum_t (y_t - \bar y)^2/(n-1)`, so day :math:`t` carries
+* the mix's :math:`y_t = R_{p,t}`, behind :math:`\sigma_p`, :math:`\hat\mu`,
+  :math:`\beta_p`, VaR and Kelly
+* each holding's own :math:`R_{t,i}`, behind its volatility, beta and
+  risk share
 
-  .. math::  s_t = \frac{(y_t - \bar y)^2}{\sum_s (y_s - \bar y)^2},
+The parts:
 
-  and the shares sum to 1. An ordinary day carries about :math:`1/n`.
+* **Share of the variance.** With :math:`d_t = v_t - \bar v`, day
+  :math:`t` carries
+
+  .. math::  s_t = \frac{d_t^2}{\sum_s d_s^2}
+
+  of the sample variance. The shares sum to 1, and an ordinary day carries
+  about :math:`1/n`. It's exactly what leaves with the day: since
+  :math:`\bar v_{-t} = \bar v - d_t/(n-1)`,
+
+  .. math::  \sum_{s \ne t} (v_s - \bar v_{-t})^2 = \sum_s d_s^2 - \tfrac{n}{n-1}\,d_t^2 .
+
+  The share of the raw sum of squares, :math:`v_t^2/\sum_s v_s^2`, splits
+  the second moment about zero instead. For daily returns the two differ
+  by under 0.3 points in every case measured.
 * **Robust z.** The score is
 
-  .. math::  z_t = \frac{y_t - \operatorname{med}(y)}{1.4826\,\operatorname{MAD}(y)},
-             \qquad \operatorname{MAD}(y) = \operatorname{med}\lvert y -
-             \operatorname{med}(y)\rvert .
+  .. math::  z_t = \frac{v_t - \operatorname{med}(v)}{1.4826\,\operatorname{MAD}(v)},
+             \qquad \operatorname{MAD}(v) = \operatorname{med}\lvert v -
+             \operatorname{med}(v)\rvert .
 
   For a normal sample the MAD tends to :math:`\Phi^{-1}(3/4)\,\sigma
   \approx 0.6745\,\sigma`, so :math:`1.4826\,\mathrm{MAD}` estimates
@@ -147,24 +162,70 @@ days). It's the series behind :math:`\sigma_p`, :math:`\hat\mu`,
   ("masking"). The median and MAD ignore anything in up to half the
   sample. If more than half the days sit exactly at the median (a mostly
   idle account), the MAD is 0 and the sample sd stands in.
-* **The flag.** Day :math:`t` is flagged when :math:`|z_t| > k`, with
-  ``INFLUENCE_Z`` :math:`= 10`, a threshold measured rather than assumed.
-  Under normality anything above 6 never fires, but daily returns are
-  fat-tailed. On Student-t noise over 500 days (about two years),
-  :math:`k = 6` flags 3.2 days at :math:`\nu = 3` and 1.4 at
-  :math:`\nu = 4`; :math:`k = 10` flags 0.7 and 0.2. SPY's two years to
-  October 2026 hold one day beyond 10: April 9, 2025, +10.5%, about a
-  fifth of its variance. So a flag marks a day that alone carries a large
-  part of the numbers, and flags are rare enough to read.
+* **The robust share.** It is the share of the variance day :math:`t`
+  would carry if every other day were ordinary, with variance
+  :math:`(1.4826\,\mathrm{MAD})^2`:
+
+  .. math::  \hat s_t = \frac{z_t^2}{z_t^2 + n - 1} .
+
+  It's the closed form :math:`x^2/(x^2 + (n-1)\sigma^2)` for one day of
+  size :math:`x` among :math:`n - 1` days of variance :math:`\sigma^2`,
+  with :math:`x` and :math:`\sigma` measured robustly. Other big days don't
+  dilute it the way they dilute :math:`s_t`. Two +500% days in a stock
+  that moves 1.8% a day carry :math:`s = 0.50` each. A share-based flag
+  would hide both, but each has :math:`\hat s = 0.99`.
+* **The flag.** Day :math:`t` decides the series when
+
+  .. math::  \hat s_t > \tfrac12 \iff |z_t| > \sqrt{n - 1}
+
+  (``INFLUENCE_SHARE``), that is, when its squared move outweighs the
+  ordinary variance of all the other days together. It's a size, not a
+  surprise: "most of the variance", in REGIME.md's words. When the other
+  days are ordinary, removing the day at least halves the variance, so
+  the vol falls by 29% or more. It also moves the mean by
+  :math:`|d_t|/(n-1) > \sigma/\sqrt{n-1}`, about one standard error or
+  more. The z it takes grows with the sample, because a longer sample is
+  harder to outweigh: 7.7 at 60 days, 15.8 at 250, 22.3 at 500 and 31.6
+  at 1,000.
+* **Noise.** How often noise alone outweighs the rest of a series,
+  from 20,000 simulated series per cell (a test reproduces the t(3) row
+  at 500 days):
+
+  ======================================  ========  =====  =====
+  Series                                  250 days  500    1,000
+  ======================================  ========  =====  =====
+  t(5)                                    0.3%      0.1%   0.02%
+  t(4)                                    1.8%      0.7%   0.4%
+  t(3)                                    9.0%      6.8%   4.5%
+  GARCH(1,1), a = .09, b = .90, t(5)      0.7%      0.9%   0.9%
+  the same, plus earnings of 4 daily sds  2.7%      1.4%   0.9%
+  the same, plus earnings of 6 daily sds  16.7%     8.4%   2.9%
+  ======================================  ========  =====  =====
+
+  The earnings rows add one quarterly move of that size to the GARCH
+  series. At 60 days the rates run from 1.7% to 28%: a short sample is
+  easily outweighed, and the rule says so.
+
+  SPY's two years to October 2026 flag nothing. Their largest day,
+  April 9, 2025, +10.5% (:math:`z = 14.8`), carries a fifth of the
+  variance. That's a large share, but it doesn't outweigh the rest; the
+  page names it as the largest day.
+* **The mix and its holdings.** A day is flagged when it decides the mix
+  or any holding's own series, and the flag says which. A holding's day
+  can decide that holding's numbers while being too small in the book to
+  decide the mix's: a +60% day in a 30% holding carries 67% of the
+  holding's variance and 38% of the mix's.
 * **Each day's driver** is the holding with the largest dollar move
   :math:`|X_i R_{t,i}|` that day.
 * **Without the flagged days,** the whole report is recomputed on the
-  other days, with the same holdings and definitions; its mean is the
+  other days, with the same holdings and definitions. Its mean is the
   leave-out mean :math:`\bar y_{-S} = (n \bar y - \sum_{t \in S} y_t)/(n -
   |S|)`. It needs ``MIN_DAYS`` left, or it isn't computed. It's a
-  sensitivity, not a better estimate: the day happened, and can again. The
-  full sample stays the headline, and the "without" numbers sit beside it,
-  never instead of it.
+  sensitivity, not a better estimate: the day happened, and can again.
+  Portfolio keeps the full sample as the headline and shows the "without"
+  numbers beside it, never instead of it. The Review removes the same
+  days, and grades on what's left only when REGIME.md section 4 says
+  "without that day".
 
 Limitations
 -----------
@@ -186,11 +247,18 @@ ES match their closed forms; the historical VaR is exceeded on about
 :math:`1-\alpha` of fresh days (binomial tolerance); the estimates recover
 the true covariance within sampling error. Options: the replay of a
 protective put loses less than its delta says on a crash day.
-Influence: a planted jump is flagged with its driver and its exact share;
-two equal jumps are both flagged (no masking); a clean Gaussian world
-flags nothing; :math:`1.4826\,\mathrm{MAD}` recovers :math:`\sigma`; the
-"without" report equals a report on the remaining days, and its mean obeys
-the leave-out identity.
+Influence:
+- A planted jump is flagged with its driver and its exact share.
+- Two equal jumps are both flagged, in the mix and in their holding,
+  though each carries under half the variance (no masking).
+- A day can decide a holding without deciding the mix.
+- A clean Gaussian world flags nothing.
+- :math:`1.4826\,\mathrm{MAD}` recovers :math:`\sigma`, and the robust
+  share recovers the closed form.
+- The deletion identity holds.
+- t(3) noise outweighs the rest at the tabulated rate (binomial band).
+- The "without" report equals a report on the remaining days, and its
+  mean obeys the leave-out identity.
 """
 
 from __future__ import annotations
@@ -211,8 +279,9 @@ MIN_DAYS = 60
 """Fewest common return days the model accepts: below about three months
 the covariance and the tails are guesses."""
 
-INFLUENCE_Z = 10.0
-"""Robust z beyond which a day is flagged (module docstring, Influence)."""
+INFLUENCE_SHARE = 0.5
+"""Robust share beyond which a day decides a series: the day outweighs all
+the others together, |z| > sqrt(n - 1) (module docstring, Influence)."""
 MAD_TO_SD = 1.4826
 """1/Phi^-1(3/4): turns a normal sample's MAD into an estimate of sigma."""
 
@@ -285,23 +354,40 @@ class Exposures:
 
 
 @dataclass(frozen=True)
+class HoldingDay:
+    """A holding whose own series a day decides (module docstring, Influence)."""
+
+    symbol: str
+    holding_return: float    # R_{t,i}
+    robust_share: float      # s-hat_t of the holding's series
+    variance_share: float    # s_t of the holding's series
+
+
+@dataclass(frozen=True)
 class InfluentialDay:
     """One day of the mix's returns (module docstring, Influence)."""
 
     date: pd.Timestamp
     mix_return: float        # y_t
     robust_z: float          # z_t
+    robust_share: float      # s-hat_t
     variance_share: float    # s_t
     driver: str              # the holding with the largest dollar move that day
     driver_return: float     # its return that day
+    holdings: tuple[HoldingDay, ...] = ()   # the holdings whose own series it decides
+
+    @property
+    def decides_mix(self) -> bool:
+        return self.robust_share > INFLUENCE_SHARE
 
 
 @dataclass(frozen=True)
 class Influence:
-    """The days that decide the numbers: ``flagged`` (|z| beyond
-    ``INFLUENCE_Z``, largest share first), the ``largest`` day by share
-    whether flagged or not, and the report recomputed ``without`` the
-    flagged days (None when none are flagged or too few days remain)."""
+    """The days that decide the numbers: ``flagged`` (the mix's or a
+    holding's robust share beyond ``INFLUENCE_SHARE``, largest share of the
+    mix first), the ``largest`` day by share whether flagged or not, and the
+    report recomputed ``without`` the flagged days (None when none are
+    flagged or too few days remain)."""
 
     flagged: tuple[InfluentialDay, ...]
     largest: InfluentialDay
@@ -513,22 +599,58 @@ def robust_z(values: np.ndarray) -> np.ndarray:
     return (v - median) / scale if scale > 0 else np.zeros_like(v)
 
 
+def variance_shares(values: np.ndarray) -> np.ndarray:
+    """s_t = d_t^2 / sum d^2 with d = v - mean: each day's share of the
+    sample variance; all zeros when the values don't vary."""
+    v = _series(values)
+    d = v - v.mean()
+    total = float(d @ d)
+    return d * d / total if total > 0 else np.zeros_like(d)
+
+
+def robust_share(values: np.ndarray) -> np.ndarray:
+    """s-hat_t = z_t^2 / (z_t^2 + n - 1): the share of the variance each day
+    would carry if every other day were ordinary (module docstring, Influence)."""
+    z = robust_z(_series(values))
+    return z * z / (z * z + len(z) - 1)
+
+
+def influential_days(values: np.ndarray) -> np.ndarray:
+    """Positions of the days that decide the series: robust share beyond
+    ``INFLUENCE_SHARE``, i.e. |z| > sqrt(n - 1) (module docstring, Influence)."""
+    return np.flatnonzero(robust_share(values) > INFLUENCE_SHARE)
+
+
+def _series(values: np.ndarray) -> np.ndarray:
+    v = np.asarray(values, dtype=float)
+    if v.ndim != 1 or len(v) < 2:
+        raise ValueError("influence needs one series of at least two days")
+    if not np.isfinite(v).all():
+        raise ValueError("returns must be finite")
+    return v
+
+
 def _influence(exposures: Exposures, returns: pd.DataFrame, benchmark: pd.Series | None,
                rate: float, confidence: tuple[float, ...], symbols: tuple[str, ...],
                r: np.ndarray, x: np.ndarray, y: np.ndarray) -> Influence:
-    """Shares, robust z, drivers and the report without the flagged days."""
-    deviation = y - y.mean()
-    total = float(deviation @ deviation)
-    shares = deviation**2 / total if total > 0 else np.zeros_like(y)
-    z = robust_z(y)
+    """Shares, robust z, the holdings each day decides, drivers, and the
+    report without the flagged days."""
+    shares, robust, z = variance_shares(y), robust_share(y), robust_z(y)
     moves = np.abs(r * x)                      # dollars each holding moved, per day
+    decided: dict[int, list[HoldingDay]] = {}
+    for j, symbol in enumerate(symbols):
+        own, own_robust = variance_shares(r[:, j]), robust_share(r[:, j])
+        for i in influential_days(r[:, j]):
+            decided.setdefault(int(i), []).append(
+                HoldingDay(symbol, float(r[i, j]), float(own_robust[i]), float(own[i])))
 
     def day(i: int) -> InfluentialDay:
         j = int(np.argmax(moves[i]))
-        return InfluentialDay(returns.index[i], float(y[i]), float(z[i]), float(shares[i]),
-                              symbols[j], float(r[i, j]))
+        return InfluentialDay(returns.index[i], float(y[i]), float(z[i]), float(robust[i]),
+                              float(shares[i]), symbols[j], float(r[i, j]),
+                              tuple(decided.get(i, ())))
 
-    flagged = sorted(np.flatnonzero(np.abs(z) > INFLUENCE_Z), key=lambda i: -shares[i])
+    flagged = sorted({*influential_days(y).tolist(), *decided}, key=lambda i: -shares[i])
     without = None
     if flagged and len(y) - len(flagged) >= MIN_DAYS:
         keep = np.ones(len(y), dtype=bool)

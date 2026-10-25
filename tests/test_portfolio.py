@@ -9,15 +9,18 @@ import pandas as pd
 import pytest
 
 from quant_hub.models.portfolio import (
-    INFLUENCE_Z,
+    INFLUENCE_SHARE,
     MAD_TO_SD,
     MIN_DAYS,
     Exposures,
     OptionExposure,
     correlated_returns,
+    influential_days,
     risk_report,
+    robust_share,
     robust_z,
     simple_returns,
+    variance_shares,
 )
 
 VOLS = np.array([0.012, 0.018, 0.009, 0.015])            # daily
@@ -191,14 +194,19 @@ class TestDrawdownAndInputs:
 
 
 class TestInfluence:
-    """V0: the days that decide the numbers (module docstring, Influence)."""
+    """The days that decide the numbers: one rule for both pages (module
+    docstring, Influence; D53)."""
 
     @staticmethod
-    def jumped(days=500, seed=3, jumps=((250, "BBB", 0.60),)):
+    def jumped(days=500, seed=3, jumps=((250, "BBB", 1.0),)):
         returns = world(days, seed)
         for i, symbol, move in jumps:
             returns.iloc[i, returns.columns.get_loc(symbol)] = move
         return returns
+
+    @staticmethod
+    def mix(returns, report):
+        return returns[list(report.symbols)].to_numpy() @ report.weights
 
     def test_a_clean_gaussian_world_flags_nothing(self, report):
         assert report.influence.flagged == ()
@@ -207,25 +215,48 @@ class TestInfluence:
         assert report.influence.largest.variance_share < 0.03
 
     def test_a_planted_jump_is_flagged_with_its_driver_and_share(self):
-        returns = self.jumped()
+        returns = self.jumped()                          # BBB +100%, 30% of equity
         report = risk_report(holdings(), returns, returns["SPY"], rate=0.04)
         (day,) = report.influence.flagged
         assert day.date == returns.index[250]
-        assert day.driver == "BBB" and day.driver_return == 0.60
-        assert day.robust_z > INFLUENCE_Z
-        y = returns[list(report.symbols)].to_numpy() @ report.weights
+        assert day.driver == "BBB" and day.driver_return == 1.0
+        y = self.mix(returns, report)
         deviation = y - y.mean()
         assert day.variance_share == pytest.approx(deviation[250] ** 2 / (deviation @ deviation),
                                                    rel=1e-12)
         assert day.mix_return == pytest.approx(y[250], rel=1e-12)
+        z = robust_z(y)[250]
+        assert day.robust_share == pytest.approx(z**2 / (z**2 + len(y) - 1), rel=1e-12)
+        assert day.decides_mix and abs(day.robust_z) > math.sqrt(len(y) - 1)
+        # It decides BBB's own series too, with BBB's own exact share.
+        (bbb,) = day.holdings
+        own = returns["BBB"].to_numpy() - returns["BBB"].mean()
+        assert bbb.symbol == "BBB" and bbb.holding_return == 1.0
+        assert bbb.variance_share == pytest.approx(own[250] ** 2 / (own @ own), rel=1e-12)
         assert report.influence.largest == day
 
-    def test_two_equal_jumps_are_both_flagged(self):
-        # The sd is inflated by both, which would hide each (masking); the MAD isn't.
-        returns = self.jumped(jumps=((100, "AAA", 0.5), (300, "AAA", 0.5)))
+    def test_a_day_can_decide_a_holding_without_deciding_the_mix(self):
+        # BBB +60%: 38% of the mix's variance (robust share below a half),
+        # 67% of BBB's own (robust share above).
+        returns = self.jumped(jumps=((250, "BBB", 0.60),))
         report = risk_report(holdings(), returns, returns["SPY"], rate=0.04)
-        assert {d.date for d in report.influence.flagged} == {returns.index[100],
-                                                              returns.index[300]}
+        (day,) = report.influence.flagged
+        assert not day.decides_mix and day.robust_share < INFLUENCE_SHARE
+        (bbb,) = day.holdings
+        assert bbb.symbol == "BBB" and bbb.robust_share > INFLUENCE_SHARE
+        assert report.influence.without is not None
+
+    def test_two_equal_jumps_are_both_flagged_though_each_carries_under_half(self):
+        # Each carries under half the variance, so a share-based flag (W7's D)
+        # would hide both (masking); the robust share isn't diluted.
+        returns = self.jumped(jumps=((100, "AAA", 1.0), (300, "AAA", 1.0)))
+        report = risk_report(holdings(), returns, returns["SPY"], rate=0.04)
+        flagged = report.influence.flagged
+        assert {d.date for d in flagged} == {returns.index[100], returns.index[300]}
+        for day in flagged:
+            (aaa,) = day.holdings
+            assert day.decides_mix and day.variance_share < 0.5
+            assert aaa.symbol == "AAA" and aaa.variance_share < 0.5
 
     def test_without_is_the_report_on_the_remaining_days(self):
         returns = self.jumped()
@@ -238,7 +269,7 @@ class TestInfluence:
         np.testing.assert_allclose(without.risk_shares, direct.risk_shares, rtol=1e-12)
         assert without.influence is None
         # The leave-out mean: (n ybar - y_S) / (n - 1), annualized per unit of exposure.
-        y = returns[list(report.symbols)].to_numpy() @ report.weights
+        y = self.mix(returns, report)
         leave_out = (len(y) * y.mean() - y[250]) / (len(y) - 1)
         assert without.mean == pytest.approx(leave_out * 252 / report.net_exposure, rel=1e-12)
         assert without.vol < report.vol
@@ -248,6 +279,52 @@ class TestInfluence:
         report = risk_report(holdings(), returns, returns["SPY"], rate=0.04)
         assert len(report.influence.flagged) == 2
         assert report.influence.without is None
+
+    def test_the_deletion_identity(self):
+        # sum_{s != t} (v_s - mean_{-t})^2 = sum d^2 - n/(n-1) d_t^2, so the
+        # share s_t is what leaves the sample with the day.
+        v = np.random.default_rng(5).standard_t(3, 80)
+        n, d = len(v), v - v.mean()
+        for t in range(n):
+            rest = np.delete(v, t)
+            left = float(((rest - rest.mean()) ** 2).sum())
+            assert left == pytest.approx(d @ d - n / (n - 1) * d[t] ** 2, rel=1e-10)
+        assert variance_shares(v).sum() == pytest.approx(1.0, rel=1e-12)
+
+    def test_the_robust_share_recovers_the_closed_form(self):
+        # One day of size x among n - 1 days of variance sigma^2:
+        # x^2 / (x^2 + (n - 1) sigma^2), with sigma from the MAD.
+        n, sigma, x = 100_000, 0.01, 4.0
+        v = np.random.default_rng(12).normal(0.0, sigma, n)
+        v[777] = x
+        closed = x**2 / (x**2 + (n - 1) * sigma**2)          # 0.615
+        # The MAD's sigma has an SE of about 0.37% here, moving the share by ~0.2%.
+        assert robust_share(v)[777] == pytest.approx(closed, rel=0.01)
+        assert list(influential_days(v)) == [777]
+
+    def test_the_flag_is_z_beyond_root_n_minus_1(self):
+        v = np.random.default_rng(8).standard_cauchy(250)       # heavy enough to flag some
+        z = robust_z(v)
+        expected = np.flatnonzero(np.abs(z) > math.sqrt(len(v) - 1))
+        assert len(expected) > 0
+        np.testing.assert_array_equal(influential_days(v), expected)
+
+    def test_t3_noise_outweighs_the_rest_at_the_tabulated_rate(self):
+        # The docstring's table: 6.8% of 500-day t(3) series flag a day (from
+        # 20,000 series; SE 0.18%). 4,000 fresh series: SE 0.40%, so the band
+        # is about four combined SEs either side.
+        rng = np.random.default_rng(20261026)
+        runs = 4_000
+        hits = sum(len(influential_days(rng.standard_t(3, 500))) > 0 for _ in range(runs))
+        assert 0.050 <= hits / runs <= 0.086
+
+    def test_influence_rejects_short_or_bad_series(self):
+        with pytest.raises(ValueError, match="at least two"):
+            influential_days(np.ones(1))
+        with pytest.raises(ValueError, match="one series"):
+            robust_share(np.ones((10, 2)))
+        with pytest.raises(ValueError, match="finite"):
+            variance_shares(np.r_[np.ones(9), np.nan])
 
     def test_mad_recovers_sigma_on_a_normal_sample(self):
         rng = np.random.default_rng(11)

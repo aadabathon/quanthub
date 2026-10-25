@@ -1,6 +1,6 @@
 """The daily review (W7), end to end on made-up tickers: the rules file, the
 newest export by its inner date, the checks over what each rule governs,
-the dominant day removed, the gates, persistence across runs, trade drafts,
+the deciding day removed, the gates, persistence across runs, trade drafts,
 the journal, and every stop that names what to fix."""
 
 from datetime import date, datetime
@@ -131,13 +131,21 @@ def test_a_review_reads_the_newest_export_and_checks_every_rule(world):
     assert size.check.outcome is Outcome.BREACH and size.check.bound == pytest.approx(0.35)
 
 
-def test_the_dominant_day_is_flagged_and_removed_as_section_4_chose(world):
+def test_the_deciding_day_is_flagged_and_removed_as_section_4_chose(world):
     service, *_, jump = world
     review = service.run({"credit calm": True})
-    assert review.dominance["CCC"].flagged and not review.dominance["AAA"].flagged
+    (day,) = review.influential
+    assert day.date.date() == jump.date() and day.decides_mix
+    assert [h.symbol for h in day.holdings] == ["CCC"]
     assert review.removed_days == (jump.date(),)
     assert review.graded is not review.view
     assert review.graded.report.vol_annual < review.view.report.vol_annual
+    # One rule for both pages: the review grades on the numbers the Portfolio
+    # page shows as WITHOUT (D53).
+    without = review.view.report.influence.without
+    assert review.graded.report.vol == pytest.approx(without.vol, rel=1e-12)
+    assert review.graded.report.var_historical == pytest.approx(without.var_historical,
+                                                                rel=1e-12)
 
 
 def test_streams_get_sleeve_level_checks_and_section_1_counts_runs(world):

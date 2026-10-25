@@ -14,10 +14,12 @@ One run is the plan's job chain, on the task-worker thread:
    over section 2's source, benchmark, lookback and rate, with growth by
    the owner's sleeves (section 3). Missing history is fetched through the
    source, never by connecting to a broker on the owner's behalf.
-4. **One day dominating** (``models/regime.py``): each holding's largest
-   day's share of its sum of squares. Flagged days are removed in a second
-   analysis. Section 4's choice says which analysis grades the return-based
-   numbers; the review keeps both.
+4. **Days that decide the numbers** (``models/portfolio.py``, D53): the
+   days that outweigh the rest of the mix's series or of a holding's own,
+   read from the analysis's report, so they're the days the Portfolio
+   page flags. They're removed in a second analysis. Section 4's choice
+   says which analysis grades the return-based numbers; the review keeps
+   both.
 5. **Market state.** Section 7's gates on the benchmark's log returns:
    the HMM's filtered calm probability and its odds ahead, and GARCH's
    average volatility forecast.
@@ -38,7 +40,6 @@ Decision support only: nothing here places an order (D12).
 
 from __future__ import annotations
 
-import logging
 import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -59,15 +60,13 @@ from quant_hub.models.dcf import (
     market_comparison,
     value,
 )
-from quant_hub.models.portfolio import TRADING_DAYS
+from quant_hub.models.portfolio import TRADING_DAYS, InfluentialDay
 from quant_hub.models.regime import (
     CalmGate,
     Check,
-    Dominance,
     Outcome,
     calm_regime,
     check,
-    dominance,
     implied_growth_check,
     persistence,
     run_length,
@@ -77,8 +76,6 @@ from quant_hub.models.regression import NEWEY_WEST, regress_returns, residual_co
 from quant_hub.services.portfolio import PORTFOLIO_ROW, PortfolioService, PortfolioView
 from quant_hub.services.valuation import ValuationService, refusal
 from quant_hub.storage.regime_store import RegimeStore, ReviewRecord, TradeRecord
-
-_logger = logging.getLogger(__name__)
 
 DEFAULT_BENCHMARK = "SPY"       # REGIME.md section 2: "SPY by default"
 DEFAULT_LOOKBACK = 730          # section 2: "730 by default"
@@ -136,7 +133,7 @@ class Review:
     skipped: tuple[str, ...]            # files in the folder that aren't positions, and why
     view: PortfolioView                 # as measured
     graded: PortfolioView               # the one the checks read (section 4's choice)
-    dominance: dict[str, Dominance]
+    influential: tuple[InfluentialDay, ...]   # the days that decide ``view``'s numbers
     removed_days: tuple[date, ...]      # the flagged days, removed from ``graded`` if chosen
     checks: tuple[ItemCheck, ...]
     streams: tuple[StreamVerdict, ...]
@@ -229,16 +226,19 @@ class ReviewService:
 
         view = analyse()
         notes.extend(view.left_out)
-        flags = _dominance(view)
-        removed = tuple(sorted({_day(view, d) for d in flags.values() if d.flagged}))
+        # The same days as the Portfolio page's flags and its WITHOUT (D53).
+        influential = view.report.influence.flagged if view.report.influence else ()
+        removed = tuple(sorted({d.date.date() for d in influential}))
         graded = view
         if removed and rules.without_dominant_day:
             graded = analyse(removed)
         if removed:
             days = ", ".join(d.isoformat() for d in removed)
-            notes.append(f"One day dominates a holding's variance ({days}); the checks read "
-                         + ("the numbers without it." if graded is not view
-                            else "the numbers as measured (section 4)."))
+            one = len(removed) == 1
+            notes.append(f"{'A day decides' if one else 'Days decide'} the numbers ({days}); "
+                         "the checks read "
+                         + (f"the numbers without {'it' if one else 'them'}."
+                            if graded is not view else "the numbers as measured (section 4)."))
 
         wanted = {rule.measure for rule in rules.rules}
         measures, missing = _book_measures(graded, snapshot, wanted)
@@ -266,12 +266,12 @@ class ReviewService:
         checks = _checks(rules, measures, missing, implied, graded)
         streams = self._streams(rules, checks, run_at)
         drafts = _drafts(previous, snapshot) if previous is not None else ()
-        payload = _payload(rules, snapshot, files, checks, streams, flags, removed, calm,
+        payload = _payload(rules, snapshot, files, checks, streams, influential, removed, calm,
                            volatility, view)
         review_id = self._store.save_review(run_at, version_id, snapshot.as_of.date().isoformat(),
                                             payload)
         return Review(run_at, review_id, version_id, rules, snapshot,
-                      tuple(p.name for p in files), skipped, view, graded, flags, removed,
+                      tuple(p.name for p in files), skipped, view, graded, influential, removed,
                       tuple(checks), tuple(streams), calm, volatility, tuple(drafts),
                       tuple(notes))
 
@@ -400,26 +400,6 @@ class ReviewService:
 
 def _blank(row: str):
     raise ReviewError(f"REGIME.md section 2: '{row}' is blank, and the review needs it")
-
-
-def _dominance(view: PortfolioView) -> dict[str, Dominance]:
-    returns = view.returns
-    if returns is None:
-        return {}
-    flags = {}
-    for symbol in view.report.symbols:
-        series = returns[symbol].dropna() if symbol in returns.columns else None
-        if series is None or len(series) < 60:
-            continue
-        try:
-            flags[symbol] = dominance(series.to_numpy())
-        except ValueError as exc:
-            _logger.info("review: no dominance check for %s: %s", symbol, exc)
-    return flags
-
-
-def _day(view: PortfolioView, flag: Dominance) -> date:
-    return view.returns.index[flag.day].date()
 
 
 def _book_measures(view: PortfolioView, snapshot: PositionSnapshot, wanted: set[str]
@@ -675,7 +655,8 @@ def _finite(x) -> float | None:
 
 def _payload(rules: RuleSet, snapshot: PositionSnapshot, files: Sequence[Path],
              checks: Sequence[ItemCheck], streams: Sequence[StreamVerdict],
-             flags: Mapping[str, Dominance], removed: Sequence[date], calm: CalmGate | None,
+             influential: Sequence[InfluentialDay], removed: Sequence[date],
+             calm: CalmGate | None,
              volatility: float | None, view: PortfolioView) -> dict:
     """What the journal keeps of a run: enough to show it again and to
     count section 1's runs, nothing the store would need to understand."""
@@ -694,8 +675,10 @@ def _payload(rules: RuleSet, snapshot: PositionSnapshot, files: Sequence[Path],
         "streams": {s.sleeve: bool(s.breaches) for s in streams},
         "verdicts": {s.sleeve: {"run": s.run, "grade": s.grade.value if s.grade else None,
                                 "breaches": list(s.breaches)} for s in streams},
-        "dominance": {symbol: {"share": _finite(d.share), "flagged": d.flagged,
-                               "threshold": _finite(d.threshold)} for symbol, d in flags.items()},
+        "influence": [{"day": d.date.date().isoformat(), "mix": d.decides_mix,
+                       "share": _finite(d.variance_share), "robust share": _finite(d.robust_share),
+                       "holdings": {h.symbol: _finite(h.variance_share) for h in d.holdings}}
+                      for d in influential],
         "removed_days": [d.isoformat() for d in removed],
         "gates": {"calm": _finite(calm.probability) if calm else None,
                   "volatility": _finite(volatility)},
