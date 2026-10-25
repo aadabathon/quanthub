@@ -13,7 +13,7 @@ from quant_hub.models.strategies import StrategySpec
 from quant_hub.services.market_service import MarketService
 from quant_hub.services.research import Experiment, ResearchService, WORLD_SOURCE
 from quant_hub.storage.research_store import ResearchStore
-from quant_hub.storage.schema import prepare_store
+from quant_hub.storage.schema import SCHEMA_VERSION, prepare_store
 
 
 @pytest.fixture
@@ -115,7 +115,7 @@ def test_v2_migration_preserves_existing_data_and_copies_first(tmp_path):
         conn.execute("CREATE TABLE owner_data (note TEXT)")
         conn.execute("INSERT INTO owner_data VALUES ('keep')")
     migrated = prepare_store(path)
-    assert migrated.version == 3 and migrated.backup.is_file()
+    assert migrated.version == SCHEMA_VERSION and migrated.backup.is_file()
     with sqlite3.connect(path) as conn:
         assert conn.execute("SELECT note FROM owner_data").fetchone()[0] == "keep"
         assert conn.execute("SELECT COUNT(*) FROM research_runs").fetchone()[0] == 0

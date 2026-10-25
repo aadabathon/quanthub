@@ -887,7 +887,387 @@ W7 (ROADMAP.md).
   - the name and layering rule of the online-provider package (W5)
   - rule-set versioning (W7)
 
-## D44 — V0: data you can trust: offline reads and influence flags (2026-10-24)
+## D44 — W2: regression conventions (2026-10-21)
+
+The owner approved the derivation in `models/regression.py` ("continue
+on"). The implementation and the Portfolio page's regressions follow it.
+Calls made:
+
+- **Returns:** daily simple returns of adjusted closes, on the risk model's
+  own common days.
+- **Excess over cash at r/252 a day.** That's the Portfolio page's
+  arithmetic convention, the one its Kelly uses. The backtester compounds
+  instead, (1+r)^(1/252) − 1. At 4% the two differ by about 0.03
+  percentage points of α a year.
+- **Errors:**
+  - Newey–West is the default: Bartlett weights, the plug-in lag
+    ⌊4(T/100)^{2/9}⌋, and the T/(T − p) small-sample factor (also used
+    for White's).
+  - Classical and White are kept beside it.
+- **The portfolio row:**
+  - It's the replay's P&L over equity, with cash earning the rate.
+  - For stocks, its coefficients are then exactly the weighted
+    holdings', and its β equals the Beta tile's (tested).
+- **Stale prices:** a Lagged β choice (Off / 1 day) turns β into the
+  Dimson sum, and shows the lag's own coefficient, amber when
+  significant.
+- **Rolling β:**
+  - 126 sessions, causal, with ±1.96 Newey–West bands, for the clicked
+    row.
+  - No β = 1 reference line: it pulled the axis away from the data.
+- **Residual links:**
+  - A table of pairs, strongest first, amber where the Fisher interval
+    excludes zero, with the raw correlation beside each.
+  - This replaces the heatmap the derivation sketched. A correlation
+    matrix is categories on both axes with signed values, and
+    `charts.Heatmap` has a numeric x and a sequential ramp. A table
+    shows the numbers and needs no new design token.
+  - A holding that is the benchmark itself fits exactly (R² = 1 to
+    rounding). Its residual is rounding noise, so its links are "—".
+- **Deferred within W2:** extra factor ETFs on the page (the model
+  already takes them), and factor spreads as tilts.
+- **Amended the same day: extra factors landed.**
+  - An *Extra factors* field takes up to three ETFs. The benchmark and
+    repeats are dropped, and pasted text is uppercased.
+  - Their betas are partial: each holds the others fixed.
+  - Factor returns stay apart from the risk model's. A factor with
+    shorter history shortens the regressions' sample, never the VaR's,
+    and a factor without history is named and left out.
+  - The table split in two, so neither outgrows 1280 px:
+    - the main table: α, β to the benchmark, R², residual vol
+    - "Other exposures": each extra factor's β, and the lag β, shown only
+      when there are any
+  - The Days column became the subtitle's day count, since every row
+    shares it.
+  - `DataTable.set_columns` lets a table's columns follow the data.
+  - Factor spreads stay deferred. By the invariance in the derivation,
+    they'd change only what the coefficients mean, not the fit.
+
+## D45 — W3: growth and streams (2026-10-21)
+
+The owner approved the derivation in `models/growth.py`. The model and the
+Portfolio page's Growth and Options book cards follow it. Calls made:
+
+- **From the replay, position by position.** `risk_report` keeps each
+  position's daily P&L (options repriced in full, as before), its value
+  and its underlying. Those series sum to the replay.
+  - The excess series nets cash at r/252 on each position's value share.
+  - An option's value share is the account's own premium from the export,
+    when there is one, not the model's. That keeps weights consistent with
+    equity: a file's premium and the model's can differ widely.
+- **Growth:** g = r + 252(mean − ½ var) of the portfolio's excess series,
+  with realized log growth shown beside it. Variances use ddof = 1, as
+  `np.cov` does in the risk model.
+  - For stocks alone, g equals the Sizing card's delta-based growth
+    exactly (tested).
+  - With options the two differ, so the Sizing card now shows W3's g when
+    there is one.
+- **Attribution:** exact, the mean less half the covariance with the
+  portfolio.
+- **Verdicts:** contribution and margin give four outcomes, not the
+  derivation's three:
+  - *adds*
+  - *oversized*
+  - *undersized*: costs growth today, but more would help, e.g. a cheap
+    hedge held too small
+  - *costs*
+
+  A verdict is grey when its margin is within 1.96 Newey–West errors of
+  zero.
+- **Sleeves:** each underlying, i.e. its shares plus its options, until
+  W7 stores the owner's own. `growth_report` takes any grouping.
+- **Sizes:** both are shown in multiples of today's size.
+  - The min-variance size comes with its regression's Newey–West error,
+    and the page lists it first.
+  - The growth-optimal size is shown muted, with its error. In the tested
+    hedge world its error is more than ten times the min-variance size's,
+    and the derivation's simulation found about 140 times.
+  - A sleeve with no variance has no sizes (NaN), rather than failing the
+    report.
+- **What-if:** an exact quadratic within the replay. It's computed on the
+  GUI thread as a pure model call (D26), and is read-only: no ticket, no
+  order (D12).
+- **Book greeks:** signed sums in D25 units (dollar delta, gamma P&L of a
+  1% move, vega per vol point, theta per day), plus annual carry = 365 ×
+  theta.
+  - The Options book card appears only when the book holds options.
+  - Its five tiles sit in two rows: in one row they truncated at 1280 px.
+- **Not included:** transaction costs and taxes in the what-if; a smile
+  for the greeks (realized vol, as in the risk model).
+
+## D46 — W4: the DCF port (2026-10-21)
+
+The owner's `dcfmodeler` is ported into the layers.
+- `schema.py` becomes `data/fundamentals.py`: the contract, with its
+  loud-failure rule, plus a `FundamentalsSource` port (D34) and a
+  `marketable_securities` line.
+- The engine, assumptions, sensitivity, analysis and the batch screener's
+  seeding become `models/dcf.py`.
+
+The math is the plan's (D43). Calls made:
+
+- **Conventions the plan left open are options, defaulting to the owner's
+  original behavior.** The golden 18.784 holds, and nothing changes meaning
+  until the owner picks.
+  - `terminal_method`: *last-year*, UFCF_N(1+g_T) (the default), or
+    *steady-state*, year N's ratios at g_T. They're equal iff g_N = g_T.
+    At 15% growth the steady-state flow is 7.9% higher, with the TV at 78%
+    of EV.
+  - `valuation_years` s ∈ [0, 1): discount over t − s, so EV is multiplied
+    by (1+W)^s. s = 0 values as of the fiscal year end, the original. s ≥ 1
+    is refused: use a newer filing.
+  - `net_marketable_securities`: off by default. When on and the filing
+    lacks the line, it's a loud `ValuationError`, never a silent zero.
+  - Recommended, for the owner to decide at W6:
+    - steady-state as the page's default: a 78% TV share is too much
+      weight to leave on a working-capital artifact
+    - s from the filing's period end to the price date, so value and price
+      are compared at the same time
+    - netting securities per company, for cash-rich filers
+- **Reverse DCF returns every root** (a tuple, empty when none is in
+  range), instead of one float or None.
+  - `growth_monotone` (k_t ≥ n_t ≥ 0 every year) says when the implied
+    growth is unique.
+  - `cash_flows_positive` says when the implied WACC is.
+  - The working-capital-heavy case's two roots (−14.9% and +15.9% at $18)
+    are tested.
+- **A bug in the original, fixed.** `FinancialHistory.latest()` returned the
+  last element appended. The edgartools adapter appended the newest year
+  first, so live runs valued the company off its *oldest* fetched year.
+  - Debt and cash were attached to that year too.
+  - Example: three years at 800 → 1,000 gave $18.12 a share instead of
+    $23.15 (22% low).
+  - The original tests built histories oldest-first, so they missed it.
+  - `latest()` now sorts by fiscal year, with a regression test. Past
+    valuations of growing companies from the original tool were likely
+    biased low.
+- **Typing:**
+  - Dicts became frozen dataclasses (`ForwardMultiples`, `Calibration`,
+    results).
+  - The sensitivity grid uses NaN, not None.
+  - Missing data raises once instead of blanking every cell.
+  - A market price must be positive.
+- **Moved:**
+  - The edgartools adapter is replaced in W5, and its tests' intent goes
+    with it.
+  - `serialize`, `rank_screen` and their tests go to W6 (CSV only).
+  - The CLI and text renderers aren't ported.
+- **Defaults** (WACC 9%, g_T 2.5%, margins) are the owner's illustrative
+  numbers, not recommendations.
+
+## D47 — W5: SEC fundamentals, stdlib only (2026-10-21)
+
+D43 approved SEC's `companyfacts` API through the stdlib, in place of
+edgartools. W5 builds it. Calls made:
+
+- **A new package, `providers/`,** mirrors `importers/`: it fetches into
+  `data/` types with the stdlib only.
+  - The layering test enforces it. The GUI may not import it or the fact
+    store: it goes through `services/fundamentals.py`.
+  - `providers/sec_edgar.py` has three parts:
+    - a client that only fetches
+    - a flattener to `data.fundamentals.Fact`
+    - a pure mapping to `FinancialHistory`
+- **The fair-access policy:**
+  - Every request declares `[sec] identity`, "Name email", from the
+    settings file. The template documents it, and no identity ships with
+    the code.
+  - Requests are spaced at least 0.1 s apart, gzip is accepted, and
+    timeouts are 30 s.
+  - A 403 says to set the identity, and a 404 says the filer has no XBRL
+    facts.
+- **Facts are stored as filed** (schema v4, after D36's backup): concept,
+  unit, period, value, form, filing date, accession.
+  - Only the concepts the mapping reads are kept, so the store stays
+    small.
+  - A refetch replaces a filer's facts whole.
+  - The mapping runs on stored facts, so a rule fix applies without
+    refetching.
+  - The ticker map is stored too, so tickers resolve offline.
+- **Mapping rules** (in the module docstring):
+  - **Which facts:** annual forms (10-K, 20-F, 40-F, and amendments);
+    flows spanning 350 to 380 days; instants at the year end.
+  - **Restatements:** the latest-filed fact per concept and period wins.
+  - **Tags:** priority lists followed year by year, so a filer's tag
+    change is tracked.
+  - **Fiscal years:** labelled by the year they end in, with first-week-of-
+    January ends labelled the year before so 52/53-week filers keep unique
+    labels.
+  - **Debt:** non-overlapping parts.
+    - The current part is `DebtCurrent`, else commercial paper +
+      short-term borrowings + current long-term debt.
+    - The noncurrent part is `LongTermDebtNoncurrent`, else `LongTermDebt`
+      less its current portion.
+    - The original summed every tag present, which double-counts current
+      maturities beside a `LongTermDebt` total.
+  - **Shares:** weighted-average diluted shares, else the cover page's,
+    labelled basic.
+  - **Currency:** revenue's unit, USD preferred.
+  - **Gaps:** every one is a reason in `missing`.
+- **Refresh:** stored facts serve for a day, and Refresh fetches at once.
+  The plan said "when a newer filing exists". Checking that would cost a
+  second request per lookup (the submissions API), while filings arrive
+  only a few times a quarter. A failed refresh serves the stored copy and
+  says so. With stored facts, no identity is needed.
+- **Not yet:**
+  - IFRS filers (`ifrs-full`, many 20-Fs) come back with no annual facts,
+    named as such.
+  - The live check against real 10-Ks (AAPL and two others, the original
+    README's checklist) needs the owner's identity. Until then the mapping
+    is verified only on fixtures in the API's shape.
+
+## D48 — W6: the Valuation page (2026-10-21)
+
+The owner's DCF modeler is usable in the app: a Valuation page in the core
+section, after Portfolio, on `services/valuation.py`. Calls made:
+
+- **The flow:**
+  - a ticker or CIK loads the filings (W5); Refresh refetches
+  - assumptions seed from the company's own trailing averages (the
+    original screener's base case) and stay editable, as one number or
+    one per year
+  - the DCF (W4) recalculates as you type: a debounced, pure model call on
+    the GUI thread (D26)
+  - fetches run on the TaskRunner: filings, prices, the screen, saves
+- **Conventions on the page** (D46's options):
+  - Terminal flow: Last year (original) or Steady state
+  - Value as of: Fiscal year end or Today. Today uses s from the period
+    end, and a filing over a year old falls back to its year end, with
+    the reason.
+  - Marketable securities: Not netted or Netted
+  - The defaults stay the original's until the owner picks.
+- **What it shows:**
+  - tiles: value per share, price, margin of safety, and the terminal
+    share of EV, red above 75%
+  - the filings table, with a Trailing row that seeds the assumptions
+  - the EV bridge and the projection, with its terminal row
+  - the WACC × terminal-growth grid, ±2 and ±1 points, as the original
+    CLI had
+  - what the price implies: every root of the reverse DCF, and whether
+    it's unique
+- **Price:**
+  - From the named source: its quote, else its last close (the Options
+    Lab's rule, D23), or typed by hand.
+  - The basis is shown and saved.
+- **The screen:**
+  - Holdings (the latest positions import) or typed tickers, each seeded
+    from its own filings.
+  - The page's WACC, terminal growth, working capital and conventions
+    apply. Working capital joined because filings can't give it; the
+    original screener assumed none.
+  - Ranked cheapest first, with failures kept as rows giving their reason.
+  - Exported as CSV only. The original `rank_screen` test is ported.
+- **Saved valuations** (schema v5, after the backup):
+  - Immutable records of the assumptions, the price and its basis, the
+    result, the implied roots, and a SHA-256 fingerprint of the filing
+    data.
+  - Reopening restores the assumptions against today's filings and says
+    whether they changed since (a restatement, a new 10-K). Notes are
+    editable in the store; not yet on the page.
+- **Layout:**
+  - At 1280 px the first version overflowed. The Screen card's field and
+    three buttons on one row set a 1,178 px minimum; two rows bring it to
+    871 px in a 1,038 px viewport.
+  - Wrapped text in a ScrollPage's main column squeezed the cards below
+    it. The body opts out of height-for-width, so a wrapped note's real
+    height isn't in the page minimum.
+    - The Filings sources note took 68 px from the Valuation card and hid
+      the projection's terminal row.
+    - The provenance and gap notes moved to the fixed-width side panel,
+      and the reverse-DCF sentences became a table. AGENTS.md records the
+      trap.
+- **Not live yet:** real companies need `[sec] identity` (D47). The page
+  and its tests run on a made-up filer in the store.
+
+## D49 — W7: the regime, checked; the Review page (2026-10-23)
+
+The owner's `REGIME.md` became rules the app checks at every review. The
+derivation (`models/regime.py`) was reviewed and approved before the code.
+Calls made:
+
+- **The checks** (`models/regime.py`):
+  - An estimated measure breaches when it's past its limit by more than
+    k standard errors, with k the owner's per rule (`by k SE`; k = 0 is
+    the estimate alone). Past the limit by less is *near*: shown, not
+    graded. On the boundary, noise breaches 1 − Φ(k) of reviews; the tests
+    check that by simulation.
+  - A correlation limit applies on Fisher's scale, so at k = 1.96 it
+    agrees with W2's interval exactly.
+  - Persistence (section 1) counts reviews in a row, one per day, and is
+    a delay, not a filter. Daily reviews of a two-year window share
+    499/500 of their data, so noise persists; k is what filters it.
+  - One day dominating a holding's variance: D = max r² / Σ r², flagged
+    above the 99.9% point of an iid t(3) null. The calibration
+    (`DOMINANCE_NULL`) is 100,000 runs per T on a grid from 60 to 2,500
+    days, seed 20261023; `calibrate_dominance()` reproduces it, and a test
+    reproduces its first row exactly. The Gaussian null (0.045 at T = 500)
+    is far too thin: SPY's own D over two years is 0.20.
+  - Gates: the HMM's filtered calm probability, whose history is never
+    smoothed or Viterbi (both look ahead), its odds αP^h, and GARCH's
+    closed-form average variance. A test checks the GARCH number against
+    a Monte Carlo run of the recursion.
+  - A reverse DCF with several roots is *ambiguous*, never chosen between.
+    A non-positive trailing CAGR makes "c × CAGR" no limit, so that check
+    reports no data.
+- **The rules' source.** The repository is public, so the filled-in copy
+  lives at `~/.quant_hub/REGIME.md` (`[regime] path`). The template stays
+  blank.
+  - `importers/regime_md.py` recognizes rows by their first column. An
+    unknown label is an error, so a renamed row can't silently turn its
+    rule off. Every unreadable value names its line.
+  - Each distinct text is stored once, by SHA-256, as a version, and a
+    review names the version it ran under.
+  - The template gained what parsing needed: units in section 7, the
+    `by k SE` convention, a grade line for sleeve sizes, the dominant-day
+    choice, and section 1's N.
+- **The review** (`services/review.py`), one TaskRunner job:
+  - **Positions.** The newest export in `[positions] folder`, by the date
+    inside each file. Files that aren't positions are named, not fatal.
+    Without a folder, the newest imported snapshot. The export before
+    drafts the journal's trade entries.
+  - **Settings.** Section 2's documented defaults apply (SPY, 730 days).
+    A blank cash rate or history source stops the run, naming the row.
+  - **The book.** `PortfolioService.analyse` gained `sleeves` (growth by
+    the owner's sleeves) and `exclude` (days dropped from every return
+    series), and returns its return frame.
+  - **Streams.** Each sleeve's own return is W3's excess over its value
+    share, plus cash. Stream β and the residual correlations (stream with
+    stream, stream with core) come from W2's OLS on the benchmark.
+  - **Section 8** re-runs the owner's newest saved valuation of each name
+    on today's filings and price. A name without one is reported, not
+    guessed: assumptions are the owner's to set.
+  - **Missing history.** It's fetched through the named source. The review
+    never connects a broker on the owner's behalf.
+  - **Cost.** Only measures some rule reads are computed.
+  - **No orders.** Trades are recorded, never sent (D12).
+- **Storage**, schema v6 after the backup: `regime_versions`, `reviews`
+  (immutable payloads; notes editable) and `trades`.
+- **The page** sits after Dashboard, as the plan's front door.
+  - The tiles, then the cards: checklist, thesis by stream, market state
+    with the calm probability's filtered history, one-day dominance, the
+    journal, and past reviews.
+  - The side panel holds the rules and folder, the owner's indicator tick
+    boxes, and the trade form.
+- **Layout at 1280 px:**
+  - The first checklist (six columns) overflowed its card:
+    `DataTable.balance_columns` never shrinks a column below its natural
+    width. It became four: a short name with its limit, what it's on, the
+    value, and a result that carries how far past it is in SE, and why
+    when there's no data. Long columns are pinned with `fix_column`.
+  - Wrapped notes in the side panel lost their last line, because the page
+    body ignores height-for-width. `Note` now takes its width and sets its
+    own minimum height. AGENTS.md records both.
+  - The content's minimum is 775 px in a 1,038 px viewport, and no card is
+    below its minimum height.
+- **Not yet:**
+  - The owner's values for sections 3–10. The review runs with whatever
+    is filled in.
+  - A live run on the owner's real book.
+  - Fetching the cash rate from FRED, which would be a new provider (for
+    discussion).
+  - Per-account rules: the All Accounts export can't tell accounts apart.
+
+## D50 — V0: data you can trust: offline reads and influence flags (2026-10-24)
 
 The owner approved V0 of [LENS_PLAN.md](LENS_PLAN.md), a proposal of the
 same day. It followed two findings on the Portfolio page:

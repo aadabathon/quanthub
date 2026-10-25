@@ -364,14 +364,7 @@ class DataTable(QTableWidget):
     def __init__(self, columns: Sequence[tuple[str, str]], stretch: int = -1,
                  row_height: int = 38, focusable: bool = False) -> None:
         super().__init__(0, len(columns))
-        self._aligns = [
-            (Qt.AlignRight if align == "right" else Qt.AlignLeft) | Qt.AlignVCenter
-            for _, align in columns
-        ]
-        for col, (title, _) in enumerate(columns):
-            item = QTableWidgetItem(title)
-            item.setTextAlignment(self._aligns[col])
-            self.setHorizontalHeaderItem(col, item)
+        self._set_headers(columns)
         self.verticalHeader().setVisible(False)
         self.verticalHeader().setDefaultSectionSize(row_height)
         self.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -399,6 +392,26 @@ class DataTable(QTableWidget):
     def selected_row(self) -> int:
         rows = self.selectionModel().selectedRows()
         return rows[0].row() if rows else -1
+
+    def set_columns(self, columns: Sequence[tuple[str, str]]) -> None:
+        """Replace the columns (their rows go too), for tables whose columns
+        follow the data, such as one per regression factor."""
+        self.set_rows([])
+        self.setColumnCount(len(columns))
+        self._set_headers(columns)
+        if self._balanced:
+            self.horizontalHeader().setSectionResizeMode(QHeaderView.Fixed)
+        self._balance()
+
+    def _set_headers(self, columns: Sequence[tuple[str, str]]) -> None:
+        self._aligns = [
+            (Qt.AlignRight if align == "right" else Qt.AlignLeft) | Qt.AlignVCenter
+            for _, align in columns
+        ]
+        for col, (title, _) in enumerate(columns):
+            item = QTableWidgetItem(title)
+            item.setTextAlignment(self._aligns[col])
+            self.setHorizontalHeaderItem(col, item)
 
     def balance_columns(self) -> None:
         """Content-aware spacing: every column gets its natural width (header,
@@ -774,7 +787,8 @@ class Note(QFrame):
     """An inline explanation box: ``critical`` for a problem (why a quote is
     unavailable), ``info`` for a finding the reader should know about."""
 
-    def __init__(self, icon_name: str = "ph.warning", tone: str = "critical") -> None:
+    def __init__(self, icon_name: str = "ph.warning", tone: str = "critical",
+                 width: int | None = None) -> None:
         super().__init__()
         set_role(self, "note")
         self.setProperty("tone", tone)
@@ -787,6 +801,14 @@ class Note(QFrame):
         layout.addWidget(glyph, 0, Qt.AlignTop)
         self._text = label("", wrap=True)
         layout.addWidget(self._text, 1)
+        self._width = width
 
     def set_text(self, text: str) -> None:
         self._text.setText(text)
+        if self._width is not None:
+            # A page body ignores height-for-width (pages/base.py), so the
+            # wrapped text would get the height of a guessed, wider line. At
+            # a known width (a side panel), the note sets its own minimum.
+            self._text.ensurePolished()
+            room = self._width - 2 * SPACE_M - 16 - SPACE_S
+            self._text.setMinimumHeight(self._text.heightForWidth(room))

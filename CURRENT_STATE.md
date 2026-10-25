@@ -1,7 +1,7 @@
 # CURRENT_STATE.md
 
 **Update this file whenever meaningful work lands.** Last updated:
-**2026-10-24**: V0 landed (D44): data you can trust.
+**2026-10-24**: V0 landed (D50): data you can trust.
 - History loads serve the store's bars, labelled, when IBKR is offline.
 - Portfolio flags the days that decide its numbers, and shows the numbers
   without them beside the headline.
@@ -257,7 +257,7 @@ what the desktop shortcut targets. The GUI is `quant_hub/gui/` (Qt, D31) on
     `CachedSource` fetched the missing year: SPY now holds 1,297 bars from
     2021-08-16.
   - A re-audit found every series' coverage matching its bars.
-- **IBKR disconnected (changed 2026-10-24, D44):** `ibkr` history loads
+- **IBKR disconnected (changed 2026-10-24, D50):** `ibkr` history loads
   serve the stored, covered bars, labelled offline. They still fail when
   nothing is stored for the window, or when the stored bars have a
   weekday gap inside it.
@@ -311,6 +311,9 @@ what the desktop shortcut targets. The GUI is `quant_hub/gui/` (Qt, D31) on
     0.2.0; 28 offline tests pass).
   - Correction: it doesn't store anything. It fetches live through
     edgartools, and SQLite was only the plan.
+  - W4 (the engine) landed 2026-10-21 (D46). Waiting on the owner: which
+    of the three conventions (terminal flow, valuation date, securities
+    netting) become the page's defaults.
 
 ## Version control / environment
 
@@ -697,9 +700,12 @@ pytest. Environment:
 6. **The personal workstation phase** (approved 2026-10-20, D43), W0 → W7:
    see ROADMAP.md.
    - **Reorder proposed (2026-10-24, [LENS_PLAN.md](LENS_PLAN.md)):**
-     V0 → V1 → W2 → L → W2b → O, then W3, W4–W6 and W7. Only V0 is
-     approved.
-   - **~~V0~~ landed (2026-10-24, D44):**
+     V0 → V1 → W2 → L → W2b → O. Only V0 is approved. W2–W7 have since
+     landed through PR #2. What's left of the plan:
+     - V1
+     - the CAPM extras (security market line, GRS, Kalman β)
+     - L, W2b and O
+   - **~~V0~~ landed (2026-10-24, D50):**
      - `SourceOfflineError` on the port; `CachedSource` serves one stored,
        covered stretch when offline
      - `PriceHistory.offline_reason`, shown by Portfolio, the labs,
@@ -709,8 +715,8 @@ pytest. Environment:
        flags at |z| > 10, drivers, the "without" report
      - `Histogram` clip
      - Portfolio's "Days that decide the numbers" card
-     - Full suite after merging main (PR #3): 1,037 passed, 1 skipped
-       (136 s).
+     - Full suite after merging main (PRs #2 and #3): 1,252 passed,
+       1 skipped (172 s).
      - Tests: 10 cache, 4 ranges, 7 influence, 1 service, and one GUI test
        of the whole offline path.
      - Checked on a copy of the owner's store with TWS closed and the real
@@ -719,7 +725,7 @@ pytest. Environment:
    - **Open (LENS_PLAN decisions):**
      - the visual direction (the spike)
      - the order after V0
-     - the W2 derivation review, now as the CAPM workshop
+     - the CAPM workshop's extras on top of the landed W2
      - Ken French's library and FRED as providers
    - W0 in progress:
      - The `REGIME.md` template is drafted; the owner fills in the values.
@@ -754,11 +760,6 @@ pytest. Environment:
        - The dry run takes several files too.
        - Not yet seen: a real per-account export, whose preamble should
          name the account.
-     - **W2 derivation written for review** (`models/regression.py`,
-       docstring only, as K1 was). Its coverage claims were checked by
-       simulation first: in two variance regimes, classical intervals
-       cover 78.9% against the 78.4% closed form; under AR(1) residuals,
-       White covers 84.9% against 85.0%.
      - **The analysis with TWS open (2026-10-22).**
        - The owner's in-app imports had failed. Their checkout predated
          this preset, so the Oct 21 export was read as generic and its cash
@@ -784,3 +785,237 @@ pytest. Environment:
        - checking the import's total against Fidelity's site
      - Note: the page analyses the most recently *imported* snapshot, so
        import older exports first.
+     - **W2 derivation written for review** (`models/regression.py`,
+       docstring only, as K1 was). Its coverage claims were checked by
+       simulation first: in two variance regimes, classical intervals
+       cover 78.9% against the 78.4% closed form; under AR(1) residuals,
+       White covers 84.9% against 85.0%.
+   - **W2 landed (2026-10-21, D44)** after the owner's "continue on".
+     - `models/regression.py`: OLS with classical, White and Newey–West
+       covariances, the Dimson sum, causal rolling fits, and Fisher-z
+       residual correlations.
+       - `tests/test_regression.py` (18) follows the docstring's plan.
+       - Coverage against the closed forms at 3,000 runs each: two
+         variance regimes, and AR(1) residuals.
+       - Also: the Bartlett block-sum identity and PSD, invariance under
+         factor recombination, causality of the rolling fit, Fisher
+         coverage, and the portfolio identity.
+     - `services/portfolio.py` adds a `Regressions` bundle to each
+       analysis. Its portfolio β equals the Beta tile's (tested).
+     - The Portfolio page gains three cards below the existing ones:
+       - Regressions on the benchmark: α a year ± SE, grey when within its
+         error of zero; β ± SE; lag β; R²; residual vol; days
+       - Rolling β for the clicked row, with a ±1.96 band
+       - Residual links, strongest first, amber when not orthogonal
+       - A Lagged β choice (Off / 1 day) sits in the inputs.
+     - Screenshots at 1280×800 and 1720×1040 on a copy of the store, with
+       real fonts: no horizontal overflow (content 823 px in a 1,038 px
+       viewport at 1280).
+     - **Extra factors** (D44, amended): up to three ETFs as partial
+       betas.
+       - Factor returns are kept apart from the risk model's, which is
+         tested unchanged. A factor without history is named.
+       - The regressions card now has two tables: α, β, R² and residual
+         vol; then the factors' and lag's betas when there are any. At
+         1280 px the nine-column version overflowed.
+     - Not yet: a run on the owner's real holdings, which needs the
+       import with TWS open.
+   - **W3 derivation written for review** (2026-10-21,
+     `models/growth.py`, docstring only).
+     - Growth from the replay's per-position excess series.
+     - An exact attribution, since per-position covariances with the
+       portfolio sum to its variance.
+     - The hurdle at the margin, with *oversized* when a position adds
+       growth overall but loses it at the margin.
+     - Two sleeve sizes: c_mv, which minimizes variance, and c* = c_mv +
+       the sleeve's own Kelly fraction, which maximizes growth.
+     - Book greeks and annual carry.
+     - Simulations changed two parts of the plan:
+       - the quadratic matches realized log growth to about 0.003% even
+         with puts and crashes; it's delta-counting that misses
+         convexity
+       - over two years, ĉ* scattered 141 times more widely than ĉ_mv
+         (2.52 ± 0.20): its error was 28 times today's size, though its
+         intervals still covered 94.9%
+     - Code waits for the owner's review.
+   - **W3 landed (2026-10-21, D45)** after the owner's approval.
+     - `models/growth.py`: growth, attribution, the four verdicts, both
+       sizes with errors, what-if, book greeks.
+       - `risk_report` now keeps each position's replay series, value and
+         underlying.
+       - An option's value is the export's own premium when known.
+     - `tests/test_growth.py` (20) follows the docstring's plan:
+       - the attribution is exact with a put in the book
+       - the margin matches finite differences for a stock and the put
+       - the closed form holds at sample moments
+       - c* agrees with a grid search, equals c_mv plus the sleeve's own
+         Kelly fraction, and keeps f(2 − f) under fractional sizing
+       - coverage of both sizes at 95% over 1,500 two-year runs, with
+         c*'s error more than ten times c_mv's
+       - orthogonal streams add ½ SR² each, exactly
+       - quadratic and realized log growth agree within 0.01%
+       - book greeks match finite-difference repricing
+     - The service groups sleeves by underlying. For stock-only books its
+       growth equals the Sizing card's (tested); the Sizing card now
+       shows W3's growth.
+     - The Portfolio page gains two cards after One-day P&L:
+       - Growth: four tiles, then the sleeves table (weight, contribution
+         in bp, verdict, min-variance size, growth-optimal size) and a
+         what-if
+       - Options book: dollar delta, 1% gamma P&L, vega, theta, annual
+         carry; shown only with options
+     - Screenshots at 1280 with real fonts, for the example and a book
+       with a protective put.
+       - At first, five tiles in one row truncated the delta and pushed
+         the page to a 1,028 px minimum. In two rows it's 865 px in a
+         1,038 px viewport.
+       - The first screenshot also showed a sleeve weight using the
+         model's put premium, not the file's. Fixed.
+   - **W4 landed (2026-10-21, D46)**: the owner's DCF engine, ported.
+     - `data/fundamentals.py` holds the contract (loud failure, a
+       `FundamentalsSource` port, marketable securities).
+     - `models/dcf.py` holds the engine, sensitivity, multiples, market
+       comparison, reverse DCF with every root, calibration and seeding.
+       Its derivation is in the docstring.
+     - The open conventions are options defaulting to the original:
+       - the terminal flow: last-year or steady-state
+       - the valuation date s, with EV × (1+W)^s
+       - netting marketable securities
+     - **A bug in the original, fixed:** `latest()` picked the oldest year
+       in its adapter's newest-first order. A 22% understatement in the
+       worked example.
+     - `tests/test_dcf.py` (36):
+       - the owner's engine, analysis and seeding tests (16), golden 18.784
+         intact
+       - new: the Gordon identity under both conventions at N = 1, 3, 5, 10;
+         the steady-state flow's closed form and the 7.9% / 78% figures;
+         the roll-forward; the two-root reverse DCF and the monotone case;
+         unique implied WACC; securities netting; the latest-year
+         regression test; rejections
+     - No page yet: that's W6. The SEC adapter is W5.
+   - **W5 landed (2026-10-21, D47)**: SEC fundamentals through the stdlib.
+     - `providers/sec_edgar.py` is a new layer (data/ + stdlib only,
+       layering-tested). It has the client (identity header, gzip, 10 a
+       second, explained errors), facts as filed, and the pure mapping to
+       `FinancialHistory`.
+     - The mapping rules: annual forms and spans; latest filing wins
+       (restatements); tag priority year by year; non-overlapping debt
+       parts; weighted diluted shares, else the cover page, labelled.
+       Every gap is a reason.
+     - `storage/fundamentals_store.py` keeps facts, filers and the ticker
+       map: schema v4, migrated after the backup. `services/fundamentals.py`
+       serves the store for a day, refetches on Refresh, and serves the
+       stored copy when a refetch fails.
+     - `[sec] identity` is in the settings (the template documents it).
+       Fetching needs it; stored facts don't.
+     - Tests:
+       - `tests/test_sec_edgar.py` (31): every mapping rule on a made-up
+         filer in the API's JSON shape (a restatement, a tag switch,
+         quarterly noise, both debt layouts, the share fallback, a debt-
+         free filer the DCF refuses loudly, EUR, 52/53-week labels), plus
+         identifiers and the client against a fake opener
+       - `tests/test_fundamentals_service.py` (10): store round trips, the
+         v3 → v4 migration with its backup, caching and refresh, the
+         identity, and failed fetches
+       - 1 config test for `[sec] identity`
+       - Full suite: 1,137 passed, 1 skipped (the offscreen 3D draw)
+     - **Not yet live:** no request has reached the SEC from here. The
+       check against real 10-Ks (AAPL and two others) needs the owner's
+       identity in `settings.toml`.
+   - **W6 landed (2026-10-21, D48)**: the Valuation page (core section,
+     after Portfolio).
+     - Load a ticker or CIK, and the assumptions seed from trailing
+       averages. Edit them as one number or one per year; the DCF
+       recalculates as you type.
+     - Conventions: terminal flow, value as of, securities netting.
+     - It shows the tiles (value, price, margin of safety, terminal share),
+       filings with a Trailing row, the EV bridge and projection, the
+       WACC × g grid, and the reverse DCF as every root plus uniqueness.
+     - Price from a source (quote, else last close) or typed.
+     - Screen: holdings or tickers, ranked cheapest first, failures as
+       rows, CSV.
+     - Saved valuations: immutable, schema v5. Reopening checks a
+       fingerprint of the filing data.
+     - `services/valuation.py` and `storage/valuation_store.py`.
+       `FinancialHistory.fingerprint()`.
+     - Tests:
+       - `tests/test_valuation_service.py` (13): prices and their
+         fallback; the screen's ranking and failure rows; the ported
+         `rank_screen` test; CSV; save and reopen across a restatement;
+         the valuation date; refusals; the fingerprint; the v4 → v5
+         migration
+       - 3 page smoke tests: load, value, price, save, reopen; per-year
+         paths, overrides and bad input; the screen and export
+       - Full suite: 1,154 passed
+     - Screenshots at 1280 with real fonts found and fixed two layout
+       bugs:
+       - the Screen card's one-row controls set a 1,178 px minimum (now
+         871 px in 1,038 px)
+       - a wrapped note squeezed the Valuation card and hid the terminal
+         row (D48; the trap is now in AGENTS.md)
+     - **Not live yet:** real companies need the owner's `[sec]
+       identity`. Also open: which conventions become the page's
+       defaults.
+   - **W7 started (2026-10-22): REGIME.md and the checks' derivation.**
+     - The owner is filling in REGIME.md, section by section. Sections 1
+       and 2 are done; sections 3–10 are open. The filled-in copy lives at
+       `~/.quant_hub/REGIME.md`, outside the public repository. The
+       template's stale lines were corrected (where the copy lives, the
+       regression window, the cash rate, valuation refresh).
+     - W2 ran on the owner's real holdings for the first time, on a copy
+       of the store with history fetched through TWS. One holding's
+       variance came almost entirely from a single news day. That led to
+       the one-day-dominance flag in the derivation.
+     - **W7 derivation written for review** (`models/regime.py`, docstring
+       only). It covers:
+       - breaches at an evidence level k, with the noise rate 1 − Φ(k) at
+         the boundary
+       - persistence as a delay, not a filter
+       - the one-day-dominance flag, calibrated on a t(3) null
+       - the filtered HMM and GARCH gates
+       - the screen checks
+     - WORKSTATION_PLAN's W7 records what was settled along the way: the
+       rules' source and parser, the positions folder, journal trade
+       drafts, and the cash rate.
+   - **W7 landed (2026-10-23, D49)** after the owner approved the
+     derivation: the Review page, the workflow's front door.
+     - `models/regime.py`: the checks, with `data/regime.py` holding the
+       records (Rule, Limit, Measure, RuleSet). The dominance calibration
+       is a 100,000-run table that `calibrate_dominance()` reproduces.
+     - `importers/regime_md.py` reads REGIME.md. The template gained what
+       parsing needed: section 7's units, `by k SE`, the sleeve-size grade,
+       the dominant-day choice, and section 1's N. The owner's private copy
+       got the same changes, with their values kept.
+     - `storage/regime_store.py`, schema v6: rule versions by text hash,
+       immutable reviews with notes, hand-placed trades.
+     - `services/review.py` runs the chain: rules, the newest export,
+       history, risk, regressions and growth by the owner's sleeves,
+       one-day dominance, the gates, saved valuations re-run, the
+       checklist, section 1's persistence, and the journal.
+       `PortfolioService.analyse` gained `sleeves` and `exclude`.
+     - Settings: `[regime] path` (default `~/.quant_hub/REGIME.md`) and
+       `[positions] folder`.
+     - The Review page sits after Dashboard. `Note` gained a width so
+       wrapped side-panel notes keep their last line.
+     - Screenshots at 1280×800 and 1720×1040 with real fonts, on made-up
+       data: every table fits, the content's minimum is 775 px in a
+       1,038 px viewport, and no card is below its minimum.
+     - Tests, 71 new:
+       - `tests/test_regime.py` (26): the boundary rate 1 − Φ(k) and power
+         by simulation; Fisher agreement with W2; run lengths; one-day
+         dominance (closed form, null exceedance, the calibration row);
+         filtered gates; GARCH against Monte Carlo; implied growth;
+         rejections
+       - `tests/test_regime_md.py` (31): the template reads all-off; every
+         kind of row; every unreadable value names its line
+       - `tests/test_regime_store.py` (4), including the v5 → v6 migration
+       - `tests/test_review_service.py` (7), end to end on made-up tickers
+         with a planted jump
+       - 2 page smoke tests and a config test
+       - Full suite: 1,225 passed
+     - **Not yet:**
+       - The owner's values for sections 3–10. The review runs with
+         whatever is filled in.
+       - A live review of the real book (TWS open, `[positions] folder`
+         set).
+       - Fetching the cash rate from FRED, a new provider, for discussion.

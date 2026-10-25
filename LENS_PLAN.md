@@ -5,6 +5,17 @@ It reshapes the personal workstation phase (D43, [WORKSTATION_PLAN.md](WORKSTATI
 around your direction of the same day. Each milestone still needs your
 approval before it starts.
 
+**Status, later on 2026-10-24.**
+- V0 landed (D50).
+- W2–W7 landed separately, through PR #2 (D44–D49): regressions, growth,
+  the DCF, SEC fundamentals, Valuation and Review. That happened in another
+  session, in the original order, so this plan's order is history.
+- What it still adds:
+  - V1
+  - the CAPM workshop's extras on top of the landed W2: the security
+    market line, GRS, the Kalman β
+  - L, W2b and O
+
 ## Your direction, restated
 
 - Quant Hub becomes a workstation personalized to *your* portfolio. It's
@@ -96,7 +107,7 @@ a few files and is reviewed before the next.
 
 ### V0. Data you can trust (small; first)
 
-**Landed 2026-10-24 (D44).** One change from this proposal:
+**Landed 2026-10-24 (D50).** One change from this proposal:
 - **The flag threshold is k = 10, not 6.** Measured, 6 flags 1.4–3.2 days
   per two years of fat-tailed noise, and four days in SPY's own last two
   years. 10 flags 0.2–0.7 days, and SPY's one, Apr 9, 2025.
@@ -302,13 +313,13 @@ They follow the same rules as D34 and D43:
 4. **Ken French's library as the second online provider,** and FRED as
    the third, each subject to a terms check.
 5. ~~**V0's offline-first change to the cache** (a D18 amendment), and the
-   flag threshold k.~~ Approved and landed (D44), with k = 10.
+   flag threshold k.~~ Approved and landed (D50), with k = 10.
 
 ## Doc changes on approval
 
 - **ROADMAP.md:** the reordered phase and the new milestones.
 - **DECISIONS.md:**
-  - D44, for the phase as a whole.
+  - D51, for the phase as a whole.
   - Entries written when their milestone lands: offline reads, influence
     flags, the findings module, the portfolio source, the factor provider,
     the outlook's predictive fan.

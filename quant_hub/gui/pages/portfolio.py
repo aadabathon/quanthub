@@ -13,6 +13,17 @@ Risk first, for a stock and ETF portfolio that uses options sparingly:
   and the Gaussian curve of the same vol, so fat tails show;
 * sizing: the mix's mean return and vol drag, and the Kelly leverage with
   its standard error, which is the point;
+* growth (W3, ``models/growth.py``): growth, realized log growth, CAGR and
+  drag from the replay with options repriced in full; each sleeve's
+  contribution, verdict (adds / oversized / undersized / costs), its
+  minimum-variance size and its far noisier growth-optimal size; a
+  read-only what-if; and the options book's greeks and carry;
+* regressions (W2, ``models/regression.py``): each holding's and the
+  portfolio's α and β on the benchmark, and up to three extra factor ETFs,
+  with Newey–West errors (optionally the Dimson sum beta with one lag), a
+  rolling β with its band for the
+  selected row, and the residual links between holdings, strongest first:
+  are the streams orthogonal?
 * the days that decide the numbers (V0): any day flagged for its outsized
   share of the variance, with its driver, and the headline numbers beside
   the same numbers without it. The histogram draws the other days, and
@@ -35,6 +46,7 @@ import math
 from pathlib import Path
 
 import numpy as np
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QFileDialog,
     QGridLayout,
@@ -45,7 +57,7 @@ from PySide6.QtWidgets import (
 )
 
 from quant_hub.data.types import PriceBasis
-from quant_hub.gui.charts import Histogram, Panel, Series, StackedTimeSeries
+from quant_hub.gui.charts import Band, Histogram, Panel, Series, StackedTimeSeries
 from quant_hub.gui.components import (
     Card,
     DataTable,
@@ -60,11 +72,20 @@ from quant_hub.gui.components import (
     button,
     form_grid,
     label,
+    metric_row,
 )
 from quant_hub.gui.pages.base import ScrollPage
 from quant_hub.gui.theme import PALETTE, SIDE_PANEL_WIDTH, SPACE_L, SPACE_M
+from quant_hub.models.growth import ADDS, COSTS, GrowthReport, what_if
+from quant_hub.models.regression import Z95
 from quant_hub.services.market_service import MarketService
-from quant_hub.services.portfolio import PortfolioService, PortfolioView, example_snapshot
+from quant_hub.services.portfolio import (
+    PORTFOLIO_ROW,
+    PortfolioService,
+    PortfolioView,
+    Regressions,
+    example_snapshot,
+)
 from quant_hub.storage.state_store import ViewStateStore
 from quant_hub.tasks import TaskRunner
 
@@ -73,6 +94,9 @@ _logger = logging.getLogger(__name__)
 _STATE_KEY = "portfolio"
 _IMPORTED, _EXAMPLE = "Imported", "Example"
 _ALL_ACCOUNTS = "All accounts"
+_LAGS = {"Off": 0, "1 day": 1}          # the Dimson lag of the benchmark
+_LINK_ROWS = 8                          # residual links shown before the table scrolls
+_MAX_FACTORS = 3                        # extra factor columns the table fits at 1280 px
 _HALF = (SIDE_PANEL_WIDTH - 2 * SPACE_L - SPACE_M) // 2
 _FULL = 2 * _HALF + SPACE_M
 _ROW = 32
@@ -80,6 +104,15 @@ _ROW = 32
 
 def _money(value: float) -> str:
     return f"−${-value:,.0f}" if value < 0 else f"${value:,.0f}"
+
+
+def _estimate(value: float, error: float, fmt: str = "{:+.2f}") -> str:
+    """``value ± error``, with values that round to zero shown unsigned
+    rather than as −0.00."""
+    shown = fmt.format(value)
+    if float(fmt.format(abs(value)).strip("+%")) == 0:
+        shown = fmt.replace("+", "").format(0.0)
+    return f"{shown} ± {fmt.replace('+', '').format(error)}"
 
 
 class PortfolioPage(ScrollPage):
@@ -96,6 +129,13 @@ class PortfolioPage(ScrollPage):
         self._account = saved.get("account") or _ALL_ACCOUNTS
         self._import_dir = saved.get("import_dir") or str(Path.home())
         self._keep_status = False       # an import's message outlives its analysis
+        self._growth: GrowthReport | None = None
+        self._sleeve_names: list[str] = []
+        self._regressions: Regressions | None = None
+        self._regression_keys: list[str] = []
+        self._regression_columns: list[tuple[str, str]] = []
+        self._exposure_columns: list[tuple[str, str]] = []
+        self._rolling_key = PORTFOLIO_ROW
 
         self._header = PageHeader(
             "Portfolio", "What today's holdings could lose, and where the risk sits")
@@ -111,6 +151,11 @@ class PortfolioPage(ScrollPage):
         column.addWidget(self._build_holdings())
         column.addWidget(self._build_replay(), 1)
         column.addWidget(self._build_losses())
+        column.addWidget(self._build_growth())
+        column.addWidget(self._build_book())
+        column.addWidget(self._build_regressions())
+        column.addWidget(self._build_rolling())
+        column.addWidget(self._build_links())
 
         side = QVBoxLayout()
         side.setSpacing(SPACE_L)
@@ -176,6 +221,92 @@ class PortfolioPage(ScrollPage):
         self._losses_card.body.addWidget(self._losses)
         return self._losses_card
 
+    def _build_growth(self) -> Card:
+        self._growth_card = Card("Growth: who adds, who costs", "")
+        self._growth_tiles = {
+            "growth": MetricTile("Growth · annual"), "realized": MetricTile("Realized log growth"),
+            "cagr": MetricTile("CAGR"), "drag": MetricTile("Vol drag"),
+        }
+        self._growth_card.body.addLayout(metric_row(list(self._growth_tiles.values())))
+        self._sleeves = DataTable([
+            ("Sleeve", "left"), ("Weight", "right"), ("Contribution", "right"),
+            ("Verdict", "right"), ("Min-variance size", "right"), ("Growth-optimal", "right")],
+            row_height=_ROW)
+        self._sleeves.balance_columns()
+        self._sleeves.row_activated.connect(self._on_sleeve_row)
+        self._growth_card.body.addWidget(self._sleeves)
+        self._what_sleeve = SelectField("What if", ["—"], "—", _HALF)
+        self._what_scale = Field("Scale ×", "1.10", _HALF)
+        self._what_result = label("", "muted", wrap=True)
+        row = QHBoxLayout()
+        row.setSpacing(SPACE_M)
+        row.addWidget(self._what_sleeve)
+        row.addWidget(self._what_scale)
+        row.addWidget(self._what_result, 1, Qt.AlignBottom)
+        self._growth_card.body.addLayout(row)
+        self._what_sleeve.select.current_changed.connect(lambda _s: self._render_what_if())
+        self._what_scale.committed.connect(self._render_what_if)
+        return self._growth_card
+
+    def _build_book(self) -> Card:
+        self._book_card = Card("Options book", "")
+        self._book_tiles = {
+            "delta": MetricTile("Dollar delta"), "gamma": MetricTile("Gamma · 1% move"),
+            "vega": MetricTile("Vega · per vol point"), "theta": MetricTile("Theta · a day"),
+            "carry": MetricTile("Carry · a year"),
+        }
+        # Two rows, as the top tiles: five in one row truncate at 1280 px.
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(SPACE_M)
+        grid.setVerticalSpacing(SPACE_M)
+        for i, tile in enumerate(self._book_tiles.values()):
+            grid.addWidget(tile, i // 3, i % 3)
+        for col in range(3):
+            grid.setColumnStretch(col, 1)
+        self._book_card.body.addLayout(grid)
+        self._book_card.setVisible(False)
+        return self._book_card
+
+    def _build_regressions(self) -> Card:
+        self._regress_card = Card("Regressions on the benchmark", "")
+        self._regress_table = DataTable([
+            ("Holding", "left"), ("α a year", "right"), ("β", "right"), ("R²", "right"),
+            ("Residual vol", "right")], row_height=_ROW)
+        self._regress_table.balance_columns()
+        self._regress_table.row_activated.connect(self._on_regression_row)
+        self._regress_card.body.addWidget(self._regress_table)
+        # Extra factors' betas and the lag's: a second table, so neither one
+        # outgrows the 1280 px window.
+        self._exposure_caption = label("Other exposures, ± Newey–West errors", "fieldCaption")
+        self._exposure_table = DataTable([("Holding", "left")], row_height=_ROW)
+        self._exposure_table.balance_columns()
+        self._exposure_table.row_activated.connect(self._on_regression_row)
+        self._regress_card.body.addWidget(self._exposure_caption)
+        self._regress_card.body.addWidget(self._exposure_table)
+        self._exposure_caption.setVisible(False)
+        self._exposure_table.setVisible(False)
+        return self._regress_card
+
+    def _build_rolling(self) -> Card:
+        self._rolling_card = Card("Rolling β", "")
+        self._rolling_stack = QStackedWidget()
+        self._rolling = StackedTimeSeries()
+        self._rolling_empty = EmptyState("ph.chart-line", "No rolling β yet")
+        self._rolling_stack.addWidget(self._rolling)
+        self._rolling_stack.addWidget(self._rolling_empty)
+        self._rolling_stack.setCurrentWidget(self._rolling_empty)
+        self._rolling_stack.setMinimumHeight(240)
+        self._rolling_card.body.addWidget(self._rolling_stack, 1)
+        return self._rolling_card
+
+    def _build_links(self) -> Card:
+        self._links_card = Card("Residual links, strongest first", "")
+        self._links = DataTable([("Pair", "left"), ("Residual ρ", "right"),
+                                 ("95% range", "right"), ("Raw ρ", "right")], row_height=_ROW)
+        self._links.balance_columns()
+        self._links_card.body.addWidget(self._links)
+        return self._links_card
+
     def _build_inputs(self, saved: dict) -> Card:
         card = Card("Holdings")
         self._modes = SegmentedControl([_IMPORTED, _EXAMPLE], self._mode, fill=True)
@@ -191,9 +322,14 @@ class PortfolioPage(ScrollPage):
         self._benchmark = Field("Benchmark", saved.get("benchmark", "SPY"), _HALF, uppercase=True)
         self._lookback = Field("Lookback (calendar days)", saved.get("lookback", "730"), _HALF)
         self._rate = Field("Rate %", saved.get("rate", "4.0"), _HALF)
+        lags = saved.get("lags", "Off")
+        self._lags = SelectField("Lagged β", list(_LAGS), lags if lags in _LAGS else "Off", _HALF)
+        self._lags.select.current_changed.connect(lambda _l: self._analyse())
+        self._factors = Field("Extra factors", saved.get("factors", ""), _HALF,
+                              placeholder="e.g. QQQ TLT", uppercase=True)
         card.body.addLayout(form_grid([self._source, self._benchmark, self._lookback,
-                                       self._rate], 2))
-        for field in (self._benchmark, self._lookback, self._rate):
+                                       self._rate, self._lags, self._factors], 2))
+        for field in (self._benchmark, self._lookback, self._rate, self._factors):
             field.committed.connect(self._analyse)
         buttons = QHBoxLayout()
         buttons.setSpacing(SPACE_M)
@@ -243,6 +379,7 @@ class PortfolioPage(ScrollPage):
             "mode": self._mode, "account": self._account, "source": self._source.current(),
             "benchmark": self._benchmark.text(), "lookback": self._lookback.text(),
             "rate": self._rate.text(), "import_dir": self._import_dir,
+            "lags": self._lags.current(), "factors": self._factors.text(),
         })
 
     def _on_mode(self, mode: str) -> None:
@@ -288,12 +425,18 @@ class PortfolioPage(ScrollPage):
             lookback = self._lookback.number(integer=True, minimum=120)
             rate = self._rate.number(scale=0.01)
             benchmark = self._benchmark.required_text()
+            factors = tuple(dict.fromkeys(                   # pasted text isn't uppercased
+                f for f in self._factors.text().upper().replace(",", " ").split()
+                if f != benchmark))
+            if len(factors) > _MAX_FACTORS:
+                raise self._factors.fail(f"Extra factors: at most {_MAX_FACTORS}")
         except ValueError as exc:
             self._header.set_status(str(exc), error=True)
             return
         source = self._source.current()
         mode = self._mode
         account = None if self._accounts.current() == _ALL_ACCOUNTS else self._accounts.current()
+        lags = _LAGS[self._lags.current()]
         portfolio, market = self._portfolio, self._market
 
         def work() -> tuple[PortfolioView, bool]:
@@ -304,7 +447,8 @@ class PortfolioPage(ScrollPage):
             else:
                 snapshot, fallback = example_snapshot(market, source), mode == _IMPORTED
             chosen = account if account in snapshot.accounts else None
-            return portfolio.analyse(snapshot, chosen, source, benchmark, lookback, rate), fallback
+            return portfolio.analyse(snapshot, chosen, source, benchmark, lookback, rate,
+                                     dimson_lags=lags, factors=factors), fallback
 
         self._analyse_button.setEnabled(False)
         if not self._keep_status:
@@ -334,6 +478,9 @@ class PortfolioPage(ScrollPage):
         self._render_sizing(view)
         self._render_influence(view)
         self._render_notes(view, fallback)
+        self._render_growth(view)
+        self._render_book(view)
+        self._render_regressions(view)
 
     def _on_error(self, exc: Exception) -> None:
         self._analyse_button.setEnabled(True)
@@ -435,7 +582,10 @@ class PortfolioPage(ScrollPage):
             s.set_value("mean", f"{r.mean:+.1%}")
             s.set_value("mix_vol", f"{sigma:.1%}")
             s.set_value("drag", f"{0.5 * sigma**2:.1%}")
-            s.set_value("growth_now", f"{r.growth(r.net_exposure):+.1%}")
+            # W3's growth when there is one: the replay with options repriced
+            # in full, equal to this delta-based formula for stocks alone.
+            growth = view.growth.growth if view.growth is not None else r.growth(r.net_exposure)
+            s.set_value("growth_now", f"{growth:+.1%}")
             s.set_value("exposure", f"{r.net_exposure:.2f}×")
             s.set_value("kelly", f"{r.kelly:+.1f}×")
             s.set_value("kelly_error", f"±{r.kelly_error:.1f}×")
@@ -515,3 +665,216 @@ class PortfolioPage(ScrollPage):
                             "in the one-day P&L.")
         self._finding.set_text(" ".join(findings))
         self._finding.setVisible(bool(findings))
+
+    # --------------------------------------------------------------- growth
+    def _render_growth(self, view: PortfolioView) -> None:
+        g = self._growth = view.growth
+        if g is None:
+            for tile in self._growth_tiles.values():
+                tile.set_value("—", hint="")
+            self._sleeves.set_rows([])
+            self._sleeves.setFixedHeight(36)
+            self._what_sleeve.select.set_items(["—"], "—")
+            self._what_result.setText("")
+            self._growth_card.set_subtitle(view.growth_note)
+            return
+        tone = "good" if g.growth > g.rate else "critical"
+        self._growth_tiles["growth"].set_value(f"{g.growth:+.2%}", tone,
+                                               hint="r + mean − ½ var")
+        self._growth_tiles["realized"].set_value(
+            f"{g.realized:+.2%}", hint=f"{g.realized - g.growth:+.3%} vs growth")
+        self._growth_tiles["cagr"].set_value(f"{g.cagr:+.2%}", hint="e^growth − 1")
+        self._growth_tiles["drag"].set_value(f"{g.drag:.2%}", hint=f"vol {g.vol:.1%}")
+        colors = {ADDS: PALETTE.good, COSTS: PALETTE.critical}
+        rows = []
+        for s in sorted(g.sleeves, key=lambda s: -s.contribution):
+            sized = math.isfinite(s.c_mv)
+            rows.append([
+                s.name,
+                f"{s.value_share:.1%}",
+                f"{s.contribution * 1e4:+,.0f} bp",
+                (s.verdict, colors.get(s.verdict, PALETTE.warning) if s.significant
+                 else PALETTE.muted),
+                _estimate(s.c_mv, s.c_mv_error).lstrip("+") + "×" if sized
+                else ("—", PALETTE.muted),
+                (_estimate(s.c_star, s.c_star_error, "{:+.1f}") + "×", PALETTE.muted) if sized
+                else ("—", PALETTE.muted),
+            ])
+        self._sleeve_names = [s.name for s in sorted(g.sleeves, key=lambda s: -s.contribution)]
+        self._sleeves.set_rows(rows)
+        self._sleeves.setFixedHeight(36 + len(rows) * _ROW)
+        chosen = self._what_sleeve.current()
+        self._what_sleeve.select.set_items(
+            self._sleeve_names, chosen if chosen in self._sleeve_names else self._sleeve_names[0])
+        self._growth_card.set_subtitle(
+            f"Today's holdings replayed over {g.observations:,} days, options repriced in full · "
+            "contribution: each sleeve's share of growth above the rate, in basis points a "
+            "year · verdict grey when within 1.96 errors · min-variance size: the scale of the "
+            "sleeve that makes the portfolio's risk smallest · growth-optimal: noisy, read the "
+            "error first · sizes are multiples of today's")
+        self._render_what_if()
+
+    def _on_sleeve_row(self, row: int) -> None:
+        if self._growth is not None and 0 <= row < len(self._sleeve_names):
+            self._what_sleeve.select.set_current(self._sleeve_names[row])
+
+    def _render_what_if(self) -> None:
+        g = self._growth
+        name = self._what_sleeve.current()
+        if g is None or name not in g.excess.columns:
+            self._what_result.setText("")
+            return
+        try:
+            scale = self._what_scale.number(minimum=0.0)
+        except ValueError as exc:
+            self._what_result.setText(str(exc))
+            return
+        growth, vol = what_if(g, name, scale)
+        self._what_result.setText(
+            f"{name} at {scale:g}× today's size: growth {growth * 100:+.2f} points a year, "
+            f"vol {vol * 100:+.2f} points (within the replay; nothing is traded)")
+
+    def _render_book(self, view: PortfolioView) -> None:
+        book = view.book
+        self._book_card.setVisible(book is not None)
+        if book is None:
+            return
+        e = view.equity
+        t = self._book_tiles
+        t["delta"].set_value(_money(book.delta), hint=f"{book.delta / e:+.1%} of equity")
+        t["gamma"].set_value(_money(book.gamma_move), hint="from gamma alone")
+        t["vega"].set_value(_money(book.vega), hint="per vol point")
+        t["theta"].set_value(_money(book.theta), "critical" if book.theta < 0 else "good",
+                             hint="per calendar day")
+        t["carry"].set_value(f"{book.carry / e:+.2%}", "critical" if book.carry < 0 else "good",
+                             hint=f"{_money(book.carry)} a year, of equity")
+        self._book_card.set_subtitle(
+            f"{book.contracts} option position{'s' if book.contracts != 1 else ''} · greeks at "
+            "each underlying's realized vol (no smile), the page's rate, today's spot")
+
+    # ---------------------------------------------------------- regressions
+    def _render_regressions(self, view: PortfolioView) -> None:
+        reg = self._regressions = view.regressions
+        if reg is None:
+            self._regression_keys = []
+            self._regress_table.set_rows([])
+            self._regress_table.setFixedHeight(36)
+            self._exposure_caption.setVisible(False)
+            self._exposure_table.setVisible(False)
+            self._links.set_rows([])
+            self._links.setFixedHeight(36)
+            for card in (self._regress_card, self._rolling_card, self._links_card):
+                card.set_subtitle(view.regression_note)
+            self._rolling_empty.set_text("No rolling β", view.regression_note)
+            self._rolling_stack.setCurrentWidget(self._rolling_empty)
+            return
+        self._regression_keys = list(reg.fits)
+        columns = [("Holding", "left"), ("α a year", "right"), (f"β {reg.benchmark}", "right"),
+                   ("R²", "right"), ("Residual vol", "right")]
+        if columns != self._regression_columns:
+            self._regress_table.set_columns(columns)
+            self._regression_columns = columns
+        exposures = [("Holding", "left"), *((f"β {f}", "right") for f in reg.factors),
+                     *((("Lag β", "right"),) if reg.dimson_lags else ())]
+        if exposures != self._exposure_columns:
+            self._exposure_table.set_columns(exposures)
+            self._exposure_columns = exposures
+        rows, others = [], []
+        for key in self._regression_keys:
+            fit = reg.fits[key]
+            alpha, alpha_se = fit.alpha_annual, fit.alpha_error_annual()
+            beta, beta_se = reg.beta(key)
+            lag = reg.lag_beta(key)
+            noise = abs(alpha) <= Z95 * alpha_se
+            name = (key, PALETTE.text if key == PORTFOLIO_ROW else PALETTE.text_secondary)
+            rows.append([
+                name,
+                (_estimate(alpha, alpha_se, "{:+.1%}"), PALETTE.muted if noise else PALETTE.text),
+                _estimate(beta, beta_se),
+                ("—", PALETTE.muted) if not math.isfinite(fit.r2) else f"{fit.r2:.0%}",
+                f"{fit.residual_vol_annual:.1%}",
+            ])
+            others.append([
+                name,
+                *(_estimate(*reg.factor_beta(key, f)) for f in reg.factors),
+                *(() if lag is None else ((
+                    _estimate(*lag),
+                    PALETTE.warning if abs(lag[0]) > Z95 * lag[1] else PALETTE.muted),)),
+            ])
+        self._regress_table.set_rows(rows)
+        self._regress_table.setFixedHeight(36 + len(rows) * _ROW)
+        has_others = len(exposures) > 1
+        self._exposure_caption.setVisible(has_others)
+        self._exposure_table.setVisible(has_others)
+        if has_others:
+            self._exposure_table.set_rows(others)
+            self._exposure_table.setFixedHeight(36 + len(others) * _ROW)
+        any_fit = reg.fits[PORTFOLIO_ROW]
+        on = " + ".join((reg.benchmark, *reg.factors))
+        self._regress_card.set_subtitle(
+            f"Daily excess returns on {on} · {any_fit.observations:,} days · "
+            f"Newey–West errors ({any_fit.lags} lags) · grey α: within 1.96 errors of zero"
+            + (" · each β holds the other factors fixed" if reg.factors else "")
+            + (" · β is the Dimson sum, today's and yesterday's; amber lag β below: the "
+               "price trails the market" if reg.dimson_lags else "")
+            + " · click a row to chart its rolling β"
+            + (f" · {view.regression_note}" if view.regression_note else ""))
+        if self._rolling_key not in reg.fits:
+            self._rolling_key = PORTFOLIO_ROW
+        self._render_rolling()
+        self._render_links(view)
+
+    def _on_regression_row(self, row: int) -> None:
+        if self._regressions is not None and 0 <= row < len(self._regression_keys):
+            self._rolling_key = self._regression_keys[row]
+            self._render_rolling()
+
+    def _render_rolling(self) -> None:
+        reg = self._regressions
+        frame = reg.rolling.get(self._rolling_key) if reg is not None else None
+        if frame is None or frame.empty:
+            self._rolling_empty.set_text(
+                "No rolling β", f"A rolling β needs {reg.window} days of returns; this "
+                "lookback has fewer." if reg is not None else "")
+            self._rolling_stack.setCurrentWidget(self._rolling_empty)
+            return
+        beta, se = frame["beta"].to_numpy(), frame["se"].to_numpy()
+        panel = Panel(f"β to {reg.benchmark}",
+                      [Series("β", beta, PALETTE.series, 1.8, fmt="{:.2f}")], axis="price",
+                      zero_line=True,
+                      bands=[Band("95%", beta - Z95 * se, beta + Z95 * se, PALETTE.series,
+                                  fmt="{:.2f}")])
+        self._rolling.set_panels(frame.index, [panel])
+        self._rolling_stack.setCurrentWidget(self._rolling)
+        self._rolling_card.set_subtitle(
+            f"{self._rolling_key} · each point uses the {reg.window} days ending that day, "
+            "so only what was known then · band ±1.96 Newey–West errors · hover for values")
+
+    def _render_links(self, view: PortfolioView) -> None:
+        reg, report = view.regressions, view.report
+        symbols = list(reg.correlation.columns)
+        sd = np.sqrt(np.diag(report.covariance))
+        raw = report.covariance / np.outer(sd, sd)
+        pairs = []
+        for i in range(len(symbols)):
+            for j in range(i + 1, len(symbols)):
+                rho = float(reg.correlation.iat[i, j])
+                pairs.append((symbols[i], symbols[j], rho, float(reg.lower.iat[i, j]),
+                              float(reg.upper.iat[i, j]), float(raw[i, j])))
+        pairs.sort(key=lambda p: -abs(p[2]) if math.isfinite(p[2]) else 0.0)
+        rows = []
+        for a, b, rho, low, high, plain in pairs:
+            if not math.isfinite(rho):
+                rows.append([f"{a} · {b}", ("—", PALETTE.muted), ("—", PALETTE.muted),
+                             f"{plain:+.2f}"])
+                continue
+            linked = low > 0 or high < 0
+            rows.append([f"{a} · {b}", (f"{rho:+.2f}", PALETTE.warning if linked else PALETTE.text),
+                         f"{low:+.2f} to {high:+.2f}", f"{plain:+.2f}"])
+        self._links.set_rows(rows)
+        self._links.setFixedHeight(36 + max(min(len(rows), _LINK_ROWS), 1) * _ROW)
+        self._links_card.set_subtitle(
+            "Correlation of what's left after the factors: amber where its 95% range excludes "
+            "zero, so the two aren't orthogonal (Fisher z, approximate when volatility "
+            "clusters) · raw ρ before the benchmark is taken out"
+            if rows else "One holding in the model: no pairs to compare.")
