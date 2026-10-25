@@ -37,7 +37,9 @@ codebase themselves — the standing constraint is:
    appear only in `gui/` and `app.py` (and tkinter nowhere); `data/`
    imports nothing from other layers and never ibapi; only `broker/` may
    import ibapi; `models/` knows only `data/`; `storage/` knows only `data/`
-   and sqlite3; `visualization/` and `services/` never import the GUI. GUI
+   and sqlite3; `importers/` and `providers/` (online data, the SEC) know
+   only `data/` and the stdlib (pandas too, for importers);
+   `visualization/` and `services/` never import the GUI. GUI
    pages may call pure `models/` functions directly (no service wrapper
    needed, D26). If your change fights the layering
    test, your design is wrong, not the test.
@@ -86,6 +88,19 @@ plot's log mode (transform x yourself; `PlotDataItem` handles it), and an
 `QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)` or windows
 pile up. Scripts outside the project dir need `PYTHONPATH=...\quanthub`
 (the editable install is not on every interpreter path).
+
+Wrapped text in a `ScrollPage`'s main column squeezes the cards below it:
+the body opts out of height-for-width, so a wrapped label's real height
+isn't counted in the page minimum, and the layout takes the difference
+from a neighbour (D48). Put long wrapped text in the fixed-width side
+panel, or use a table or an elided subtitle. Even in the side panel, a
+wrapped `Note` gets the height of a guessed, wider line and can lose its
+last line: give it the width it will have (`Note(..., width=...)`) and it
+sets its own minimum height (D49). Check a new page's geometry (each
+card's height against its `minimumSizeHint`, each table's columns against
+its viewport) as well as its pixels. `DataTable.balance_columns` never
+shrinks a column below its natural width; pin long text columns with
+`fix_column` so they elide.
 
 Qt WebEngine (the 3D surface, D32):
 - **Load order.** Import `QtWebEngineWidgets` before the `QApplication`

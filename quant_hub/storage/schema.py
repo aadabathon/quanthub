@@ -29,6 +29,13 @@ Versions:
   ``refreshes`` table appears. SQLite can't change a primary key in place,
   so the step rebuilds ``bars``: every existing bar is ``traded``, which is
   what IBKR's TRADES and every earlier import are.
+* **3** (R3, D42): the research tables (``research_runs``,
+  ``research_papers``).
+* **4** (W5, D47): SEC facts as filed, their filers, and the ticker map
+  (``sec_facts``, ``sec_filers``, ``sec_tickers``).
+* **5** (W6, D48): saved valuations (``valuations``).
+* **6** (W7): the regime's versions, the review journal and hand-placed
+  trades (``regime_versions``, ``reviews``, ``trades``).
 
 Steps are frozen: each one spells out its own SQL, never the stores'
 current schema, which keeps moving. A test holds a migrated file and a new
@@ -51,7 +58,7 @@ from quant_hub.storage.bar_store import StorageError
 
 _logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 6
 BACKUP_DIR = "backups"
 
 _TABLE = """
@@ -119,8 +126,29 @@ def _research(conn: sqlite3.Connection) -> None:
         conn.execute(statement)
 
 
+def _fundamentals(conn: sqlite3.Connection) -> None:
+    """3 -> 4: SEC facts as filed, their filers, and the ticker map (W5)."""
+    from quant_hub.storage.fundamentals_store import V4_TABLES
+    for statement in V4_TABLES:
+        conn.execute(statement)
+
+
+def _valuations(conn: sqlite3.Connection) -> None:
+    """4 -> 5: saved valuations, immutable records (W6)."""
+    from quant_hub.storage.valuation_store import V5_TABLES
+    for statement in V5_TABLES:
+        conn.execute(statement)
+
+
+def _regime(conn: sqlite3.Connection) -> None:
+    """5 -> 6: regime versions, reviews and trades (W7)."""
+    from quant_hub.storage.regime_store import V6_TABLES
+    for statement in V6_TABLES:
+        conn.execute(statement)
+
+
 _STEPS: dict[int, Callable[[sqlite3.Connection], None]] = {
-    0: _adopt, 1: _price_basis, 2: _research,
+    0: _adopt, 1: _price_basis, 2: _research, 3: _fundamentals, 4: _valuations, 5: _regime,
 }
 
 

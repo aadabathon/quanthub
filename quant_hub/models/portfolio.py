@@ -176,10 +176,23 @@ class OptionExposure:
     vol: float              # annualized
     rate: float
     multiplier: float = 100.0
+    value: float | None = None   # dollars, the account's own (an export's), if known
 
     def price(self, spot, days: float) -> np.ndarray:
         return price_array(spot, self.strike, max(days, 1e-6), self.rate, self.vol,
                            self.option_type)
+
+    @property
+    def label(self) -> str:
+        """A readable name for the position, e.g. ``AAPL 250 call 45d``."""
+        return f"{self.underlying} {self.strike:g} {self.option_type} {self.days:.0f}d"
+
+    def market_value(self) -> float:
+        """Dollars (negative when short): the account's own value when known,
+        else the premium priced at today's spot."""
+        if self.value is not None:
+            return float(self.value)
+        return float(self.contracts * self.multiplier * self.price(self.spot, self.days))
 
     def delta_dollars(self) -> float:
         """:math:`c\\,m\\,\\Delta\\,S`: the stock exposure the option acts like."""
@@ -243,6 +256,12 @@ class RiskReport:
     kelly: float                     # f*
     kelly_error: float               # its standard error
     rate: float
+    # The replay position by position (W3): daily dollar P&L per position,
+    # summing to ``pnl``; each position's dollar value (an option's premium);
+    # and the underlying it belongs to.
+    position_pnl: pd.DataFrame | None = None
+    position_value: pd.Series | None = None
+    position_underlying: pd.Series | None = None
 
     @property
     def vol_annual(self) -> float:
@@ -341,10 +360,22 @@ def risk_report(exposures: Exposures, returns: pd.DataFrame, benchmark: pd.Serie
         betas = betas / market_var
         beta = float(w @ betas)
 
-    # The historical replay: stocks linear, options repriced in full.
+    # The historical replay: stocks linear, options repriced in full. Kept
+    # position by position too (W3), each option under a unique label.
     pnl = r @ np.array([exposures.stocks.get(s, 0.0) for s in symbols])
+    by_position, value, underlying = {}, {}, {}
+    for i, s in enumerate(symbols):
+        if exposures.stocks.get(s, 0.0):
+            by_position[s] = r[:, i] * exposures.stocks[s]
+            value[s], underlying[s] = exposures.stocks[s], s
     for option in exposures.options:
-        pnl = pnl + option.scenario_pnl(returns[option.underlying].to_numpy(dtype=float))
+        option_pnl = option.scenario_pnl(returns[option.underlying].to_numpy(dtype=float))
+        pnl = pnl + option_pnl
+        label, k = option.label, 2
+        while label in by_position:
+            label, k = f"{option.label} #{k}", k + 1
+        by_position[label] = option_pnl
+        value[label], underlying[label] = option.market_value(), option.underlying
     losses = -pnl
     var_h, es_h, var_g, es_g = {}, {}, {}, {}
     for alpha in confidence:
@@ -378,7 +409,10 @@ def risk_report(exposures: Exposures, returns: pd.DataFrame, benchmark: pd.Serie
         pnl=pd.Series(pnl, index=returns.index), var_historical=var_h, es_historical=es_h,
         var_gaussian=var_g, es_gaussian=es_g, path=path, drawdown=drawdown,
         benchmark_path=benchmark_path, n_effective=n_effective, net_exposure=net,
-        mean=mean, kelly=kelly, kelly_error=kelly_error, rate=rate)
+        mean=mean, kelly=kelly, kelly_error=kelly_error, rate=rate,
+        position_pnl=pd.DataFrame(by_position, index=returns.index),
+        position_value=pd.Series(value, dtype=float),
+        position_underlying=pd.Series(underlying, dtype=object))
 
 
 def correlated_returns(vols: np.ndarray, correlation: np.ndarray, days: int, mean: np.ndarray,

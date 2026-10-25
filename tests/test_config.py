@@ -48,6 +48,23 @@ client_id = 3
     assert config.quote_timeout_s == AppConfig().quote_timeout_s           # untouched defaults
 
 
+def test_the_sec_identity(tmp_path):
+    config, problems = load_config(write(tmp_path, '[sec]\nidentity = " Jane Doe jane@example.com "\n'))
+    assert problems == [] and config.sec_identity == "Jane Doe jane@example.com"
+    config, problems = load_config(write(tmp_path, '[sec]\nidentity = "Jane Doe"\n'))
+    assert config.sec_identity == "" and "identity must be your name and email" in problems[0]
+
+
+def test_the_regime_file_and_the_positions_folder(tmp_path):
+    config, problems = load_config(write(tmp_path, ""))
+    assert problems == [] and config.regime_path == Path.home() / ".quant_hub" / "REGIME.md"
+    assert config.positions_folder is None
+    config, problems = load_config(write(
+        tmp_path, '[regime]\npath = "rules/REGIME.md"\n[positions]\nfolder = "~/exports"\n'))
+    assert problems == [] and config.regime_path == (tmp_path / "rules" / "REGIME.md").resolve()
+    assert config.positions_folder == Path.home() / "exports"
+
+
 def test_home_is_expanded_in_the_store_path(tmp_path):
     config, _ = load_config(write(tmp_path, '[store]\npath = "~/qh/x.db"\n'))
     assert config.db_path == Path.home() / "qh" / "x.db"

@@ -467,20 +467,33 @@ Order W0 → W7, each approved before the next:
   - `REGIME.md` filled in
 - **W1. IBKR read-only positions**, once the account exists.
 - **W2. Regressions:** α, β and R² with HAC standard errors, rolling β,
-  residual correlation. The derivation is written for review
-  (`models/regression.py`, 2026-10-21).
+  residual correlation. Landed 2026-10-21 (D44): `models/regression.py`
+  and the Portfolio page's Regressions, Rolling β and Residual links,
+  with up to three extra factor ETFs.
 - **W3. Streams and growth:**
   - the growth hurdle ∂g/∂wᵢ = (μᵢ − r) − Cov(Rᵢ, R_p)
   - optimal and fractional sizing ± SE
   - hedge ratios and aggregate greeks
+  - Landed 2026-10-21 (D45): `models/growth.py` and the Portfolio page's
+    Growth and Options book cards. It works from the replay's per-position
+    series and leads with the minimum-variance hedge.
 - **W4. DCF core** (`models/dcf.py`): the owner's engine ported, plus the
-  Gordon identity and reverse DCF with every root.
+  Gordon identity and reverse DCF with every root. Landed 2026-10-21 (D46),
+  with `data/fundamentals.py`. The open conventions are options defaulting
+  to the original; a latest-year bug in the original is fixed.
 - **W5. SEC fundamentals:** stdlib `companyfacts` (no edgartools), facts
-  stored as filed.
+  stored as filed. Landed 2026-10-21 (D47): `providers/sec_edgar.py`, the
+  fact store (schema v4) and `services/fundamentals.py`, verified offline.
+  The live check against real 10-Ks needs the owner's `[sec] identity`.
 - **W6. Valuation page:** EV bridge, sensitivity, reverse DCF, margin of
-  safety, a screen, saved valuations.
+  safety, a screen, saved valuations. Landed 2026-10-21 (D48), on a
+  made-up filer. Real companies need `[sec] identity`, and the page's
+  default conventions are still the owner's call.
 - **W7. The regime:** versioned rule sets and the daily Review page with
-  its journal.
+  its journal. Landed 2026-10-23 (D49): the checks (evidence k,
+  persistence, one-day dominance, the gates) and the Review page as the
+  front door. It runs with whatever the owner has filled in; sections 3–10
+  are still the owner's to fill.
 
 Versions: W1–W3 → v1.1, W4–W6 → v1.2, W7 → v1.3.
 
