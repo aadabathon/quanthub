@@ -466,7 +466,8 @@ Order W0 → W7, each approved before the next:
   - the real Fidelity export
   - the fresh adjusted-cache TWS check
   - `REGIME.md` filled in
-- **W1. IBKR read-only positions**, once the account exists.
+- **W1. IBKR read-only positions** — absorbed into the execution track's E1
+  (code landed 2026-10-25, D54).
 - **W2. Regressions:** α, β and R² with HAC standard errors, rolling β,
   residual correlation. Landed 2026-10-21 (D44): `models/regression.py`
   and the Portfolio page's Regressions, Rolling β and Residual links,
@@ -535,8 +536,12 @@ Each milestone needs approval before it starts:
   - the new hard rule, enforced by `tests/test_layering.py`
   - the settings and the journal schema, designed
   - no order code
-- **E1. Accounts, read-only** (absorbs W1): `ibapi` 10.x, managed
-  accounts, positions and account summary.
+- **E1. Accounts, read-only** (absorbs W1; code landed 2026-10-25, D54):
+  - managed accounts, positions and the account summary
+  - Portfolio's From IBKR
+  - callbacks that read both `ibapi` 9.81 and 10.x
+  - **Open:** the owner's 10.x install and the live read-only check, on
+    paper and then live.
 - **E2. Orders on paper, by hand:** what-if, a ticket, the journal and the
   blotter.
 - **E3. Reconciliation,** the crash-at-every-write test, the kill switch

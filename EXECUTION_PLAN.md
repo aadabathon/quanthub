@@ -11,7 +11,10 @@ starts, as with [WORKSTATION_PLAN.md](WORKSTATION_PLAN.md) and
 - E0 landed as D52. Its parts are the rewritten hard rule (AGENTS.md,
   CLAUDE.md), two layering checks that enforce it, and the settings and
   journal designs below.
-- Still no order code. E1 is next, and needs your approval.
+- Still no order code.
+- E1's code landed the same day (D54): read-only accounts, positions and
+  balances, and Portfolio's From IBKR. What's left of E1 is yours: the
+  `ibapi` 10.x install and the live check (`spikes/e1_check.py`).
 
 ## E0, settled (2026-10-25)
 

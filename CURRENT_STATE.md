@@ -1,7 +1,11 @@
 # CURRENT_STATE.md
 
 **Update this file whenever meaningful work lands.** Last updated:
-**2026-10-25**: the execution track was approved, and E0 landed (D52,
+**2026-10-25**: E1's code landed (D54). Portfolio's **From IBKR** reads
+the login's accounts, positions and balances, read-only, into a kept
+snapshot. The broker callbacks read both `ibapi` 9.81 and 10.x (10.33 moved
+`error()`'s code). Still the owner's: the 10.x install and the live check.
+Earlier the same day, the execution track was approved and E0 landed (D52,
 [EXECUTION_PLAN.md](EXECUTION_PLAN.md)).
 - D12 and hard rule 1 are amended: orders may exist only on one guarded
   path. `tests/test_layering.py` now enforces that statically.
@@ -1050,5 +1054,24 @@ pytest. Environment:
        names to pass.
      - The settings (`[execution]`, off by default, money limits fail
        closed) and the journal's SQLite schema are designed for E2.
-   - **Next: E1** (absorbs W1), on approval. It needs a paper login and
-     the `ibapi` 10.x upgrade.
+   - **E1 code landed (2026-10-25, D54):**
+     - `IBKRBroker.get_managed_accounts`, `get_positions` and
+       `get_account_summary`, read-only, with subscriptions always
+       cancelled
+     - `error()` decoding chosen by the installed `ibapi`'s signature
+     - `services/accounts.py` maps positions and balances to a snapshot,
+       naming what it leaves out
+     - `PortfolioService.keep`
+     - Portfolio's **From IBKR** button (only with IBKR on)
+     - Tests, 34 new:
+       - `tests/test_ibkr_accounts.py` (25): both error forms, Decimal
+         quantities, option rights and expiries, and the plumbing against
+         a fake network (timeouts, a mid-read disconnect, late updates,
+         cancels)
+       - `tests/test_accounts_service.py` (7): the mapping, what's left
+         out, and a kept read analysed like an import
+       - 2 GUI tests, plus the IBKR-off test extended
+     - **Not yet verified live.** TWS wasn't running, and 10.x isn't
+       installed (it needs IBKR's license accepted).
+       `spikes/e1_check.py` (local) does the read-only check: by default
+       it masks account ids and hides amounts.

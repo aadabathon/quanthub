@@ -215,6 +215,8 @@ quant_hub/
 │   │                          forecast fan (the Dashboard's data, D31)
 │   ├── option_chains.py       ChainService: chains by named source, every
 │   │                          live fetch saved; "stored" = latest snapshot
+│   ├── accounts.py            AccountService: IBKR accounts, positions and
+│   │                          balances, read-only, as a snapshot (E1, D54)
 │   ├── portfolio.py           PortfolioService: positions imports kept,
 │   │                          holdings valued, options priced, risk run,
 │   │                          regressions on the benchmark (D44), growth

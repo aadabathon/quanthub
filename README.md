@@ -349,10 +349,28 @@ Run TWS or IB Gateway with API access enabled (Configure → API → Settings �
 on `127.0.0.1:7496` with TWS's **Read-Only API** enabled — the app contains
 no order code, so a read-only socket loses nothing. Paper TWS is 7497, IB
 Gateway 4001 (live) or 4002 (paper): set `port` in settings.toml. The app is
-fully functional on synthetic data without TWS, and never places orders. PyPI's
-`ibapi` is the old 9.81 build; the current official API from
-<https://interactivebrokers.github.io> also works — the broker code tolerates
-both callback signatures.
+fully functional on synthetic data without TWS, and never places orders.
+
+**Your accounts (E1).** Portfolio's **From IBKR** button reads the login's
+accounts, positions and balances. The read is read-only, and is kept as a
+snapshot like a file import.
+- Stocks, ETFs and US equity options are modelled. Each account's cash
+  comes from its balances.
+- Anything else, and anything not in USD, is left out and named.
+- Positions are valued at the price source's last close.
+
+**The `ibapi` version.** PyPI's `ibapi` is the old 9.81 build. The
+execution track needs IBKR's current 10.x API, which isn't on PyPI.
+1. Download the TWS API from IBKR's site (it asks you to accept its
+   license).
+2. Install its Python client:
+
+       py -3.12 -m pip install "<the unpacked folder>/IBJts/source/pythonclient"
+
+3. Check the version: `py -3.12 -m pip show ibapi`.
+
+The broker code reads both versions. It checks the installed `error()`
+signature, because 10.33 inserted a timestamp before the error code.
 
 ## Quantitative code conventions
 
