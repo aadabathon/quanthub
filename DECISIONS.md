@@ -1543,3 +1543,113 @@ Positions carry no request id, so:
 - The live read-only check, on paper and then live: `spikes/e1_check.py`,
   local, masks ids and amounts by default. It waits on the owner's paper
   login and TWS.
+
+## D55 — G1: pages dock; cards stay in their page (proposed 2026-10-27; amends D24)
+
+**Proposed, not approved.** This entry takes effect when the owner approves
+G1. No code changes before then.
+
+The owner asked whether everything could be widget-based: drag and drop,
+and snappy. D24 deferred the configurable-widget system, drag-and-drop and
+layout persistence on purpose. This lifts the deferral for whole pages.
+The Dashboard's widget system stays deferred.
+
+**The unit is a page, not a card.**
+- Each page becomes one dock. Pages can sit side by side, tab together or
+  float onto another monitor, and the layout is saved.
+- Cards stay where their page puts them, for two reasons:
+  - a page reads top to bottom as one argument (Sizing's subtitle is
+    "read the error first", and the error is there)
+  - one TaskRunner job fills a page, so every number on it describes the
+    same picture (Portfolio's rule). Cards scattered across the screen
+    would each need an owner for the inputs that job uses.
+- G2 (the Dashboard as panels) and G3 (panels from every page, with linked
+  inputs) are not part of this.
+
+**Qt's own docks; no new dependency.**
+- A nested `QMainWindow` (a new `gui/workspace.py`) replaces the page
+  `QStackedWidget`. Each page sits in a `QDockWidget` named after it. The
+  sidebar, top bar, log drawer and status bar stay where they are.
+- Rejected:
+  - Qt Advanced Docking System: better drop targets, but a new dependency
+    whose Python bindings are built for specific PySide6 versions
+  - `QMdiArea`: overlapping windows inside the window
+- Dock title bars are a custom widget from `gui/components.py`, styled
+  through `gui/theme.py`. QSS reaches only part of Qt's own title bar.
+
+**`on_show`/`on_hide` mean visible, not selected.**
+- They follow each dock's visibility, so several pages can be shown at
+  once. Switching tabs hides one page and shows another, as navigation
+  does today.
+- Dragging a dock can hide and show it more than once. The workspace
+  settles visibility one event-loop turn later, so a re-dock doesn't rerun
+  the Dashboard's refresh or the Review's rule load.
+- At shutdown every visible page gets `on_hide`, not only the active one,
+  so each saves its state.
+- The active page (the top bar's title, the sidebar's highlight) is the
+  one that last had focus. The sidebar raises a page's dock, and opens a
+  closed one tabbed with the active page.
+- `Shell.navigate` and `MainWindow.show_page` keep their signatures.
+
+**A page is never narrower than its content.**
+- `ScrollPage` turns horizontal scrolling off, so a page narrower than its
+  body would clip its right edge. Since 2026-10-29 a page asks for its
+  content's width and the window's minimum follows (before, seven pages
+  clipped at the old fixed 1100 px minimum). Docks keep that: a dock
+  never squeezes a page below its content.
+- The minimums run from 702 px (Research) to 1,014 px (Options Lab), with
+  Windows fonts.
+- On the owner's 2560 px monitor, maximized, any two pages fit side by
+  side: the widest pair, Options Lab and the Dashboard, needs about
+  2,010 of the 2,328 px beside the sidebar. At the default 1920 px window, mostly pairs
+  with Research or Review fit. The 1440 px portrait monitor holds any one
+  floating page.
+- What Qt does with a drop that doesn't fit (refuses it, or grows the
+  window) is checked in G1. The window must not grow past its screen.
+
+**The layout is saved in the view-state store.**
+- `QMainWindow.saveState` and the window's geometry go into
+  `ViewStateStore` under "workspace", base64, with a layout version.
+- Pages stay lazy. Restoring makes an empty dock for each saved page, and
+  a page's content is built the first time its dock is visible.
+- A saved page that no longer exists is dropped. A layout that fails to
+  restore falls back to the default: the first page alone, with each page
+  the sidebar opens tabbed beside it. That's today's app plus a tab strip.
+- Ctrl+K gains "Reset layout".
+- With a monitor unplugged, the restored window must land on a screen
+  that's there (tested).
+- The first launch, and a reset, keep today's sizing: 88% of the screen,
+  capped at 1920×1240, centered.
+
+**WebEngine (D40) floats only if it passes a check.**
+- Floating a dock makes it a new native window, which is the case where
+  D40 found Qt destroys and recreates a window.
+- The Volatility Lab may float only if, after floating and docking back,
+  the surface still draws and the main window isn't recreated. Otherwise
+  its dock tabs and splits but doesn't float.
+- It's still prepared before the window's first show (D40).
+
+**One worker stays (D9).**
+- Visible pages queue their jobs on the one FIFO TaskRunner worker, so a
+  slow Portfolio run delays the next page's refresh. Each page already
+  shows its own loading state.
+- More workers would be their own decision, made from a measurement.
+
+**Tests.**
+- Smoke tests keep `show_page`. The one check on `window._stack` moves to
+  the workspace.
+- New tests:
+  - two pages side by side are both shown, once each
+  - a tab switch hides a page and saves its state
+  - re-docking doesn't refresh a page twice
+  - the layout round-trips through the store, and an unknown saved page
+    is dropped
+  - Reset layout restores the default
+  - shutdown saves every visible page
+  - a page can't be squeezed below its body's width
+- The Volatility Lab float check runs in a subprocess and may skip, like
+  the WebGL test.
+- The layering test is unchanged: everything stays in `gui/` and `app.py`.
+
+**Not done here:** cards that move, several named layouts, more workers.
+`CURRENT_STATE.md` records G1 when it lands.
