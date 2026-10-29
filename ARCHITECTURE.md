@@ -101,6 +101,8 @@ quant_hub/
 │   │                          into assets/quanthub.ico (window, taskbar and
 │   │                          desktop shortcut), taskbar AppUserModelID
 │   ├── main_window.py         shell + THE PUMP (QTimer, 16 ms)
+│   ├── workspace.py           pages as docks: tabs, splits, floating; the
+│   │                          saved layout (D55)
 │   ├── sidebar.py / top_bar.py / status_bar.py   shell pieces (nav, Ctrl+K
 │   │                          search + IBKR control, status + log drawer)
 │   └── pages/                 base.py (Page, ScrollPage, Shell, debounce),
@@ -463,6 +465,20 @@ Key properties (decisions D17–D21):
   Preparation does not run jobs: `on_show` refreshes on visits, and
   `on_hide` persists via `ViewStateStore`. Pages reach the shell
   only through `Shell` (`navigate`, `publish_commands` for Ctrl+K).
+- **Card grid (D56).** A page lays its cards on `CardGrid` (`gui/card_grid.py`,
+  imported from `components`): `add(name, card, x, y, w, h)` or
+  `add_column(...)` with default places on 12 columns, then
+  `pages.base.saved_grid(grid, store, "<key>.cards")`. The user drags
+  and resizes cards; the grid keeps each at least its minimum size,
+  collapses hidden cards, and saves the layout.
+- **Docks (D55).** Each page sits in one dock of `gui/workspace.py`, a
+  `QMainWindow` nested in the shell. Pages tab together, split side by
+  side, or float, and cards stay inside their page. `on_show`/`on_hide`
+  follow whether a page can be seen, so several can be shown at once.
+  Navigation opens a closed page as a tab of the active one. At shutdown
+  every shown page gets `on_hide`, and the layout plus the window's
+  geometry are saved under the view-state key `workspace`. Ctrl+K's "Reset
+  layout" goes back to the first page alone.
 - **Async results carry a token** when the user can supersede a request
   (e.g. switching symbols); stale results are dropped, not painted.
 - **Consistent sizing.** Every control is `CONTROL_HEIGHT` tall; fields use

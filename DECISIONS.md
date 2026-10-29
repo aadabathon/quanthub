@@ -1544,10 +1544,11 @@ Positions carry no request id, so:
   local, masks ids and amounts by default. It waits on the owner's paper
   login and TWS.
 
-## D55 — G1: pages dock; cards stay in their page (proposed 2026-10-27; amends D24)
+## D55 — G1: pages dock; cards stay in their page (2026-10-27; amends D24)
 
-**Proposed, not approved.** This entry takes effect when the owner approves
-G1. No code changes before then.
+Proposed 2026-10-27. Approved 2026-10-29, when the owner said to carry on
+until done, and G1 landed the same day. What building it settled is at the
+end, under "As built".
 
 The owner asked whether everything could be widget-based: drag and drop,
 and snappy. D24 deferred the configurable-widget system, drag-and-drop and
@@ -1627,6 +1628,9 @@ The Dashboard's widget system stays deferred.
 - The Volatility Lab may float only if, after floating and docking back,
   the surface still draws and the main window isn't recreated. Otherwise
   its dock tabs and splits but doesn't float.
+- It passed, on the owner's display (2026-10-29): it redraws floating and
+  docked again, and the main window keeps its native window. So no page
+  is fixed (`main_window.FIXED_PAGES` is empty).
 - It's still prepared before the window's first show (D40).
 
 **One worker stays (D9).**
@@ -1653,3 +1657,106 @@ The Dashboard's widget system stays deferred.
 
 **Not done here:** cards that move, several named layouts, more workers.
 `CURRENT_STATE.md` records G1 when it lands.
+
+**As built (2026-10-29).** `gui/workspace.py`, the `DockTitleBar`
+component, and the docked-page styles in `gui/theme.py`.
+- **Qt doesn't hide back tabs.** It parks them outside the workspace,
+  still "visible", and `visibilityChanged` misfires when a dock floats.
+  So the workspace decides: a page is shown when its dock is open and it
+  floats or something of it is on screen. A dock's show, hide, move or
+  resize events schedule the settle. Check `Workspace.shown()`, not a
+  page's `isVisible()`.
+- **A drop that doesn't fit becomes a tab.** Qt grows the window for a
+  split, even past the screen (1600 → 2100 px in a test). When pages side
+  by side need more than the screen's width, the page dropped last joins
+  the active page's tabs. After a restore onto a smaller screen, every
+  docked page joins one group.
+- **A page docked back comes to the front.** Qt files it back behind its
+  old group's front tab, where it would be hidden.
+- **Snappy:** drops aren't animated, and pages build the first time
+  they're shown, so a restored layout doesn't build them all at launch.
+- **Small rules:** the last open page has no close button. The
+  workspace has no context menu, since Qt's would show docks outside
+  these rules. Tabs sit under a group, so the title bar stays the drag
+  handle.
+- **Tested:** the D55 list, plus a page docked back comes to the front,
+  and a layout from another version falls back to the default. The 1280
+  px check now opens every page as a tab, since a closed dock adds no
+  width. Dragging with a mouse is Qt's own, and the tests drive the
+  same moves through Qt's API.
+
+## D56 — G2: every card moves and resizes within its page (2026-10-29; amends D55 and D24)
+
+The owner tried G1. Their direction: "every card in every module should be
+snappy, resizable, and draggable", and "a good dashboard should be utterly
+customizable". Saved templates come later. Floated pages should also look
+like the panels they are.
+
+**What changes.** D55 kept cards where their page put them. Now every page
+lays its cards on a snapping grid (`gui/card_grid.py`, re-exported from
+`gui/components.py`):
+- Drag a card by any part that isn't a control. Drag its corner grip to
+  resize it. It snaps to `GRID_COLUMNS` (12) columns and `GRID_ROW` (24 px)
+  rows, with 16 px between cards.
+- A card lands at once, with no animation. While it's dragged, a dashed
+  outline shows where it will land, and the other cards make room.
+- Each page's arrangement is saved in the view-state store under
+  `<page key>.cards`, after every drop and resize (`pages.base.saved_grid`).
+- Ctrl+K's "Reset layout" also resets the cards of every page opened in
+  the session. "Reset this page's cards" resets the active page's cards.
+  A page not opened since keeps its saved cards until it's reset.
+- D24 deferred the Dashboard's configurable widgets. This is that, for
+  every page.
+
+**What stays.**
+- A card stays in its own page, and one job still fills the page, so every
+  number on it describes the same picture. Moving a card changes where it
+  sits, not what feeds it.
+- Cards don't move between pages and don't float on their own: pages do
+  (D55). G3, panels from every page with linked inputs, is still not
+  proposed.
+- A page's argument is its default layout, and a reset brings it back.
+
+**Never smaller than its content.**
+- Each card is at least its minimum size, and its height-for-width when it
+  holds wrapped text.
+- At any width the grid works out a *shown* layout from the places the user
+  chose. Each card is widened and heightened to its minimum and moved left
+  to fit. Then every card falls as high as it can without overlapping one
+  placed before it.
+- The user's places are kept, so a card widened by a narrow window shrinks
+  back when the window grows.
+- Hidden cards take no room, so a note that appears pushes the cards below
+  it down.
+- Side-panel cards keep `SIDE_PANEL_WIDTH` as their minimum, because D49's
+  wrapped notes are sized for it. On a narrow window, the side cards drop
+  below the main column.
+
+**Pages.**
+- Every page's main column becomes columns 0–8 and its side panel columns
+  9–11. Review and Valuation use 8 + 4, so that their four tiles fit.
+- Tiles are cards of their own, except the Pricer's five greeks, which
+  move as one strip because five don't share nine columns evenly.
+- Options Lab's three tabs each have a grid. The Underlying card stays
+  fixed above them, because it feeds all three. Research's Experiments tab
+  has a grid. Its History and Library tabs don't, since they are single
+  views.
+- The Dashboard and the Simulator lose their resize reflows: the grid does
+  that now.
+- A `Card` now leaves height it can't use at its bottom, so a card taller
+  than its content keeps its title and subtitle together.
+
+**Floating (G1 polish).**
+- The float button and a double-click float a page 48 px down and right of
+  where it was, at 80% of its size. Its title bar is tinted and its edge
+  drawn, so it reads as a panel of its own.
+- The dock is hidden while Qt makes it a window and shown once it's in
+  place. That removes the see-through flash the owner saw.
+- Toggles closer together than 0.35 s are ignored.
+- While a mouse button is held, page refreshes wait for its release, so a
+  drag doesn't refresh the pages it crosses.
+
+**Not done here:**
+- Templates (named layouts).
+- Cards across pages.
+- Scrolling the page while dragging a card past its edge.

@@ -52,6 +52,7 @@ from quant_hub.data.stats import TRADING_DAYS_PER_YEAR
 from quant_hub.tasks import TaskRunner
 from quant_hub.gui.charts import Curve, CurveChart, Heatmap, SmileGrid
 from quant_hub.gui.components import (
+    CardGrid,
     Card,
     DataTable,
     EmptyState,
@@ -65,7 +66,7 @@ from quant_hub.gui.components import (
     button,
     label,
 )
-from quant_hub.gui.pages.base import ScrollPage
+from quant_hub.gui.pages.base import ScrollPage, saved_grid
 from quant_hub.gui.surface3d import Surface3D
 from quant_hub.gui.theme import (
     FIELD_L,
@@ -73,7 +74,6 @@ from quant_hub.gui.theme import (
     FIELD_S,
     PALETTE,
     SIDE_PANEL_WIDTH,
-    SPACE_L,
     SPACE_M,
 )
 from quant_hub.data.options import ChainRequest
@@ -171,22 +171,15 @@ class VolatilityLabPage(ScrollPage):
             "Implied-vol surfaces from a known SSVI world or a market chain: IVs, SVI fits, "
             "arbitrage checks")
         self.body.addWidget(self._header)
-        self.body.addWidget(self._build_experiment(saved))
-
-        main = QHBoxLayout()
-        main.setSpacing(SPACE_L)
-        self.body.addLayout(main, 1)
-        main.addWidget(self._build_views(saved), 1)
-        side = QWidget()
-        side.setFixedWidth(SIDE_PANEL_WIDTH)
-        column = QVBoxLayout(side)
-        column.setContentsMargins(0, 0, 0, 0)
-        column.setSpacing(SPACE_L)
-        column.addWidget(self._build_fit_table())
-        column.addWidget(self._build_carry())
-        column.addWidget(self._build_checks())
-        column.addStretch(1)
-        main.addWidget(side)
+        grid = CardGrid()
+        grid.add("chain", self._build_experiment(saved), 0, 0, 12)
+        grid.add("views", self._build_views(saved), 0, 7, 9, 20)
+        grid.add_column([("fit", self._build_fit_table(), None),
+                         ("carry", self._build_carry(), None),
+                         ("checks", self._build_checks(), None)],
+                        x=9, w=3, y=7, min_width=SIDE_PANEL_WIDTH)
+        self._grid = saved_grid(grid, state_store, f"{_STATE_KEY}.cards")
+        self.body.addWidget(grid, 1)
         self._ensure_surface3d()
 
     # ------------------------------------------------------------ building

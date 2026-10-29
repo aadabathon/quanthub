@@ -35,11 +35,12 @@ from datetime import date, datetime
 from pathlib import Path
 
 import numpy as np
-from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFileDialog, QHBoxLayout
 
 from quant_hub.data.fundamentals import FinancialHistory
 from quant_hub.gui.charts import Heatmap
 from quant_hub.gui.components import (
+    CardGrid,
     Card,
     DataTable,
     Field,
@@ -51,9 +52,8 @@ from quant_hub.gui.components import (
     button,
     form_grid,
     label,
-    metric_row,
 )
-from quant_hub.gui.pages.base import ScrollPage, debounce
+from quant_hub.gui.pages.base import ScrollPage, debounce, saved_grid
 from quant_hub.gui.theme import PALETTE, SIDE_PANEL_WIDTH, SPACE_L, SPACE_M
 from quant_hub.models.dcf import (
     LAST_YEAR,
@@ -149,33 +149,24 @@ class ValuationPage(ScrollPage):
 
         self._header = PageHeader("Valuation", "A discounted cash flow from the company's SEC filings")
         self.body.addWidget(self._header)
-        main = QHBoxLayout()
-        main.setSpacing(SPACE_L)
-        self.body.addLayout(main, 1)
-        column = QVBoxLayout()
-        column.setSpacing(SPACE_L)
-        main.addLayout(column, 1)
+        grid = CardGrid()
         self._tiles = {"value": MetricTile("Value per share"), "price": MetricTile("Price"),
                        "margin": MetricTile("Margin of safety"),
                        "terminal": MetricTile("Terminal share of EV")}
-        column.addLayout(metric_row(list(self._tiles.values())))
-        column.addWidget(self._build_filings())
-        column.addWidget(self._build_result())
-        column.addWidget(self._build_sensitivity())
-        column.addWidget(self._build_implied())
-        column.addWidget(self._build_screen(saved))
-        column.addWidget(self._build_saved())
-
-        side_widget = QWidget()
-        side_widget.setFixedWidth(SIDE_PANEL_WIDTH)
-        side = QVBoxLayout(side_widget)
-        side.setSpacing(SPACE_L)
-        side.setContentsMargins(0, 0, 0, 0)
-        main.addWidget(side_widget)
-        side.addWidget(self._build_company(saved))
-        side.addWidget(self._build_assumptions(saved))
-        side.addWidget(self._build_price(saved))
-        side.addStretch(1)
+        for column, (name, tile) in enumerate(self._tiles.items()):
+            grid.add(f"{name} tile", tile, 2 * column, 0, 2)
+        grid.add_column([("filings", self._build_filings(), None),
+                         ("result", self._build_result(), None),
+                         ("sensitivity", self._build_sensitivity(), None),
+                         ("implied", self._build_implied(), None),
+                         ("screen", self._build_screen(saved), None),
+                         ("saved", self._build_saved(), None)], x=0, w=8, y=3)
+        grid.add_column([("company", self._build_company(saved), None),
+                         ("assumptions", self._build_assumptions(saved), None),
+                         ("price", self._build_price(saved), None)],
+                        x=8, w=4, min_width=SIDE_PANEL_WIDTH)
+        self._grid = saved_grid(grid, state_store, f"{_STATE_KEY}.cards")
+        self.body.addWidget(grid, 1)
         self._clear_result("Load a company by ticker or CIK.")
 
     # ------------------------------------------------------------- layout

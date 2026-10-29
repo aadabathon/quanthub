@@ -30,6 +30,7 @@ from quant_hub.data.types import MarketDataMode, PriceBasis, Quote
 from quant_hub.tasks import TaskRunner
 from quant_hub.gui.charts import Sparkline
 from quant_hub.gui.components import (
+    CardGrid,
     Badge,
     Card,
     DataTable,
@@ -42,7 +43,7 @@ from quant_hub.gui.components import (
     divider,
     label,
 )
-from quant_hub.gui.pages.base import ScrollPage, Shell
+from quant_hub.gui.pages.base import ScrollPage, Shell, saved_grid
 from quant_hub.gui.theme import (
     CONTROL_HEIGHT,
     FIELD_M,
@@ -117,11 +118,12 @@ class MarketsPage(ScrollPage):
         self._header = PageHeader(
             "Markets", "Watchlist quotes with source, freshness and provenance")
         self.body.addWidget(self._header)
-        main = QHBoxLayout()
-        main.setSpacing(SPACE_L)
-        self.body.addLayout(main, 1)
-        main.addWidget(self._build_watchlist(names), 1)
-        main.addWidget(self._build_inspector())
+        grid = CardGrid()
+        grid.add("watchlist", self._build_watchlist(names), 0, 0, 9, 22)
+        grid.add_column([("details", self._build_inspector(), 22)], x=9, w=3,
+                        min_width=SIDE_PANEL_WIDTH)
+        self._grid = saved_grid(grid, state_store, f"{_STATE_KEY}.cards")
+        self.body.addWidget(grid, 1)
         self._render_table()
 
     # ------------------------------------------------------------ building
@@ -169,7 +171,6 @@ class MarketsPage(ScrollPage):
 
     def _build_inspector(self) -> QWidget:
         card = Card("Details")
-        card.setFixedWidth(SIDE_PANEL_WIDTH)
         self._detail_stack = QStackedWidget()
         self._detail_empty = EmptyState("ph.hand-pointing", "Select a symbol",
                                         "Pick a row to see its quote, provenance and stored "

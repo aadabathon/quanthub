@@ -138,7 +138,9 @@ def test_every_page_builds(qt_app):
     for name in list(window._factories):
         page = window.show_page(name)
         app.processEvents()
-        assert window._stack.currentWidget() is page
+        assert window._active == name
+        assert window._workspace.shown() == [name]       # tabbed: the others are behind it
+        assert page.isVisible()
 
 
 def test_no_page_clips_at_the_windows_minimum_width(qt_app):
@@ -186,9 +188,9 @@ while not dash._series_meta.full_text():
         print("timed out"); sys.exit(1)
     app.processEvents(); time.sleep(0.005)
 for name in list(window._factories):
-    window.prepare_page(name)
+    window.show_page(name)          # all tabs of one group: its minimum is the widest page's
 app.processEvents()
-print(f"RESULT: {window.minimumWidth()}")
+print(f"RESULT: {window.minimumSizeHint().width()}")
 app.aboutToQuit.emit()
 """
 
@@ -196,8 +198,8 @@ app.aboutToQuit.emit()
 def test_every_page_fits_a_1280_px_window_with_windows_fonts(tmp_path):
     # 1280 px is half of a 2560 px monitor, so a window snapped to half the
     # screen shows every page whole. The Dashboard charts a stored series
-    # (its meta line once set the width); the other pages are built but not
-    # shown, so this is their layouts' own width. Only real fonts give real
+    # (its meta line once set the width), then every page opens as a tab.
+    # Only real fonts give real
     # widths (the offscreen fallback font is much wider), so it runs in its
     # own process with Windows' fonts, and skips where there are none.
     import subprocess
@@ -215,6 +217,318 @@ def test_every_page_fits_a_1280_px_window_with_windows_fonts(tmp_path):
                   if line.startswith("RESULT: ")), None)
     assert width is not None, result.stdout + result.stderr
     assert width <= 1280
+
+
+# ------------------------------------------------------- docked pages (D55)
+
+def _settle(app, rounds: int = 5) -> None:
+    for _ in range(rounds):
+        app.processEvents()
+
+
+def _record(page, name: str, calls: list) -> None:
+    """Note a page's on_show/on_hide calls instead of running them."""
+    page.on_show = lambda: calls.append(("show", name))
+    page.on_hide = lambda: calls.append(("hide", name))
+
+
+def _wide_screen(monkeypatch) -> None:
+    # The offscreen screen is 800 px wide and its fallback font makes every
+    # page wider than that, so the fit check would undo any split.
+    from quant_hub.gui.workspace import Workspace
+    monkeypatch.setattr(Workspace, "_room", lambda self: 100_000)
+
+
+def _side_by_side(app, window, left: str, right: str) -> None:
+    from PySide6.QtCore import Qt
+    window.show_page(left)
+    window.show_page(right)                               # a tab in front of the left page
+    ws = window._workspace
+    ws.splitDockWidget(ws._docks[left], ws._docks[right], Qt.Horizontal)
+    _settle(app)
+
+
+def _open(db):
+    app, window = create_app(AppConfig(db_path=db, ibkr_enabled=False,
+                                       regime_path=db.with_name("REGIME.md")), argv=["test"])
+    window.show()
+    _settle(app)
+    return app, window
+
+
+def test_two_pages_side_by_side_are_both_shown_once_each(qt_app, monkeypatch):
+    _wide_screen(monkeypatch)
+    app, window = qt_app
+    ws = window._workspace
+    dash, markets = window.show_page("Dashboard"), window.show_page("Markets")
+    assert ws.shown() == ["Markets"]
+    calls = []
+    _record(dash, "Dashboard", calls)
+    _record(markets, "Markets", calls)
+    from PySide6.QtCore import Qt
+    ws.splitDockWidget(ws._docks["Dashboard"], ws._docks["Markets"], Qt.Horizontal)
+    _settle(app)
+    assert ws.shown() == ["Dashboard", "Markets"]
+    assert calls == [("show", "Dashboard")]               # Markets never stopped showing
+
+
+def test_a_tab_switch_hides_a_page_and_saves_its_state(qt_app):
+    app, window = qt_app
+    sim = window.show_page("Simulator")
+    sim._s0.set_text("123")
+    window.show_page("Markets")                           # opens as a tab in front
+    assert window._workspace.shown() == ["Markets"]
+    assert window._core.state_store.load("simulator")["s0"] == "123"
+
+
+def test_redocking_a_page_does_not_refresh_it(qt_app):
+    app, window = qt_app
+    ws = window._workspace
+    dash = window.show_page("Dashboard")
+    calls = []
+    _record(dash, "Dashboard", calls)
+    dock = ws._docks["Dashboard"]
+    dock.setFloating(True)
+    _settle(app)
+    assert ws.shown() == ["Dashboard"]
+    dock.setFloating(False)
+    _settle(app)
+    assert calls == []
+    assert ws.shown() == ["Dashboard"] and not dock.isFloating()
+
+
+def test_a_redocked_page_comes_to_the_front(qt_app):
+    app, window = qt_app
+    ws = window._workspace
+    window.show_page("Markets")
+    window.show_page("Review")
+    ws._docks["Markets"].setFloating(True)
+    _settle(app)
+    ws._docks["Markets"].setFloating(False)               # back into the tab group
+    _settle(app)
+    assert ws.shown() == ["Markets"] and window._active == "Markets"
+
+
+def test_a_split_wider_than_the_screen_becomes_a_tab(qt_app):
+    # Qt would grow the window past its screen to fit both pages. The
+    # workspace makes the page a tab instead (the offscreen screen is narrow).
+    app, window = qt_app
+    _side_by_side(app, window, "Dashboard", "Markets")
+    ws = window._workspace
+    assert ws._docks["Markets"] in ws.tabifiedDockWidgets(ws._docks["Dashboard"])
+    assert len(ws.shown()) == 1
+
+
+def test_a_dock_never_squeezes_a_page_below_its_content(qt_app, monkeypatch):
+    from PySide6.QtWidgets import QScrollArea, QWidget
+    _wide_screen(monkeypatch)
+    app, window = qt_app
+    _side_by_side(app, window, "Dashboard", "Markets")
+    window.resize(window.minimumSize())
+    _settle(app)
+    assert window._workspace.shown() == ["Dashboard", "Markets"]
+    for name in ("Dashboard", "Markets"):
+        page = window._pages[name]
+        body = page.findChild(QWidget, "pageBody")
+        viewport = page.findChild(QScrollArea, "pageScroll").viewport()
+        assert body.width() <= viewport.width(), name
+
+
+def test_shutdown_saves_every_visible_page(qt_app, monkeypatch):
+    _wide_screen(monkeypatch)
+    app, window = qt_app
+    _side_by_side(app, window, "Dashboard", "Markets")
+    calls = []
+    for name in ("Dashboard", "Markets"):
+        _record(window._pages[name], name, calls)
+    window.shutdown()
+    assert sorted(calls) == [("hide", "Dashboard"), ("hide", "Markets")]
+
+
+def test_reset_layout_puts_the_first_page_back_alone(qt_app, monkeypatch):
+    _wide_screen(monkeypatch)
+    app, window = qt_app
+    ws = window._workspace
+    _side_by_side(app, window, "Dashboard", "Markets")
+    window.show_page("Simulator")
+    ws._docks["Simulator"].setFloating(True)
+    _settle(app)
+    window._top.search._commands["Reset layout"]()
+    _settle(app)
+    assert ws.shown() == ["Dashboard"] and window._active == "Dashboard"
+    assert all(dock.isHidden() and not dock.isFloating()
+               for name, dock in ws._docks.items() if name != "Dashboard")
+    window.show_page("Markets")                           # opens as a tab again
+    assert ws._docks["Markets"] in ws.tabifiedDockWidgets(ws._docks["Dashboard"])
+
+
+def test_the_layout_round_trips_through_the_store(tmp_path, monkeypatch):
+    from quant_hub.storage.state_store import ViewStateStore
+    _wide_screen(monkeypatch)
+    db = tmp_path / "market_data.db"
+    app, window = _open(db)
+    try:
+        _side_by_side(app, window, "Dashboard", "Markets")
+        window.show_page("Review")                        # a tab in front of Markets
+        _settle(app)
+        assert window._workspace.shown() == ["Dashboard", "Review"]
+    finally:
+        _close(app, window)
+    store = ViewStateStore(db)
+    saved = store.load("workspace")
+    store.save("workspace", {**saved, "pages": [*saved["pages"], "Gone"]})  # a page since removed
+    store.close()
+    app, window = _open(db)
+    try:
+        ws = window._workspace
+        assert "Gone" not in ws._docks
+        assert ws.shown() == ["Dashboard", "Review"]
+        assert window._active == "Review"
+        assert ws._docks["Markets"] in ws.tabifiedDockWidgets(ws._docks["Review"])
+        assert window._pages.keys() == {"Dashboard", "Review", "Volatility Lab"}  # the rest wait
+    finally:
+        _close(app, window)
+
+
+def test_a_layout_from_another_version_falls_back_to_the_default(tmp_path):
+    from quant_hub.storage.state_store import ViewStateStore
+    db = tmp_path / "market_data.db"
+    app, window = _open(db)
+    window.show_page("Markets")
+    _close(app, window)
+    store = ViewStateStore(db)
+    store.save("workspace", {**store.load("workspace"), "version": 99})
+    store.close()
+    app, window = _open(db)
+    try:
+        assert window._workspace.shown() == ["Dashboard"]
+    finally:
+        _close(app, window)
+
+
+def test_a_window_saved_off_screen_comes_back_on_one(tmp_path):
+    # A monitor unplugged since: Qt moves the restored window onto a screen.
+    from PySide6.QtGui import QGuiApplication
+    db = tmp_path / "market_data.db"
+    app, window = _open(db)
+    window.move(20_000, 20_000)
+    _settle(app)
+    _close(app, window)
+    app, window = _open(db)
+    try:
+        assert QGuiApplication.screenAt(window.frameGeometry().center()) is not None
+    finally:
+        _close(app, window)
+
+
+# ---------------------------------------------------------- card grids (D56)
+
+def test_every_page_lays_its_cards_on_a_grid(qt_app):
+    # Every module's cards can be dragged and resized: each sits on a grid,
+    # none overlaps another, and none is smaller than its content.
+    from quant_hub.gui.components import CardGrid
+    app, window = qt_app
+    for name in list(window._factories):
+        page = window.show_page(name)
+        _settle(app)
+        grids = [g for g in page.findChildren(CardGrid) if g.isVisible()]
+        assert grids, name
+        for grid in grids:
+            names = [n for n in grid._order if grid.shown_place(n) is not None]
+            places = [grid.shown_place(n) for n in names]
+            assert not any(a.overlaps(b) for i, a in enumerate(places) for b in places[i + 1:]), name
+            for card_name in names:
+                card = grid._cards[card_name]
+                hint = card.minimumSizeHint()
+                assert card.width() >= hint.width() and card.height() >= hint.height(), \
+                    (name, card_name)
+
+
+def test_a_moved_card_stays_moved_after_a_restart(tmp_path):
+    db = tmp_path / "market_data.db"
+    app, window = _open(db)
+    try:
+        window._pages["Dashboard"]._grid.move_card("watchlist", 0, 3)
+    finally:
+        _close(app, window)
+    app, window = _open(db)
+    try:
+        place = window._pages["Dashboard"]._grid.place("watchlist")
+        assert (place.x, place.y) == (0, 3)
+    finally:
+        _close(app, window)
+
+
+def test_reset_this_pages_cards(qt_app):
+    app, window = qt_app
+    grid = window.show_page("Dashboard")._grid
+    default = grid.place("watchlist")
+    grid.move_card("watchlist", 0, 3)
+    assert grid.place("watchlist") != default
+    window._top.search._commands["Reset this page's cards"]()
+    assert grid.place("watchlist") == default
+
+
+_FLOAT_VOL = r"""
+import sys, time
+from pathlib import Path
+from quant_hub.app import create_app
+from quant_hub.config import AppConfig
+folder = Path(sys.argv[1])
+app, window = create_app(AppConfig(db_path=folder / "market_data.db", ibkr_enabled=False,
+                                   regime_path=folder / "REGIME.md"), argv=["test"])
+window.show()
+native_id = window.winId()
+lab = window.show_page("Volatility Lab")
+def wait(condition, seconds):
+    deadline = time.perf_counter() + seconds
+    while not condition() and time.perf_counter() < deadline:
+        app.processEvents(); time.sleep(0.005)
+wait(lambda: lab._fit is not None, 90)
+surface = lab._surface3d
+results = []
+on_rendered = surface._on_rendered
+surface._on_rendered = lambda result: (results.append(result), on_rendered(result))
+lab._on_view("Surface")
+lab._on_surface_mode("3D")
+wait(lambda: results, 60)
+dock = window._workspace._docks["Volatility Lab"]
+for floating in (True, False):
+    dock.setFloating(floating)
+    wait(lambda: False, 1.0)
+    count = len(results)
+    surface.set_mesh(lab._mesh)
+    wait(lambda: len(results) > count, 30)
+print("KEPT:", window.winId() == native_id)
+print("FRONT:", window._workspace.shown() == ["Volatility Lab"])
+print("RESULT: " + " | ".join(" ".join(str(r).split()) for r in results))
+app.aboutToQuit.emit()
+"""
+
+
+def test_the_vol_lab_floats_and_docks_back(tmp_path):
+    # D55: the Volatility Lab may float only if its WebEngine view survives
+    # it. Floating makes a new native window (D40's trouble case): the main
+    # window must not be recreated, and the surface must draw floating and
+    # docked again. A fresh process, like the 3D test, and it skips the same
+    # way when offscreen WebGL can't compile shaders.
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "-c", _FLOAT_VOL, str(tmp_path)],
+        capture_output=True, text=True, timeout=240,
+        env={**os.environ, "QT_QPA_PLATFORM": "offscreen"})
+    lines = dict(line.split(": ", 1) for line in result.stdout.splitlines()
+                 if line.startswith(("KEPT: ", "FRONT: ", "RESULT: ")))
+    assert {"KEPT", "FRONT", "RESULT"} <= lines.keys(), result.stdout + result.stderr
+    assert lines["KEPT"] == "True", "floating the Volatility Lab recreated the main window"
+    assert lines["FRONT"] == "True"
+    if lines["RESULT"] != "ok | ok | ok" and ("WebGL" in lines["RESULT"]
+                                               or "shader" in lines["RESULT"]
+                                               or "no-webgl" in lines["RESULT"]):
+        pytest.skip(f"no working WebGL offscreen here: {lines['RESULT'][:120]}")
+    assert lines["RESULT"] == "ok | ok | ok"
 
 
 def test_research_runs_saves_reopens_and_retains_the_whole_grid(qt_app):
@@ -879,6 +1193,7 @@ def test_stacked_chart_hover_moves_readout(qt_app):
     lab._days.set_text("300")
     lab._fit()
     wait_for(app, lambda: lab._stats.value_text("observations") == "300")
+    _settle(app)                      # the card grid lays out once more after a render
     chart = lab._series_chart
     before = chart._readout.text()
     viewport = chart._canvas.viewport()

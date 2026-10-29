@@ -28,11 +28,12 @@ from __future__ import annotations
 import logging
 import math
 
-from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QVBoxLayout
 
 from quant_hub.data.regime import Effect, Grade, Rule, RuleSet
 from quant_hub.gui.charts import Panel, Series, StackedTimeSeries
 from quant_hub.gui.components import (
+    CardGrid,
     Card,
     DataTable,
     Field,
@@ -44,12 +45,12 @@ from quant_hub.gui.components import (
     button,
     form_grid,
     label,
-    metric_row,
 )
-from quant_hub.gui.pages.base import ScrollPage
+from quant_hub.gui.pages.base import ScrollPage, saved_grid
 from quant_hub.gui.theme import PALETTE, SIDE_PANEL_WIDTH, SPACE_L, SPACE_M
 from quant_hub.models.regime import Check, Outcome
 from quant_hub.services.review import Review, ReviewError, ReviewService
+from quant_hub.storage.state_store import ViewStateStore
 from quant_hub.tasks import TaskRunner
 
 _logger = logging.getLogger(__name__)
@@ -154,7 +155,8 @@ def _severity(c: Check) -> int:
 
 
 class ReviewPage(ScrollPage):
-    def __init__(self, review: ReviewService, tasks: TaskRunner) -> None:
+    def __init__(self, review: ReviewService, tasks: TaskRunner,
+                 state_store: ViewStateStore) -> None:
         super().__init__()
         self._review = review
         self._tasks = tasks
@@ -164,32 +166,23 @@ class ReviewPage(ScrollPage):
 
         self._header = PageHeader("Review", "Your REGIME.md, checked against today's book")
         self.body.addWidget(self._header)
-        main = QHBoxLayout()
-        main.setSpacing(SPACE_L)
-        self.body.addLayout(main, 1)
-        column = QVBoxLayout()
-        column.setSpacing(SPACE_L)
-        main.addLayout(column, 1)
+        grid = CardGrid()
         self._tiles = {"fail": MetricTile("Fails"), "warn": MetricTile("Warns"),
                        "gates": MetricTile("Gates closed"), "rules": MetricTile("Rules version")}
-        column.addLayout(metric_row(list(self._tiles.values())))
-        column.addWidget(self._build_checklist())
-        column.addWidget(self._build_streams())
-        column.addWidget(self._build_market())
-        column.addWidget(self._build_influence())
-        column.addWidget(self._build_journal())
-        column.addWidget(self._build_history())
-
-        side_widget = QWidget()
-        side_widget.setFixedWidth(SIDE_PANEL_WIDTH)
-        side = QVBoxLayout(side_widget)
-        side.setSpacing(SPACE_L)
-        side.setContentsMargins(0, 0, 0, 0)
-        main.addWidget(side_widget)
-        side.addWidget(self._build_rules())
-        side.addWidget(self._build_indicators())
-        side.addWidget(self._build_trade())
-        side.addStretch(1)
+        for column, (name, tile) in enumerate(self._tiles.items()):
+            grid.add(f"{name} tile", tile, 2 * column, 0, 2)
+        grid.add_column([("checklist", self._build_checklist(), None),
+                         ("streams", self._build_streams(), None),
+                         ("market", self._build_market(), None),
+                         ("influence", self._build_influence(), None),
+                         ("journal", self._build_journal(), None),
+                         ("history", self._build_history(), None)], x=0, w=8, y=3)
+        grid.add_column([("rules", self._build_rules(), None),
+                         ("indicators", self._build_indicators(), None),
+                         ("trade", self._build_trade(), None)],
+                        x=8, w=4, min_width=SIDE_PANEL_WIDTH)
+        self._grid = saved_grid(grid, state_store, "review.cards")
+        self.body.addWidget(grid, 1)
         self._clear()
 
     # ------------------------------------------------------------- layout

@@ -1,7 +1,51 @@
 # CURRENT_STATE.md
 
 **Update this file whenever meaningful work lands.** Last updated:
-**2026-10-29**: no page clips sideways any more.
+**2026-10-29**: G2 landed (D56): every card on every page can be dragged
+and resized.
+- Each page lays its cards on a snapping 12-column grid
+  (`gui/card_grid.py`). Drag a card by its title or padding to move it,
+  and drag its corner grip to resize it. The other cards make room, and
+  nothing animates.
+- The arrangement is saved per page. Ctrl+K has **Reset layout** (docks
+  and the cards of every page opened) and **Reset this page's cards**.
+- No card is ever smaller than its content. On a narrow window, cards
+  widen to their minimum and side cards drop below the main column; your
+  layout comes back when the window grows.
+- Cards stay in their own page, and one job still fills each page.
+- Floating a page now lands it offset from where it was, smaller, with a
+  tinted title. Rapid toggles are ignored, and the see-through flash is
+  gone. Page refreshes wait while a mouse button is held.
+- Tested: 13 grid tests, including a real mouse drag and a grip resize,
+  plus page checks: every page on a grid, no overlaps, no card under its
+  minimum, a moved card surviving a restart, and the page reset. Checked
+  by eye on the owner's display: Dashboard, Portfolio, Volatility Lab
+  (3D still draws in its card), Options Lab and Review.
+- Not tested: dragging a card past the visible edge (the page doesn't
+  scroll yet).
+
+Earlier the same day, G1 landed (D55): pages are docks.
+- Each page sits in one Qt dock (`gui/workspace.py`). Drag a page's title
+  bar to put it beside another, onto its tabs, or out on its own (the
+  second monitor). Double-click the bar, or use its button, to float or
+  dock it. Cards stay inside their page.
+- The layout and the window's size and place are saved at shutdown and
+  restored at launch. Ctrl+K's **Reset layout** goes back to the first
+  page alone.
+- `on_show`/`on_hide` now follow whether a page can be seen, so several
+  pages can be shown at once. Navigation opens a closed page as a tab of
+  the active one, which looks like the old app plus a tab strip.
+- A drop that would make the window wider than its screen becomes a tab.
+  A page docked back comes to the front.
+- The Volatility Lab floats: checked on the owner's display, where it
+  redraws floating and docked again without recreating the main window.
+- No new dependency.
+- Tested: 12 new smoke tests. Not tested: dragging with a real mouse. The
+  tests drive the same moves through Qt's API, and the drag itself is Qt's
+  own. Offscreen, the float test skips its draw step for lack of WebGL
+  (like the 3D test), after checking the main window and the tabs.
+
+Earlier the same day: no page clips sideways any more.
 - At the window's old fixed 1100 px minimum, seven pages lost up to 171 px
   of their right edge, the Dashboard the most.
 - Each page now asks for its content's width (`pages/base.py`), so the

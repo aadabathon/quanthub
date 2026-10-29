@@ -37,12 +37,13 @@ from datetime import datetime, timedelta
 
 import numpy as np
 import pandas as pd
-from PySide6.QtWidgets import QHBoxLayout, QStackedWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QStackedWidget, QWidget
 
 from quant_hub.data.stats import TRADING_DAYS_PER_YEAR
 from quant_hub.tasks import TaskRunner
 from quant_hub.gui.charts import Band, Histogram, Panel, Series, StackedTimeSeries
 from quant_hub.gui.components import (
+    CardGrid,
     Card,
     EmptyState,
     Field,
@@ -54,7 +55,7 @@ from quant_hub.gui.components import (
     button,
     form_grid,
 )
-from quant_hub.gui.pages.base import PRICE_BASES, ScrollPage, basis_field, offline_note
+from quant_hub.gui.pages.base import saved_grid, PRICE_BASES, ScrollPage, basis_field, offline_note
 from quant_hub.gui.theme import PALETTE, SIDE_PANEL_WIDTH, SPACE_L, SPACE_M
 from quant_hub.models.kalman import (
     LocalLevel,
@@ -144,13 +145,7 @@ class KalmanLabPage(ScrollPage):
             "synthetic world or real history")
         self.body.addWidget(self._header)
 
-        main = QHBoxLayout()
-        main.setSpacing(SPACE_L)
-        self.body.addLayout(main, 1)
-
-        charts = QVBoxLayout()
-        charts.setSpacing(SPACE_L)
-        main.addLayout(charts, 1)
+        grid = CardGrid()
         self._level_card = Card("Filtered level", "")
         self._windows = SegmentedControl(list(_WINDOWS), self._window)
         self._windows.changed.connect(self._on_window)
@@ -164,7 +159,6 @@ class KalmanLabPage(ScrollPage):
         self._level_stack.setCurrentWidget(self._level_empty)
         self._level_stack.setMinimumHeight(420)
         self._level_card.body.addWidget(self._level_stack, 1)
-        charts.addWidget(self._level_card, 3)
 
         innovation_card = Card(
             "Standardized innovations",
@@ -173,26 +167,22 @@ class KalmanLabPage(ScrollPage):
         self._innovations = Histogram()
         self._innovations.setMinimumHeight(190)
         innovation_card.body.addWidget(self._innovations, 1)
-        charts.addWidget(innovation_card, 2)
+        grid.add_column([("level", self._level_card, 15), ("innovations", innovation_card, 9)],
+                        x=0, w=9)
 
-        side = QVBoxLayout()
-        side.setSpacing(SPACE_L)
-        side_widget = QWidget()
-        side_widget.setFixedWidth(SIDE_PANEL_WIDTH)
-        side_widget.setLayout(side)
-        side.setContentsMargins(0, 0, 0, 0)
-        main.addWidget(side_widget)
-        side.addWidget(self._build_inputs(saved, names))
+        inputs = self._build_inputs(saved, names)
         self._zero_note = Note("ph.info", tone="info")
         self._zero_note.setVisible(False)
-        side.addWidget(self._zero_note)
         stats_card = Card("Estimates")
         self._stats = {_LEVEL: StatTable(_LEVEL_GROUPS), _TREND: StatTable(_TREND_GROUPS)}
         for table in self._stats.values():
             stats_card.body.addWidget(table)
         self._show_stats(self._model)
-        side.addWidget(stats_card)
-        side.addStretch(1)
+        grid.add_column([("inputs", inputs, None), ("zero note", self._zero_note, None),
+                         ("stats", stats_card, None)],
+                        x=9, w=3, min_width=SIDE_PANEL_WIDTH)
+        self._grid = saved_grid(grid, state_store, f"{_STATE_KEY}.cards")
+        self.body.addWidget(grid, 1)
 
     # ------------------------------------------------------------- inputs
     def _build_inputs(self, saved: dict, names: list[str]) -> Card:

@@ -18,6 +18,7 @@ from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QStackedWidget, QVBoxLayou
 from quant_hub.tasks import TaskRunner
 from quant_hub.gui.charts import Curve, CurveChart, Histogram, Series
 from quant_hub.gui.components import (
+    CardGrid,
     Badge,
     Card,
     EmptyState,
@@ -45,12 +46,10 @@ class MonteCarloTab(QWidget):
         saved_paths = int(str(saved.get("paths", "100,000")).replace(",", "") or 100_000)
         self._paths = next((k for k, v in _PATHS.items() if v == saved_paths), "100K")
 
-        layout = QHBoxLayout(self)
+        layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(SPACE_L)
-        left = QVBoxLayout()
-        left.setSpacing(SPACE_L)
-        layout.addLayout(left, 1)
+        self.grid = CardGrid()             # saved by the page (options_lab/page.py)
+        layout.addWidget(self.grid)
         self._conv_card = Card("Convergence", "Estimate vs paths · the band narrows like 1/√n")
         self._stack = QStackedWidget()
         self._chart = CurveChart(x_axis="compact", y_axis="price", log_x=True, x_name="n",
@@ -62,19 +61,13 @@ class MonteCarloTab(QWidget):
         self._stack.setCurrentWidget(self._empty)
         self._stack.setMinimumHeight(300)
         self._conv_card.body.addWidget(self._stack, 1)
-        left.addWidget(self._conv_card, 3)
         self._dist_card = Card("Risk-neutral terminal price", "")
         self._hist = Histogram(axis="price", bin_fmt="{:,.2f}")
         self._hist.setMinimumHeight(190)
         self._dist_card.body.addWidget(self._hist, 1)
-        left.addWidget(self._dist_card, 2)
-
-        side = QWidget()
-        side.setFixedWidth(SIDE_PANEL_WIDTH)
-        column = QVBoxLayout(side)
-        column.setContentsMargins(0, 0, 0, 0)
-        column.setSpacing(SPACE_L)
-        column.addWidget(self._build_controls(saved))
+        self.grid.add_column([("convergence", self._conv_card, 12),
+                              ("distribution", self._dist_card, 8)], x=0, w=9)
+        controls = self._build_controls(saved)
         result = Card("Result")
         verdict_row = QHBoxLayout()
         self._badge = Badge("NOT RUN", "neutral")
@@ -87,9 +80,8 @@ class MonteCarloTab(QWidget):
             ("estimate", "MC estimate"), ("se", "Standard error"), ("ci", "95% interval"),
             ("closed", "Closed form"), ("z", "z-score"), ("paths", "Paths")))], value_header="")
         result.body.addWidget(self._stats)
-        column.addWidget(result)
-        column.addStretch(1)
-        layout.addWidget(side)
+        self.grid.add_column([("controls", controls, None), ("result", result, None)],
+                             x=9, w=3, min_width=SIDE_PANEL_WIDTH)
 
     def _build_controls(self, saved: dict) -> Card:
         card = Card("Simulation")

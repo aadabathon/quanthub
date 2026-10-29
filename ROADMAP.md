@@ -551,18 +551,18 @@ Each milestone needs approval before it starts:
 - **E5. The runner on paper:** shortfall and tracking measured.
 - **E6. Live:** its own decision, a dedicated account, small capital.
 
-## Proposed — pages as docks (G1, 2026-10-27, D55)
+## Pages as docks (G1, approved and landed 2026-10-29, D55)
 
 The owner asked whether the whole app could be widgets they drag and drop.
 D55 proposes an answer: whole pages dock, and cards stay in their pages.
 D24 deferred drag-and-drop and saved layouts on purpose. G1 lifts that
-deferral for pages only. Nothing here is approved yet.
+deferral for pages only.
 
 G1 touches only `gui/` and `app.py`'s window sizing. It doesn't depend on
 the execution track or on LENS_PLAN, so where it sits in the order is the
 owner's call.
 
-- **G1. Pages as docks** (proposed):
+- **~~G1. Pages as docks~~** (landed 2026-10-29, D55; `gui/workspace.py`):
   - each page is one Qt dock: side by side, tabbed, or floating on the
     second monitor
   - the layout and the window's geometry are saved in the view-state
@@ -574,11 +574,13 @@ owner's call.
   - the Volatility Lab floats only if its WebEngine check passes
   - no new dependency; the sidebar, top bar, log drawer and status bar
     stay as they are
-- Later, and not proposed:
-  - **G2,** the Dashboard as panels the owner arranges
-  - **G3,** panels from every page with linked inputs, which would break
-    the one-job-per-page rule and needs its own design
-  - either one only if G1 shows the owner rearranges pages in practice
+- **~~G2. Every card draggable and resizable~~** (landed 2026-10-29, D56;
+  `gui/card_grid.py`): every page's cards on a snapping grid, saved per
+  page. Owner direction after trying G1, which went beyond the Dashboard.
+- Next, when the owner asks: **templates**, named layouts saved and
+  switched between.
+- Not proposed: **G3,** cards across pages with linked inputs. It would
+  break the one-job-per-page rule and needs its own design.
 
 ## Intended stack flow (architecture already accommodates this)
 

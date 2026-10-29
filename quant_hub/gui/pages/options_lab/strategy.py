@@ -31,6 +31,7 @@ from PySide6.QtWidgets import QHBoxLayout, QSlider, QVBoxLayout, QWidget
 
 from quant_hub.gui.charts import Curve, CurveChart
 from quant_hub.gui.components import (
+    CardGrid,
     Card,
     EmptyState,
     PageStack,
@@ -43,11 +44,9 @@ from quant_hub.gui.components import (
     button,
     form_grid,
     label,
-    metric_row,
 )
 from quant_hub.gui.pages.base import debounce
 from quant_hub.gui.theme import (
-    FIELD_M,
     FIELD_S,
     PALETTE,
     SIDE_PANEL_WIDTH,
@@ -109,34 +108,26 @@ class StrategyTab(QWidget):
         except ValueError:
             self._horizon = 0
 
-        layout = QHBoxLayout(self)
+        layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(SPACE_L)
-        left = QVBoxLayout()
-        left.setSpacing(SPACE_L)
-        layout.addLayout(left, 1)
-        left.addWidget(self._build_chart_card(), 3)
+        self.grid = CardGrid()             # saved by the page (options_lab/page.py)
+        layout.addWidget(self.grid)
+        self.grid.add("chart", self._build_chart_card(), 0, 0, 8, 12)
         self._tiles = {"entry": MetricTile("Net entry"), "max_profit": MetricTile("Max profit"),
                        "max_loss": MetricTile("Max loss"),
                        "breakevens": MetricTile("Breakevens")}
-        left.addLayout(metric_row(list(self._tiles.values())))
-        left.addWidget(self._build_legs_card(saved), 2)
-
-        side = QWidget()
-        side.setFixedWidth(SIDE_PANEL_WIDTH)
-        column = QVBoxLayout(side)
-        column.setContentsMargins(0, 0, 0, 0)
-        column.setSpacing(SPACE_L)
-        column.addWidget(self._build_template_card(saved))
+        for i, (name, tile) in enumerate(self._tiles.items()):
+            self.grid.add(f"{name} tile", tile, 2 * i, 12, 2)
+        self.grid.add("legs", self._build_legs_card(saved), 0, 15, 8, 9)
+        template = self._build_template_card(saved)
         greeks_card = Card("Position greeks")
         self._greeks = StatTable([("At spot", (
             ("delta", "Delta (shares)"), ("gamma", "Gamma (shares / $1)"),
             ("theta", "Theta ($ / day)"), ("vega", "Vega ($ / vol pt)")))], value_header="")
         greeks_card.body.addWidget(self._greeks)
         self._greeks_card = greeks_card
-        column.addWidget(greeks_card)
-        column.addStretch(1)
-        layout.addWidget(side)
+        self.grid.add_column([("template", template, None), ("greeks", greeks_card, None)],
+                             x=8, w=4, min_width=SIDE_PANEL_WIDTH)
 
         if not self._legs and self._shares.text() in ("", "0"):
             self._apply_template(refresh=False)

@@ -18,10 +18,11 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QVBoxLayout, QWidget
 
 from quant_hub.gui.charts import Curve, CurveChart
 from quant_hub.gui.components import (
+    CardGrid,
     Card,
     EmptyState,
     PageStack,
@@ -88,12 +89,10 @@ class PricerTab(QWidget):
         self._type = "put" if saved.get("option_type") == "put" else "call"
         self._mode = VOL_FROM_PRICE if saved.get("mode") == "vol from price" else PRICE_FROM_VOL
 
-        layout = QHBoxLayout(self)
+        layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(SPACE_L)
-        left = QVBoxLayout()
-        left.setSpacing(SPACE_L)
-        layout.addLayout(left, 1)
+        self.grid = CardGrid()             # saved by the page (options_lab/page.py)
+        layout.addWidget(self.grid)
         self._chart_card = Card("Value vs spot", "")
         metrics = SegmentedControl(list(_METRICS), self._metric)
         metrics.changed.connect(self._on_metric)
@@ -105,7 +104,7 @@ class PricerTab(QWidget):
         self._chart_stack.addWidget(self._error)
         self._chart_stack.setMinimumHeight(300)
         self._chart_card.body.addWidget(self._chart_stack, 1)
-        left.addWidget(self._chart_card, 1)
+        self.grid.add("chart", self._chart_card, 0, 0, 9, 12)
         self._tiles = {
             "delta": MetricTile("Delta", "per share"),
             "gamma": MetricTile("Gamma", "per share, per $1"),
@@ -113,9 +112,14 @@ class PricerTab(QWidget):
             "vega": MetricTile("Vega / vol pt", "per share"),
             "rho": MetricTile("Rho / rate pt", "per share"),
         }
-        left.addLayout(metric_row(list(self._tiles.values())))
-
-        layout.addWidget(self._build_contract(saved))
+        # Five tiles don't share nine columns evenly, so they move as one strip.
+        strip = QWidget()
+        row = metric_row(list(self._tiles.values()))
+        row.setContentsMargins(0, 0, 0, 0)
+        strip.setLayout(row)
+        self.grid.add("greeks", strip, 0, 12, 9)
+        self.grid.add_column([("contract", self._build_contract(saved), None)], x=9, w=3,
+                             min_width=SIDE_PANEL_WIDTH)
         live = debounce(self, self.refresh)
         for field in (self._strike, self._dte, self._quote):
             field.edit.textEdited.connect(lambda _t: live())
@@ -124,7 +128,6 @@ class PricerTab(QWidget):
 
     def _build_contract(self, saved: dict) -> Card:
         card = Card("Contract")
-        card.setFixedWidth(SIDE_PANEL_WIDTH)
         types = SegmentedControl(["Call", "Put"], self._type.capitalize(), fill=True)
         types.changed.connect(self._on_type)
         card.body.addWidget(types)

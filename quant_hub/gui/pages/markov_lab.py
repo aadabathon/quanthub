@@ -49,12 +49,13 @@ from datetime import datetime, timedelta
 
 import numpy as np
 import pandas as pd
-from PySide6.QtWidgets import QHBoxLayout, QStackedWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QStackedWidget, QVBoxLayout, QWidget
 
 from quant_hub.data.stats import TRADING_DAYS_PER_YEAR
 from quant_hub.tasks import TaskRunner
 from quant_hub.gui.charts import Panel, Series, Shade, StackedTimeSeries
 from quant_hub.gui.components import (
+    CardGrid,
     Card,
     DataTable,
     EmptyState,
@@ -67,7 +68,7 @@ from quant_hub.gui.components import (
     button,
     form_grid,
 )
-from quant_hub.gui.pages.base import PRICE_BASES, ScrollPage, basis_field, offline_note
+from quant_hub.gui.pages.base import saved_grid, PRICE_BASES, ScrollPage, basis_field, offline_note
 from quant_hub.gui.theme import PALETTE, SIDE_PANEL_WIDTH, SPACE_L, SPACE_M
 from quant_hub.models.markov import (
     MIN_OBSERVATIONS,
@@ -209,36 +210,25 @@ class MarkovLabPage(ScrollPage):
             "history")
         self.body.addWidget(self._header)
 
-        main = QHBoxLayout()
-        main.setSpacing(SPACE_L)
-        self.body.addLayout(main, 1)
+        grid = CardGrid()
+        grid.add_column([("regimes", self._build_chart_card(), 14),
+                         ("tables", self._build_tables_card(), None)], x=0, w=9)
 
-        charts = QVBoxLayout()
-        charts.setSpacing(SPACE_L)
-        main.addLayout(charts, 1)
-        charts.addWidget(self._build_chart_card(), 3)
-        charts.addWidget(self._build_tables_card(), 0)
-
-        side = QVBoxLayout()
-        side.setSpacing(SPACE_L)
-        side_widget = QWidget()
-        side_widget.setFixedWidth(SIDE_PANEL_WIDTH)
-        side_widget.setLayout(side)
-        side.setContentsMargins(0, 0, 0, 0)
-        main.addWidget(side_widget)
-        side.addWidget(self._build_inputs(saved, names))
+        inputs = self._build_inputs(saved, names)
         self._warning = Note("ph.warning", tone="critical")
         self._finding = Note("ph.info", tone="info")
         for note in (self._warning, self._finding):
             note.setVisible(False)
-            side.addWidget(note)
         stats_card = Card("Estimates")
         self._stats = {k: StatTable(_stat_groups(k)) for k in _NAMES}
         for table in self._stats.values():
             stats_card.body.addWidget(table)
         self._show_stats(2)
-        side.addWidget(stats_card)
-        side.addStretch(1)
+        grid.add_column([("inputs", inputs, None), ("warning", self._warning, None),
+                         ("finding", self._finding, None), ("stats", stats_card, None)],
+                        x=9, w=3, min_width=SIDE_PANEL_WIDTH)
+        self._grid = saved_grid(grid, state_store, f"{_STATE_KEY}.cards")
+        self.body.addWidget(grid, 1)
 
     # ------------------------------------------------------------- layout
     def _build_chart_card(self) -> Card:

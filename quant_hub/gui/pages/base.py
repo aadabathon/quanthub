@@ -3,7 +3,9 @@
 Pages are normally created on first navigation and stay alive, so their
 state survives switching (as in the Tk ``View``). The Volatility Lab is
 prepared before the main window is shown for WebEngine's graphics setup
-(D40). ``on_show``/``on_hide`` bracket visits: refresh on show, persist on hide.
+(D40). ``on_show``/``on_hide`` bracket the time a page can be seen: refresh
+on show, persist on hide. Pages live in docks (D55), so several can be shown
+at once.
 """
 
 from __future__ import annotations
@@ -15,7 +17,7 @@ from PySide6.QtCore import QEvent, QObject, QSize, Qt, QTimer
 from PySide6.QtWidgets import QFrame, QScrollArea, QVBoxLayout, QWidget
 
 from quant_hub.data.types import PriceBasis, PriceHistory
-from quant_hub.gui.components import SelectField
+from quant_hub.gui.components import CardGrid, SelectField
 from quant_hub.gui.theme import SPACE_L, SPACE_XL
 
 Commands = dict[str, Callable[[], None]]
@@ -46,6 +48,15 @@ def basis_field(saved: dict, width: int) -> SelectField:
     field.setToolTip("Adjusted: for splits and dividends, so returns are total returns, "
                      "right for return math. Traded: the prices as they traded.")
     return field
+
+
+def saved_grid(grid: CardGrid, store, key: str) -> CardGrid:
+    """A page's card layout (D56), restored from the view-state store under
+    ``key`` and saved there after every drop and resize. Call it once every
+    card is added."""
+    grid.restore(store.load(key))
+    grid.changed.connect(lambda: store.save(key, grid.state()))
+    return grid
 
 
 def debounce(owner: QObject, fn: Callable[[], None], ms: int = LIVE_DELAY_MS) -> Callable[[], None]:
@@ -80,7 +91,8 @@ class Page(QWidget):
         """Called each time the page becomes visible."""
 
     def on_hide(self) -> None:
-        """Called when another page replaces this one, and at shutdown."""
+        """Called when the page stops being visible (closed, or another tab
+        in front of it), and at shutdown."""
 
 
 class _BodyLayout(QVBoxLayout):
