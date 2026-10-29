@@ -94,6 +94,8 @@ FIELD_L = 176        # free text
 SIDE_PANEL_WIDTH = 340   # right-hand inspector column on every page
 DOCK_TITLE_HEIGHT = 30   # a docked page's title bar (D55)
 DOCK_BUTTON = 24         # its float and close buttons, square
+GRID_COLUMNS = 12        # a page's card grid (D56): columns across the page
+GRID_ROW = 24            # and the height of one row; cards snap to both
 
 
 def font_family(preferred: str) -> str:
@@ -191,10 +193,15 @@ QFrame#logDrawer {{ background: {p.sidebar}; border-top: 1px solid {p.border}; }
 
 /* ---- docked pages (D55): title bars, splitters, tab strips ------------- */
 QDockWidget {{ background: {p.page}; border: none; }}
+QDockWidget[floating="true"] {{ border: 1px solid {p.accent_soft_border}; }}
 QFrame[role="dockTitle"] {{ background: {p.sidebar}; border-bottom: 1px solid {p.border}; }}
+QFrame[role="dockTitle"][floating="true"] {{ background: {p.accent_soft};
+    border: 1px solid {p.accent_soft_border}; }}
 QLabel[role="dockTitleText"] {{ color: {p.text_secondary}; font-weight: 600; }}
 QMainWindow::separator {{ background: {p.border}; width: 4px; height: 4px; }}
 QMainWindow::separator:hover {{ background: {p.accent}; }}
+QFrame[role="gridGhost"] {{ background: {p.accent_soft}; border: 1px dashed {p.series};
+    border-radius: {RADIUS}px; }}
 QTabBar {{ background: {p.sidebar}; }}
 QTabBar::tab {{ background: {p.sidebar}; color: {p.text_secondary}; border: none;
     border-top: 2px solid transparent; padding: 6px 16px; }}

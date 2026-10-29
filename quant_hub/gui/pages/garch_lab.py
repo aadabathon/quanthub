@@ -22,12 +22,13 @@ from datetime import datetime, timedelta
 
 import numpy as np
 import pandas as pd
-from PySide6.QtWidgets import QHBoxLayout, QStackedWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QStackedWidget, QWidget
 
 from quant_hub.data.stats import TRADING_DAYS_PER_YEAR
 from quant_hub.tasks import TaskRunner
 from quant_hub.gui.charts import Histogram, Panel, Series, StackedTimeSeries
 from quant_hub.gui.components import (
+    CardGrid,
     Card,
     EmptyState,
     Field,
@@ -38,7 +39,7 @@ from quant_hub.gui.components import (
     button,
     form_grid,
 )
-from quant_hub.gui.pages.base import PRICE_BASES, ScrollPage, basis_field, offline_note
+from quant_hub.gui.pages.base import saved_grid, PRICE_BASES, ScrollPage, basis_field, offline_note
 from quant_hub.gui.theme import PALETTE, SIDE_PANEL_WIDTH, SPACE_L, SPACE_M
 from quant_hub.models.garch import (
     GARCH11Fit,
@@ -97,13 +98,7 @@ class GARCHLabPage(ScrollPage):
             "answer, or real market history")
         self.body.addWidget(self._header)
 
-        main = QHBoxLayout()
-        main.setSpacing(SPACE_L)
-        self.body.addLayout(main, 1)
-
-        charts = QVBoxLayout()
-        charts.setSpacing(SPACE_L)
-        main.addLayout(charts, 1)
+        grid = CardGrid()
         self._vol_card = Card("Conditional volatility", "")
         self._vol_stack = QStackedWidget()
         self._series_chart = StackedTimeSeries()
@@ -114,28 +109,23 @@ class GARCHLabPage(ScrollPage):
         self._vol_stack.setCurrentWidget(self._vol_empty)
         self._vol_stack.setMinimumHeight(380)
         self._vol_card.body.addWidget(self._vol_stack, 1)
-        charts.addWidget(self._vol_card, 3)
 
         resid_card = Card("Standardized residuals",
                           "z = (r − μ̂) / σ̂ₜ should look N(0, 1) if the model fits")
         self._residuals = Histogram()
         self._residuals.setMinimumHeight(190)
         resid_card.body.addWidget(self._residuals, 1)
-        charts.addWidget(resid_card, 2)
+        grid.add_column([("volatility", self._vol_card, 14), ("residuals", resid_card, 9)],
+                        x=0, w=9)
 
-        side = QVBoxLayout()
-        side.setSpacing(SPACE_L)
-        side_widget = QWidget()
-        side_widget.setFixedWidth(SIDE_PANEL_WIDTH)
-        side_widget.setLayout(side)
-        side.setContentsMargins(0, 0, 0, 0)
-        main.addWidget(side_widget)
-        side.addWidget(self._build_inputs(saved, names))
+        inputs = self._build_inputs(saved, names)
         stats_card = Card("Fitted process")
         self._stats = StatTable(_STAT_GROUPS)
         stats_card.body.addWidget(self._stats)
-        side.addWidget(stats_card)
-        side.addStretch(1)
+        grid.add_column([("inputs", inputs, None), ("stats", stats_card, None)],
+                        x=9, w=3, min_width=SIDE_PANEL_WIDTH)
+        self._grid = saved_grid(grid, state_store, f"{_STATE_KEY}.cards")
+        self.body.addWidget(grid, 1)
 
     # ------------------------------------------------------------- inputs
     def _build_inputs(self, saved: dict, names: list[str]) -> Card:

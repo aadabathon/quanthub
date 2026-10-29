@@ -421,6 +421,54 @@ def test_a_window_saved_off_screen_comes_back_on_one(tmp_path):
         _close(app, window)
 
 
+# ---------------------------------------------------------- card grids (D56)
+
+def test_every_page_lays_its_cards_on_a_grid(qt_app):
+    # Every module's cards can be dragged and resized: each sits on a grid,
+    # none overlaps another, and none is smaller than its content.
+    from quant_hub.gui.components import CardGrid
+    app, window = qt_app
+    for name in list(window._factories):
+        page = window.show_page(name)
+        _settle(app)
+        grids = [g for g in page.findChildren(CardGrid) if g.isVisible()]
+        assert grids, name
+        for grid in grids:
+            names = [n for n in grid._order if grid.shown_place(n) is not None]
+            places = [grid.shown_place(n) for n in names]
+            assert not any(a.overlaps(b) for i, a in enumerate(places) for b in places[i + 1:]), name
+            for card_name in names:
+                card = grid._cards[card_name]
+                hint = card.minimumSizeHint()
+                assert card.width() >= hint.width() and card.height() >= hint.height(), \
+                    (name, card_name)
+
+
+def test_a_moved_card_stays_moved_after_a_restart(tmp_path):
+    db = tmp_path / "market_data.db"
+    app, window = _open(db)
+    try:
+        window._pages["Dashboard"]._grid.move_card("watchlist", 0, 3)
+    finally:
+        _close(app, window)
+    app, window = _open(db)
+    try:
+        place = window._pages["Dashboard"]._grid.place("watchlist")
+        assert (place.x, place.y) == (0, 3)
+    finally:
+        _close(app, window)
+
+
+def test_reset_this_pages_cards(qt_app):
+    app, window = qt_app
+    grid = window.show_page("Dashboard")._grid
+    default = grid.place("watchlist")
+    grid.move_card("watchlist", 0, 3)
+    assert grid.place("watchlist") != default
+    window._top.search._commands["Reset this page's cards"]()
+    assert grid.place("watchlist") == default
+
+
 _FLOAT_VOL = r"""
 import sys, time
 from pathlib import Path
@@ -1145,6 +1193,7 @@ def test_stacked_chart_hover_moves_readout(qt_app):
     lab._days.set_text("300")
     lab._fit()
     wait_for(app, lambda: lab._stats.value_text("observations") == "300")
+    _settle(app)                      # the card grid lays out once more after a render
     chart = lab._series_chart
     before = chart._readout.text()
     viewport = chart._canvas.viewport()

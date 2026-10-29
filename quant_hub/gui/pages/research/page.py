@@ -2,14 +2,15 @@
 from datetime import date
 
 import numpy as np
-from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QVBoxLayout, QWidget
 
 from quant_hub.gui.charts import Heatmap, Panel, Series, StackedTimeSeries
 from quant_hub.gui.components import (
+    CardGrid,
     Card, DataTable, EmptyState, Field, MetricTile, PageHeader, PageStack,
     SegmentedControl, SelectField, TextArea, button, form_grid, label,
 )
-from quant_hub.gui.pages.base import PRICE_BASES, ScrollPage, basis_field
+from quant_hub.gui.pages.base import PRICE_BASES, ScrollPage, basis_field, saved_grid
 from quant_hub.gui.pages.research.history import SavedRuns
 from quant_hub.gui.pages.research.library import PaperLibrary
 from quant_hub.gui.theme import PALETTE, SIDE_PANEL_WIDTH, SPACE_L, SPACE_M
@@ -60,23 +61,18 @@ class ResearchPage(ScrollPage):
 
     def _build_experiments(self, sources):
         page = QWidget()
-        main = QHBoxLayout(page)
-        main.setContentsMargins(0, 0, 0, 0)
-        main.setSpacing(SPACE_L)
-        content = QVBoxLayout()
-        content.setSpacing(SPACE_L)
-        main.addLayout(content, 1)
-        grid = QGridLayout()
-        grid.setSpacing(SPACE_M)
+        outer = QVBoxLayout(page)
+        outer.setContentsMargins(0, 0, 0, 0)
+        grid = CardGrid()
+        outer.addWidget(grid)
         self._tiles = {"return": MetricTile("Net return", "test window"),
                        "cagr": MetricTile("CAGR", "252 sessions / year"),
                        "vol": MetricTile("Volatility", "annualized"),
                        "sharpe": MetricTile("Sharpe", "excess cash · IID SE"),
                        "drawdown": MetricTile("Max drawdown", "initial capital included"),
                        "turnover": MetricTile("Turnover", "annual · absolute notional / NAV")}
-        for i, tile in enumerate(self._tiles.values()):
-            grid.addWidget(tile, i // 3, i % 3)
-        content.addLayout(grid)
+        for i, (name, tile) in enumerate(self._tiles.items()):
+            grid.add(f"{name} tile", tile, 3 * (i % 3), 3 * (i // 3), 3)
         self._chart_card = Card("Test performance", "Run a controlled experiment or use observed daily prices")
         self._chart_stack = PageStack()
         self._chart_stack.addWidget(EmptyState("ph.flask", "Start with a control",
@@ -88,7 +84,6 @@ class ResearchPage(ScrollPage):
         self._chart_card.body.addWidget(self._chart_stack, 1)
         self._provenance = label("Close t decisions earn t → t+1. Long/cash only. Every completed run is saved.", "muted", wrap=True)
         self._chart_card.body.addWidget(self._provenance)
-        content.addWidget(self._chart_card, 1)
         evidence = Card("Evidence", "Inspect trades, training windows and the full sweep")
         tabs = SegmentedControl(["Trades", "Fits", "Robustness"], "Trades")
         self._evidence_tabs = tabs
@@ -115,22 +110,14 @@ class ResearchPage(ScrollPage):
         evidence.body.addWidget(self._detail)
         self._fit_detail = label("", "muted", wrap=True)
         evidence.body.addWidget(self._fit_detail)
-        content.addWidget(evidence)
         notes = Card("Research notes", "Record the conclusion, next test, and reasons to reject the hypothesis")
         self._notes = TextArea(placeholder="What would invalidate this result? What should be tested on untouched data?")
         self._save_notes = button("Save notes", on_click=self._save_conclusion)
         self._save_notes.setEnabled(False)
         notes.add_action(self._save_notes)
         notes.body.addWidget(self._notes)
-        content.addWidget(notes)
-
-        side = QVBoxLayout()
-        side.setContentsMargins(0, 0, 0, 0)
-        side.setSpacing(SPACE_L)
-        holder = QWidget()
-        holder.setFixedWidth(SIDE_PANEL_WIDTH)
-        holder.setLayout(side)
-        main.addWidget(holder)
+        grid.add_column([("performance", self._chart_card, 16), ("evidence", evidence, None),
+                         ("notes", notes, None)], x=0, w=9, y=6)
         self._controls = Card("Experiment", "Daily prices · explicit data and assumptions")
         mode = SegmentedControl(["Data", "Rule", "Costs"], "Data", fill=True)
         self._controls.body.addWidget(mode)
@@ -190,7 +177,6 @@ class ResearchPage(ScrollPage):
         mode.changed.connect(lambda name: form.setCurrentIndex(["Data", "Rule", "Costs"].index(name)))
         self._run_button = button("Run", "primary", "ph.play", self._run)
         self._controls.add_action(self._run_button)
-        side.addWidget(self._controls)
         self._grid_card = Card("Parameter sweep", "All trials saved · common test window")
         self._grid_lookbacks = Field("Risk / signal days · evenly spaced", "21, 42, 63", _FULL)
         self._grid_thresholds = Field("Thresholds · comma separated", "0, 0.01, 0.02", _FULL)
@@ -200,8 +186,9 @@ class ResearchPage(ScrollPage):
         self._grid_card.body.addWidget(label("This count is your assumption about independent trials; correlated configurations are not independent. Include earlier searches when interpreting evidence.", "muted", wrap=True))
         self._sweep_button = button("Run grid", icon_name="ph.squares-four", on_click=self._sweep)
         self._grid_card.body.addWidget(self._sweep_button)
-        side.addWidget(self._grid_card)
-        side.addStretch(1)
+        grid.add_column([("experiment", self._controls, None), ("sweep", self._grid_card, None)],
+                        x=9, w=3, min_width=SIDE_PANEL_WIDTH)
+        self._grid = saved_grid(grid, self._state_store, "research.cards")
         self._source.select.current_changed.connect(lambda _: self._data_mode())
         self._strategy.select.current_changed.connect(self._rule_changed)
         self._data_mode()

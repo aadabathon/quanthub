@@ -8,7 +8,8 @@ microseconds, so the short interval is free.
 
 Pages live in docks (``workspace.py``, D55). The layout and the window's
 size and place are saved in the view-state store at shutdown and restored
-at launch; Ctrl+K's "Reset layout" goes back to the default.
+at launch; Ctrl+K's "Reset layout" goes back to the default, docks and
+cards, and "Reset this page's cards" does the active page's cards only.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from PySide6.QtGui import QKeySequence, QScreen, QShortcut
 from PySide6.QtWidgets import QHBoxLayout, QMainWindow, QVBoxLayout, QWidget
 
 from quant_hub.core import Core
+from quant_hub.gui.components import CardGrid
 from quant_hub.gui.pages.base import Commands, Page, Shell
 from quant_hub.gui.sidebar import Sidebar
 from quant_hub.gui.status_bar import LogDrawer, StatusBar
@@ -85,6 +87,7 @@ class MainWindow(QMainWindow):
         self._publish_commands("pages", {
             **{f"Go to {name}": (lambda n=name: self.show_page(n)) for name in self._factories},
             "Reset layout": self.reset_layout,
+            "Reset this page's cards": self.reset_cards,
         })
 
         self._pump_timer = QTimer(self)
@@ -116,9 +119,20 @@ class MainWindow(QMainWindow):
         return self._pages[name]
 
     def reset_layout(self) -> None:
-        """The first page alone, and the window at its default size."""
+        """The first page alone, the cards of every page opened so far back
+        to the page's own layout (D56), and the window at its default size.
+        A page not opened yet keeps its saved cards until it's reset."""
         self._workspace.reset(self._first)
+        for page in self._pages.values():
+            for grid in page.findChildren(CardGrid):
+                grid.reset()
         self.apply_default_size(self.screen())
+
+    def reset_cards(self) -> None:
+        """The active page's cards back to the page's own layout."""
+        page = self._pages.get(self._workspace.active or "")
+        for grid in page.findChildren(CardGrid) if page is not None else ():
+            grid.reset()
 
     def _build_page(self, name: str) -> Page:
         page = self._factories[name](self._shell)

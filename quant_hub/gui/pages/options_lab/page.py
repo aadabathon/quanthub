@@ -15,7 +15,7 @@ from PySide6.QtWidgets import QHBoxLayout
 
 from quant_hub.tasks import TaskRunner
 from quant_hub.gui.components import PageHeader, PageStack, SegmentedControl
-from quant_hub.gui.pages.base import ScrollPage
+from quant_hub.gui.pages.base import ScrollPage, saved_grid
 from quant_hub.gui.pages.options_lab.monte_carlo import MonteCarloTab
 from quant_hub.gui.pages.options_lab.pricer import PricerTab
 from quant_hub.gui.pages.options_lab.strategy import StrategyTab
@@ -53,7 +53,9 @@ class OptionsLabPage(ScrollPage):
         self._monte_carlo = MonteCarloTab(self._pricer.inputs, tasks,
                                           saved.get("monte_carlo", {}), self._report)
         self._stack = PageStack()
-        for tab in (self._pricer, self._strategy, self._monte_carlo):
+        for name, tab in (("pricer", self._pricer), ("strategy", self._strategy),
+                          ("monte_carlo", self._monte_carlo)):
+            saved_grid(tab.grid, state_store, f"{_STATE_KEY}.{name}.cards")
             self._stack.addWidget(tab)
         index = saved.get("tab", 0)
         current = _TABS[index] if isinstance(index, int) and 0 <= index < len(_TABS) else _TABS[0]

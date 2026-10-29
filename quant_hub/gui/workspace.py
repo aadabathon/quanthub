@@ -16,8 +16,18 @@ any show, hide, move or resize of a dock schedules a *settle* one
 event-loop turn later, which calls ``on_show``/``on_hide`` for the pages
 whose state changed. A drag hides and shows a dock more than once, and by
 the settle it is back where it was, so a re-dock doesn't refresh a page
-twice. ``open_page`` settles at once, so a page's ``on_show`` has run when
-it returns (once the window is shown; before that nothing is visible).
+twice. While a mouse button is down (a drag, a splitter, a tab being
+pressed) the settle waits for its release, so a drag doesn't refresh the
+pages it passes over. ``open_page`` settles at once, so a page's
+``on_show`` has run when it returns (once the window is shown; before that
+nothing is visible).
+
+**Floating.** The float button and a double-click on the title bar float
+a page down and right of where it was, a little smaller, so it reads as a
+panel of its own (dragging it out places it under the mouse instead). The
+dock is hidden while Qt rebuilds it as a window and shown once placed;
+shown at once, the new window paints a frame of nothing first. Toggles
+closer together than ``_TOGGLE_GAP_S`` are ignored.
 
 **Lazy.** A dock is made empty, and its page is built the first time the
 dock is shown (or when ``prepare`` asks), so a restored layout doesn't
@@ -40,13 +50,14 @@ restored off every screen docks again.
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Callable
 
-from PySide6.QtCore import QByteArray, QEvent, QObject, Qt, QTimer, Signal
+from PySide6.QtCore import QByteArray, QEvent, QObject, QPoint, QRect, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QApplication, QDockWidget, QMainWindow, QWidget
 
-from quant_hub.gui.components import DockTitleBar
+from quant_hub.gui.components import DockTitleBar, set_state
 from quant_hub.gui.pages.base import Page
 
 _logger = logging.getLogger(__name__)
@@ -56,6 +67,10 @@ LAYOUT_VERSION = 1
 # only orders them; the hidden central widget leaves the docks all the room.
 _AREA = Qt.LeftDockWidgetArea
 _SETTLE_EVENTS = (QEvent.Show, QEvent.Hide, QEvent.Move, QEvent.Resize)
+_HELD_RETRY_MS = 50       # how often a settle checks whether the mouse is released
+_FLOAT_OFFSET = 48        # px down and right of the docked place: a floated page lands here
+_FLOAT_SCALE = 0.8        # of the docked size, so the app shows around it
+_TOGGLE_GAP_S = 0.35      # float toggles closer together than this are ignored
 
 
 class Workspace(QMainWindow):
@@ -87,6 +102,7 @@ class Workspace(QMainWindow):
         self._dropped: str | None = None     # the page a drag docked last, for the fit check
         self._settling = False
         self._closed = False
+        self._last_toggle = 0.0
         self._settle_timer = QTimer(self)
         self._settle_timer.setSingleShot(True)
         self._settle_timer.setInterval(0)
@@ -122,7 +138,31 @@ class Workspace(QMainWindow):
             dock.show()
         dock.raise_()
         self._set_active(name)
-        self._settle()
+        self._settle(force=True)
+
+    def toggle_floating(self, name: str) -> None:
+        """Float a page down and right of where it was, or dock it back."""
+        now = time.monotonic()
+        if now - self._last_toggle < _TOGGLE_GAP_S:
+            return
+        self._last_toggle = now
+        dock = self._docks[name]
+        if not dock.features() & QDockWidget.DockWidgetFloatable:
+            return
+        if dock.isFloating():
+            dock.hide()
+            dock.setFloating(False)              # back to where it was docked
+            dock.show()
+            dock.raise_()                        # in front of its tab group (hidden, it couldn't be)
+            self._set_active(name)
+            return
+        target = QRect(dock.mapToGlobal(QPoint(_FLOAT_OFFSET, _FLOAT_OFFSET)),
+                       QSize(int(dock.width() * _FLOAT_SCALE), int(dock.height() * _FLOAT_SCALE)))
+        dock.hide()
+        dock.setFloating(True)
+        dock.setGeometry(_onto_screen(target, dock.screen().availableGeometry()))
+        dock.show()
+        self._set_active(name)
 
     def reset(self, first: str) -> None:
         """The default layout: ``first`` alone. Pages opened later join it
@@ -190,8 +230,11 @@ class Workspace(QMainWindow):
             if name not in self._fixed:
                 features |= QDockWidget.DockWidgetFloatable
             dock.setFeatures(features)
-            dock.setTitleBarWidget(DockTitleBar(dock, self._icons[name]))
+            title = DockTitleBar(dock, self._icons[name])
+            title.float_toggled.connect(lambda n=name: self.toggle_floating(n))
+            dock.setTitleBarWidget(title)
             dock.topLevelChanged.connect(lambda floating, n=name: self._on_top_level(n, floating))
+            dock.topLevelChanged.connect(lambda floating, d=dock: set_state(d, "floating", floating))
             # Hidden until placed. A new child isn't hidden yet, just not
             # shown, so "isHidden" would mistake it for an open dock.
             dock.hide()
@@ -227,7 +270,7 @@ class Workspace(QMainWindow):
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802 (Qt override)
         if (not self._closed and event.type() in _SETTLE_EVENTS
                 and isinstance(watched, QDockWidget)):
-            self._settle_timer.start()
+            self._settle_timer.start(0)
         return super().eventFilter(watched, event)
 
     def _on_top_level(self, name: str, floating: bool) -> None:
@@ -237,7 +280,7 @@ class Workspace(QMainWindow):
             self._dropped = name
             self._docks[name].raise_()
         if not self._closed:
-            self._settle_timer.start()
+            self._settle_timer.start(0)
 
     @staticmethod
     def _can_be_seen(dock: QDockWidget) -> bool:
@@ -246,11 +289,14 @@ class Workspace(QMainWindow):
         # A back tab is parked outside the workspace, so nothing of it shows.
         return dock.isFloating() or not dock.visibleRegion().isEmpty()
 
-    def _settle(self) -> None:
+    def _settle(self, force: bool = False) -> None:
         if self._closed:
             return
         if self._settling:                       # a page's on_show navigated
-            self._settle_timer.start()
+            self._settle_timer.start(0)
+            return
+        if not force and QGuiApplication.mouseButtons() != Qt.NoButton:
+            self._settle_timer.start(_HELD_RETRY_MS)    # mid-drag: wait for the release
             return
         self._settle_timer.stop()
         self._settling = True
@@ -326,3 +372,17 @@ class Workspace(QMainWindow):
         self._dropped = None
         if window.width() > room:
             window.resize(room, window.height())
+
+
+def _onto_screen(rect: QRect, screen: QRect) -> QRect:
+    """``rect`` moved (not resized) so it lies on ``screen`` where it can."""
+    moved = QRect(rect)
+    if moved.right() > screen.right():
+        moved.moveRight(screen.right())
+    if moved.bottom() > screen.bottom():
+        moved.moveBottom(screen.bottom())
+    if moved.left() < screen.left():
+        moved.moveLeft(screen.left())
+    if moved.top() < screen.top():
+        moved.moveTop(screen.top())
+    return moved

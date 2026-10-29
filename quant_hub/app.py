@@ -58,7 +58,8 @@ def _sections(core: Core) -> PageSections:
         core.portfolio, core.market_service, core.tasks, core.state_store, core.accounts))
     valuation = ("Valuation", "ph.scales", lambda _shell: ValuationPage(
         core.valuation, core.portfolio, core.tasks, core.state_store))
-    review = ("Review", "ph.clipboard-text", lambda _shell: ReviewPage(core.review, core.tasks))
+    review = ("Review", "ph.clipboard-text", lambda _shell: ReviewPage(
+        core.review, core.tasks, core.state_store))
     research = ("Research", "ph.file-text", lambda _shell: ResearchPage(
         core.research, core.market_service, core.tasks, core.state_store))
     return [

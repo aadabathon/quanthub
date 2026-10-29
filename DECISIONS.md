@@ -1684,3 +1684,79 @@ component, and the docked-page styles in `gui/theme.py`.
   px check now opens every page as a tab, since a closed dock adds no
   width. Dragging with a mouse is Qt's own, and the tests drive the
   same moves through Qt's API.
+
+## D56 — G2: every card moves and resizes within its page (2026-10-29; amends D55 and D24)
+
+The owner tried G1. Their direction: "every card in every module should be
+snappy, resizable, and draggable", and "a good dashboard should be utterly
+customizable". Saved templates come later. Floated pages should also look
+like the panels they are.
+
+**What changes.** D55 kept cards where their page put them. Now every page
+lays its cards on a snapping grid (`gui/card_grid.py`, re-exported from
+`gui/components.py`):
+- Drag a card by any part that isn't a control. Drag its corner grip to
+  resize it. It snaps to `GRID_COLUMNS` (12) columns and `GRID_ROW` (24 px)
+  rows, with 16 px between cards.
+- A card lands at once, with no animation. While it's dragged, a dashed
+  outline shows where it will land, and the other cards make room.
+- Each page's arrangement is saved in the view-state store under
+  `<page key>.cards`, after every drop and resize (`pages.base.saved_grid`).
+- Ctrl+K's "Reset layout" also resets the cards of every page opened in
+  the session. "Reset this page's cards" resets the active page's cards.
+  A page not opened since keeps its saved cards until it's reset.
+- D24 deferred the Dashboard's configurable widgets. This is that, for
+  every page.
+
+**What stays.**
+- A card stays in its own page, and one job still fills the page, so every
+  number on it describes the same picture. Moving a card changes where it
+  sits, not what feeds it.
+- Cards don't move between pages and don't float on their own: pages do
+  (D55). G3, panels from every page with linked inputs, is still not
+  proposed.
+- A page's argument is its default layout, and a reset brings it back.
+
+**Never smaller than its content.**
+- Each card is at least its minimum size, and its height-for-width when it
+  holds wrapped text.
+- At any width the grid works out a *shown* layout from the places the user
+  chose. Each card is widened and heightened to its minimum and moved left
+  to fit. Then every card falls as high as it can without overlapping one
+  placed before it.
+- The user's places are kept, so a card widened by a narrow window shrinks
+  back when the window grows.
+- Hidden cards take no room, so a note that appears pushes the cards below
+  it down.
+- Side-panel cards keep `SIDE_PANEL_WIDTH` as their minimum, because D49's
+  wrapped notes are sized for it. On a narrow window, the side cards drop
+  below the main column.
+
+**Pages.**
+- Every page's main column becomes columns 0–8 and its side panel columns
+  9–11. Review and Valuation use 8 + 4, so that their four tiles fit.
+- Tiles are cards of their own, except the Pricer's five greeks, which
+  move as one strip because five don't share nine columns evenly.
+- Options Lab's three tabs each have a grid. The Underlying card stays
+  fixed above them, because it feeds all three. Research's Experiments tab
+  has a grid. Its History and Library tabs don't, since they are single
+  views.
+- The Dashboard and the Simulator lose their resize reflows: the grid does
+  that now.
+- A `Card` now leaves height it can't use at its bottom, so a card taller
+  than its content keeps its title and subtitle together.
+
+**Floating (G1 polish).**
+- The float button and a double-click float a page 48 px down and right of
+  where it was, at 80% of its size. Its title bar is tinted and its edge
+  drawn, so it reads as a panel of its own.
+- The dock is hidden while Qt makes it a window and shown once it's in
+  place. That removes the see-through flash the owner saw.
+- Toggles closer together than 0.35 s are ignored.
+- While a mouse button is held, page refreshes wait for its release, so a
+  drag doesn't refresh the pages it crosses.
+
+**Not done here:**
+- Templates (named layouts).
+- Cards across pages.
+- Scrolling the page while dragging a card past its edge.

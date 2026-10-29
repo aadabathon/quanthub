@@ -53,13 +53,12 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QStackedWidget,
-    QVBoxLayout,
-    QWidget,
 )
 
 from quant_hub.data.types import PriceBasis
 from quant_hub.gui.charts import Band, Histogram, Panel, Series, StackedTimeSeries
 from quant_hub.gui.components import (
+    CardGrid,
     Card,
     DataTable,
     EmptyState,
@@ -75,7 +74,7 @@ from quant_hub.gui.components import (
     label,
     metric_row,
 )
-from quant_hub.gui.pages.base import ScrollPage
+from quant_hub.gui.pages.base import ScrollPage, saved_grid
 from quant_hub.gui.theme import PALETTE, SIDE_PANEL_WIDTH, SPACE_L, SPACE_M
 from quant_hub.models.growth import ADDS, COSTS, GrowthReport, what_if
 from quant_hub.models.portfolio import InfluentialDay
@@ -159,56 +158,39 @@ class PortfolioPage(ScrollPage):
             "Portfolio", "What today's holdings could lose, and where the risk sits")
         self.body.addWidget(self._header)
 
-        main = QHBoxLayout()
-        main.setSpacing(SPACE_L)
-        self.body.addLayout(main, 1)
-        column = QVBoxLayout()
-        column.setSpacing(SPACE_L)
-        main.addLayout(column, 1)
-        column.addLayout(self._build_tiles())
-        column.addWidget(self._build_holdings())
-        column.addWidget(self._build_replay(), 1)
-        column.addWidget(self._build_losses())
-        column.addWidget(self._build_growth())
-        column.addWidget(self._build_book())
-        column.addWidget(self._build_regressions())
-        column.addWidget(self._build_rolling())
-        column.addWidget(self._build_links())
-
-        side = QVBoxLayout()
-        side.setSpacing(SPACE_L)
-        side.setContentsMargins(0, 0, 0, 0)
-        side_widget = QWidget()
-        side_widget.setFixedWidth(SIDE_PANEL_WIDTH)
-        side_widget.setLayout(side)
-        main.addWidget(side_widget)
-        side.addWidget(self._build_inputs(saved))
+        grid = CardGrid()
+        for i, (name, tile) in enumerate(self._build_tiles().items()):
+            grid.add(f"{name} tile", tile, 3 * (i % 3), 3 * (i // 3), 3)
+        grid.add_column([("holdings", self._build_holdings(), None),
+                         ("replay", self._build_replay(), 12),
+                         ("losses", self._build_losses(), None),
+                         ("growth", self._build_growth(), None),
+                         ("book", self._build_book(), None),
+                         ("regressions", self._build_regressions(), None),
+                         ("rolling", self._build_rolling(), None),
+                         ("links", self._build_links(), None)], x=0, w=9, y=6)
+        inputs = self._build_inputs(saved)
         self._warning = Note("ph.warning", tone="critical")
         self._finding = Note("ph.info", tone="info")
         for note in (self._warning, self._finding):
             note.setVisible(False)
-            side.addWidget(note)
-        side.addWidget(self._build_sizing())
-        side.addWidget(self._build_influence())
-        side.addStretch(1)
+        grid.add_column([("inputs", inputs, None), ("warning", self._warning, None),
+                         ("finding", self._finding, None), ("sizing", self._build_sizing(), None),
+                         ("influence", self._build_influence(), None)],
+                        x=9, w=3, min_width=SIDE_PANEL_WIDTH)
+        self._grid = saved_grid(grid, state_store, f"{_STATE_KEY}.cards")
+        self.body.addWidget(grid, 1)
 
     # ------------------------------------------------------------- layout
-    def _build_tiles(self) -> QGridLayout:
-        """Two rows of three: six in a row would force the page wider than
-        1280 and squeeze every number."""
-        grid = QGridLayout()
-        grid.setHorizontalSpacing(SPACE_M)
-        grid.setVerticalSpacing(SPACE_M)
+    def _build_tiles(self) -> dict[str, MetricTile]:
+        """Two rows of three by default: six in a row would force the page
+        wider than 1280 and squeeze every number."""
         self._tiles = {
             "equity": MetricTile("Equity"), "vol": MetricTile("Volatility · annual"),
             "var": MetricTile("1-day VaR · 95%"), "es": MetricTile("Expected shortfall · 99%"),
             "beta": MetricTile("Beta"), "drawdown": MetricTile("Worst drawdown"),
         }
-        for i, tile in enumerate(self._tiles.values()):
-            grid.addWidget(tile, i // 3, i % 3)
-        for col in range(3):
-            grid.setColumnStretch(col, 1)
-        return grid
+        return self._tiles
 
     def _build_holdings(self) -> Card:
         self._holdings_card = Card("Holdings by risk", "")

@@ -574,11 +574,13 @@ owner's call.
   - the Volatility Lab floats only if its WebEngine check passes
   - no new dependency; the sidebar, top bar, log drawer and status bar
     stay as they are
-- Later, and not proposed:
-  - **G2,** the Dashboard as panels the owner arranges
-  - **G3,** panels from every page with linked inputs, which would break
-    the one-job-per-page rule and needs its own design
-  - either one only if G1 shows the owner rearranges pages in practice
+- **~~G2. Every card draggable and resizable~~** (landed 2026-10-29, D56;
+  `gui/card_grid.py`): every page's cards on a snapping grid, saved per
+  page. Owner direction after trying G1, which went beyond the Dashboard.
+- Next, when the owner asks: **templates**, named layouts saved and
+  switched between.
+- Not proposed: **G3,** cards across pages with linked inputs. It would
+  break the one-job-per-page rule and needs its own design.
 
 ## Intended stack flow (architecture already accommodates this)
 

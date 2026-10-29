@@ -20,7 +20,7 @@ import logging
 import math
 
 import numpy as np
-from PySide6.QtWidgets import QBoxLayout, QHBoxLayout, QStackedWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QStackedWidget
 
 from quant_hub.config import AppConfig
 from quant_hub.data.simulation import (
@@ -34,6 +34,7 @@ from quant_hub.data.stats import SeriesAnalysis, analyze_history
 from quant_hub.tasks import TaskRunner
 from quant_hub.gui.charts import FanChart, Histogram, Panel, Series, StackedTimeSeries
 from quant_hub.gui.components import (
+    CardGrid,
     Card,
     EmptyState,
     Field,
@@ -43,7 +44,7 @@ from quant_hub.gui.components import (
     button,
     form_grid,
 )
-from quant_hub.gui.pages.base import ScrollPage
+from quant_hub.gui.pages.base import saved_grid, ScrollPage
 from quant_hub.gui.theme import FIELD_S, PALETTE, SIDE_PANEL_WIDTH, SPACE_L, SPACE_M
 from quant_hub.storage.state_store import ViewStateStore
 
@@ -53,7 +54,6 @@ _STATE_KEY = "simulator"          # shared with the Tk page
 _PATH, _MONTE_CARLO = "Sample path", "Monte Carlo"
 _LOG, _SIMPLE = "Log", "Simple"
 _HALF = (SIDE_PANEL_WIDTH - 2 * SPACE_L - SPACE_M) // 2
-_NARROW_PX = 1300   # page width below which the distribution cards stack
 
 _STAT_GROUPS = (
     ("Process", (("mu", "μ  drift"), ("sigma", "σ  volatility"), ("log_drift", "μ − σ²/2"))),
@@ -104,34 +104,21 @@ class SimulatorPage(ScrollPage):
             "Controlled GBM experiments: a known process, simulated, estimated and "
             "compared with the truth")
         self.body.addWidget(self._header)
-        main = QHBoxLayout()
-        main.setSpacing(SPACE_L)
-        self.body.addLayout(main, 1)
-
-        charts = QVBoxLayout()
-        charts.setSpacing(SPACE_L)
-        main.addLayout(charts, 1)
-        charts.addWidget(self._build_path_card(saved.get("window", str(c.default_vol_window))), 3)
-        # The two distribution cards sit side by side when there's room and
-        # stack when the window is narrow (see resizeEvent).
-        self._dist_row = QBoxLayout(QBoxLayout.LeftToRight)
-        self._dist_row.setSpacing(SPACE_L)
-        self._dist_row.addWidget(self._build_returns_card(), 1)
-        self._dist_row.addWidget(self._build_terminal_card(), 1)
-        charts.addLayout(self._dist_row, 2)
-
-        side_widget = QWidget()
-        side_widget.setFixedWidth(SIDE_PANEL_WIDTH)
-        side = QVBoxLayout(side_widget)
-        side.setContentsMargins(0, 0, 0, 0)
-        side.setSpacing(SPACE_L)
-        main.addWidget(side_widget)
-        side.addWidget(self._build_inputs(saved, c))
+        # The two distribution cards sit side by side; on a narrow page the
+        # grid drops the second below the first.
+        grid = CardGrid()
+        grid.add("path", self._build_path_card(saved.get("window", str(c.default_vol_window))),
+                 0, 0, 9, 14)
+        grid.add("returns", self._build_returns_card(), 0, 14, 5, 9)
+        grid.add("terminal", self._build_terminal_card(), 5, 14, 4, 9)
+        inputs = self._build_inputs(saved, c)
         stats_card = Card("Estimates")
         self._stats = StatTable(_STAT_GROUPS, value_header="ESTIMATE")
         stats_card.body.addWidget(self._stats)
-        side.addWidget(stats_card)
-        side.addStretch(1)
+        grid.add_column([("inputs", inputs, None), ("stats", stats_card, None)],
+                        x=9, w=3, min_width=SIDE_PANEL_WIDTH)
+        self._grid = saved_grid(grid, state_store, f"{_STATE_KEY}.cards")
+        self.body.addWidget(grid, 1)
 
     # ------------------------------------------------------------ building
     def _build_path_card(self, window: str) -> Card:
@@ -188,11 +175,6 @@ class SimulatorPage(ScrollPage):
         self._run_button = button("Run simulation", "primary", "ph.play", on_click=self._run)
         card.body.addWidget(self._run_button)
         return card
-
-    def resizeEvent(self, event) -> None:  # noqa: N802 (Qt override)
-        super().resizeEvent(event)
-        narrow = self.width() < _NARROW_PX
-        self._dist_row.setDirection(QBoxLayout.TopToBottom if narrow else QBoxLayout.LeftToRight)
 
     # ----------------------------------------------------------- lifecycle
     def on_show(self) -> None:

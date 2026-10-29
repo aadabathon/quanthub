@@ -4,10 +4,12 @@ Everything on this page is read from the SQLite store through
 ``services.workstation`` — never the network — so it is identical with IBKR
 connected or not, and it says so ("stored daily closes · not live").
 
-Layout: KPI tiles; Market explorer (price + volume of one stored series over
-a window) beside a watchlist of every stored series; then a model sandbox
-(GBM fitted to the explorer's symbol, fanned forward), the store table, and
-shortcuts to the research pages.
+Layout: a card grid (D56), so every tile and card can be dragged and
+resized, and the arrangement is saved. By default: KPI tiles; Market
+explorer (price + volume of one stored series over a window) beside a
+watchlist of every stored series; then a model sandbox (GBM fitted to the
+explorer's symbol, fanned forward), the store table, and shortcuts to the
+research pages.
 
 Threading: three kinds of TaskRunner job — the overview, a windowed history,
 and a forecast. The worker is FIFO, but the user can change symbol faster
@@ -24,7 +26,6 @@ from pathlib import Path
 
 from PySide6.QtWidgets import (
     QFileDialog,
-    QGridLayout,
     QHBoxLayout,
     QInputDialog,
     QStackedWidget,
@@ -36,6 +37,7 @@ from quant_hub.tasks import TaskRunner
 from quant_hub.gui.charts import FanChart, PriceVolumeChart, Sparkline
 from quant_hub.gui.components import (
     Card,
+    CardGrid,
     DataTable,
     ElidedLabel,
     EmptyState,
@@ -48,8 +50,8 @@ from quant_hub.gui.components import (
     button,
     label,
 )
-from quant_hub.gui.pages.base import ScrollPage, Shell
-from quant_hub.gui.theme import PALETTE, SPACE_L, SPACE_M
+from quant_hub.gui.pages.base import ScrollPage, Shell, saved_grid
+from quant_hub.gui.theme import PALETTE, SPACE_M
 from quant_hub.services.file_import import (
     FILE_SOURCE,
     FileImportService,
@@ -70,7 +72,6 @@ _logger = logging.getLogger(__name__)
 
 _STATE_KEY = "qt_dashboard"
 _FORECAST_WINDOW = "1Y"
-_NARROW_PX = 1180   # below this content width the bottom row reflows to 2 + 1
 
 _TOOLS = (
     ("ph.chart-line", "Volatility analysis", "SVI smiles, term structure, GARCH overlay",
@@ -116,38 +117,27 @@ class DashboardPage(ScrollPage):
         self._header = PageHeader("Workstation overview",
                                   "Your markets. Your models. Your edge.")
         self.body.addWidget(self._header)
-        self.body.addLayout(self._build_kpis())
 
-        top = QHBoxLayout()
-        top.setSpacing(SPACE_L)
-        top.addWidget(self._build_explorer(), 5)
-        top.addWidget(self._build_watchlist(), 2)
-        # Rows share any spare height 3:2, so the page fills a tall window
-        # and scrolls (rather than squeezes) on a short one.
-        self.body.addLayout(top, 3)
-
-        self._bottom = QGridLayout()
-        self._bottom.setHorizontalSpacing(SPACE_L)
-        self._bottom.setVerticalSpacing(SPACE_L)
-        self._sandbox = self._build_sandbox()
-        self._store_card = self._build_store_table()
-        self._tools = self._build_tools()
-        self._narrow: bool | None = None
-        self.body.addLayout(self._bottom, 2)
-        self._reflow(narrow=False)
+        grid = CardGrid()
+        for column, (name, tile) in enumerate(self._build_kpis()):
+            grid.add(name, tile, 3 * column, 0, 3)
+        grid.add("explorer", self._build_explorer(), 0, 3, 8, 12)
+        grid.add("watchlist", self._build_watchlist(), 8, 3, 4, 12)
+        self._sandbox = grid.add("sandbox", self._build_sandbox(), 0, 15, 5, 10)
+        self._store_card = grid.add("store", self._build_store_table(), 5, 15, 4, 10)
+        self._tools = grid.add("tools", self._build_tools(), 9, 15, 3, 10)
+        self._grid = saved_grid(grid, state_store, f"{_STATE_KEY}.cards")
+        self.body.addWidget(grid, 1)
 
     # ------------------------------------------------------------- building
-    def _build_kpis(self) -> QHBoxLayout:
-        row = QHBoxLayout()
-        row.setSpacing(SPACE_L)
+    def _build_kpis(self) -> list[tuple[str, KpiTile]]:
         self._kpi_series = KpiTile("ph.chart-bar", "Tracked instruments")
         self._kpi_bars = KpiTile("ph.database", "Stored market bars")
         self._kpi_synced = KpiTile("ph.calendar-blank", "Last data sync")
         self._kpi_store = KpiTile("ph.folder", "Data store")
         self._kpi_store.set_value("Local", str(self._config.db_path))
-        for tile in (self._kpi_series, self._kpi_bars, self._kpi_synced, self._kpi_store):
-            row.addWidget(tile, 1)
-        return row
+        return [("series", self._kpi_series), ("bars", self._kpi_bars),
+                ("synced", self._kpi_synced), ("store tile", self._kpi_store)]
 
     def _build_explorer(self) -> Card:
         card = Card("Market explorer", "Stored daily history · hover the chart for values")
@@ -223,29 +213,6 @@ class DashboardPage(ScrollPage):
             card.body.addWidget(row)
         card.body.addStretch(1)
         return card
-
-    def _reflow(self, narrow: bool) -> None:
-        """Three columns when wide; sandbox + store over full-width tools
-        when narrow, so the store table never truncates its date ranges."""
-        if narrow == self._narrow:
-            return
-        self._narrow = narrow
-        for widget in (self._sandbox, self._store_card, self._tools):
-            self._bottom.removeWidget(widget)
-        self._bottom.addWidget(self._sandbox, 0, 0)
-        self._bottom.addWidget(self._store_card, 0, 1)
-        if narrow:
-            self._bottom.addWidget(self._tools, 1, 0, 1, 2)
-            stretches = (1, 1, 0)
-        else:
-            self._bottom.addWidget(self._tools, 0, 2)
-            stretches = (5, 5, 3)
-        for col, stretch in enumerate(stretches):
-            self._bottom.setColumnStretch(col, stretch)
-
-    def resizeEvent(self, event) -> None:  # noqa: N802 (Qt override)
-        super().resizeEvent(event)
-        self._reflow(narrow=self.width() < _NARROW_PX)
 
     # ------------------------------------------------------------ lifecycle
     def on_show(self) -> None:

@@ -17,7 +17,7 @@ from PySide6.QtCore import QEvent, QObject, QSize, Qt, QTimer
 from PySide6.QtWidgets import QFrame, QScrollArea, QVBoxLayout, QWidget
 
 from quant_hub.data.types import PriceBasis, PriceHistory
-from quant_hub.gui.components import SelectField
+from quant_hub.gui.components import CardGrid, SelectField
 from quant_hub.gui.theme import SPACE_L, SPACE_XL
 
 Commands = dict[str, Callable[[], None]]
@@ -48,6 +48,15 @@ def basis_field(saved: dict, width: int) -> SelectField:
     field.setToolTip("Adjusted: for splits and dividends, so returns are total returns, "
                      "right for return math. Traded: the prices as they traded.")
     return field
+
+
+def saved_grid(grid: CardGrid, store, key: str) -> CardGrid:
+    """A page's card layout (D56), restored from the view-state store under
+    ``key`` and saved there after every drop and resize. Call it once every
+    card is added."""
+    grid.restore(store.load(key))
+    grid.changed.connect(lambda: store.save(key, grid.state()))
+    return grid
 
 
 def debounce(owner: QObject, fn: Callable[[], None], ms: int = LIVE_DELAY_MS) -> Callable[[], None]:

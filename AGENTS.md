@@ -119,6 +119,17 @@ window, half of a 2560 px monitor. A smoke test checks this with Windows
 fonts. Data-dependent text in a row of controls goes in an `ElidedLabel`,
 or it widens the page as the data grows.
 
+Card grids (D56, `gui/card_grid.py`):
+- **A new card goes on the page's grid** with a stable name (it keys
+  the saved layout) and a default place. Side-panel cards use
+  `add_column(..., min_width=SIDE_PANEL_WIDTH)`. Renaming a card drops
+  its saved place.
+- **No fixed widths on cards.** The grid sizes them, so a card's width
+  comes from its columns, never `setFixedWidth`.
+- **Let the grid settle in tests.** It lays out once more after content
+  changes (one event-loop turn), so a test that measures or hovers right
+  after a render calls `_settle(app)` first.
+
 Docked pages (D55, `gui/workspace.py`):
 - **Shown is the workspace's call.** Qt parks a group's back tabs outside
   the workspace instead of hiding them, so a back tab's `isVisible()` is

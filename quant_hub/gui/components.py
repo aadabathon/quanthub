@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from quant_hub.gui.card_grid import CardGrid  # noqa: F401 (pages import it from here)
 from quant_hub.gui.theme import (
     CONTROL_HEIGHT,
     DOCK_BUTTON,
@@ -169,6 +170,9 @@ class Card(QFrame):
         self.body = QVBoxLayout()
         self.body.setSpacing(SPACE_S)
         outer.addLayout(self.body, 1)
+        # Height the body can't use (a card on the grid taller than its
+        # content) collects here, not between the title and the subtitle.
+        outer.addStretch(0)
 
     def add_action(self, widget: QWidget) -> None:
         self._actions.addWidget(widget, 0, Qt.AlignTop)
@@ -819,10 +823,13 @@ class Note(QFrame):
 
 class DockTitleBar(QFrame):
     """A docked page's title bar (D55): the page's icon and name, then float
-    and close buttons. Qt's own dock handling does the rest: dragging the
-    bar moves the page, and double-clicking it floats or docks the page.
-    Mouse events the labels ignore reach the dock, which is what makes
-    that work."""
+    and close buttons. Dragging the bar moves the page: Qt's own dock drag,
+    reached by the mouse events the labels ignore. The float button and a
+    double-click emit ``float_toggled`` instead of floating the dock
+    directly, so the workspace decides where a floated page lands. While
+    the page floats, the bar is tinted, so it reads as a panel of its own."""
+
+    float_toggled = Signal()
 
     def __init__(self, dock: QDockWidget, icon_name: str) -> None:
         super().__init__()
@@ -837,7 +844,7 @@ class DockTitleBar(QFrame):
         layout.addWidget(glyph)
         layout.addWidget(label(dock.windowTitle(), "dockTitleText"))
         layout.addStretch(1)
-        self.float_button = self._tool_button(self._toggle_floating)
+        self.float_button = self._tool_button(self.float_toggled.emit)
         self.close_button = self._tool_button(dock.close)
         self.close_button.setIcon(icon("ph.x", PALETTE.text_secondary))
         self.close_button.setToolTip("Close this page")
@@ -858,13 +865,16 @@ class DockTitleBar(QFrame):
         widget.clicked.connect(lambda _checked=False: on_click())
         return widget
 
-    def _toggle_floating(self) -> None:
-        self._dock.setFloating(not self._dock.isFloating())
+    def mouseDoubleClickEvent(self, event) -> None:  # noqa: N802 (Qt override)
+        if self._dock.features() & QDockWidget.DockWidgetFloatable:
+            self.float_toggled.emit()
+        event.accept()                    # not Qt's own toggle, which floats in place
 
     def _show_floating(self, floating: bool) -> None:
         self.float_button.setIcon(icon("ph.arrow-square-in" if floating else "ph.arrow-square-out",
                                        PALETTE.text_secondary))
         self.float_button.setToolTip("Dock this page" if floating else "Float this page")
+        set_state(self, "floating", floating)
 
     def _show_features(self, features) -> None:
         self.float_button.setVisible(bool(features & QDockWidget.DockWidgetFloatable))
