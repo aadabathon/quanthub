@@ -486,8 +486,11 @@ Key properties (decisions D17–D21):
   only *marked stale* by input edits, never re-run automatically.
 - **Sizing rules.** `ScrollPage` fills the viewport and scrolls only below
   the content's minimum (its body layout opts out of height-for-width,
-  which would otherwise size pages to their *preferred* height). Tabbed
-  content uses `PageStack`, which sizes to the visible page, not the tallest.
+  which would otherwise size pages to their *preferred* height). It never
+  scrolls sideways, so it asks for its content's minimum width instead,
+  and the window's minimum width is the sidebar plus the widest page built.
+  Only the window's minimum height is fixed. Tabbed content uses
+  `PageStack`, which sizes to the visible page, not the tallest.
 
 ## Quant-module conventions (follow the GBM exemplar)
 

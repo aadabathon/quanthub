@@ -1,7 +1,20 @@
 # CURRENT_STATE.md
 
 **Update this file whenever meaningful work lands.** Last updated:
-**2026-10-25**: one rule for "one day decides the numbers" (D53). The
+**2026-10-29**: no page clips sideways any more.
+- At the window's old fixed 1100 px minimum, seven pages lost up to 171 px
+  of their right edge, the Dashboard the most.
+- Each page now asks for its content's width (`pages/base.py`), so the
+  window's minimum width follows the pages. With Windows fonts that's
+  about 1,220 px at launch and 1,256 px once every page is built.
+- The Dashboard explorer's meta line (bar size, source, bar count) elides
+  instead of widening the page. Every page now fits a 1280 px window
+  (half of a 2560 px monitor). At that width the line loses its last
+  word, which its tooltip shows.
+- Two smoke tests check this: no page clips at the window's minimum, and
+  the minimum fits 1280 px with Windows fonts.
+
+Before that, **2026-10-25**: one rule for "one day decides the numbers" (D53). The
 Portfolio and Review pages now read the same flags. A day is flagged when
 it outweighs the rest of the mix's series or of a holding's own:
 z² > n − 1. V0's |z| > 10 and W7's t(3) null are gone.

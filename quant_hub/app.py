@@ -87,7 +87,9 @@ def create_app(config: AppConfig | None = None,
     # Open at most of the screen (a workstation), capped so very large
     # monitors still get a window rather than a wall, and centered.
     available = app.primaryScreen().availableGeometry()
-    window.setMinimumSize(1100, 700)
+    # Only the height is fixed. The minimum width comes from the pages: each
+    # asks for its content's width (base.ScrollPage), so none clips.
+    window.setMinimumHeight(700)
     window.resize(min(1920, int(available.width() * 0.88)),
                   min(1240, int(available.height() * 0.88)))
     window.move(available.center() - window.rect().center())

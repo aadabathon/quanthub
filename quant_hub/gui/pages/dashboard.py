@@ -37,6 +37,7 @@ from quant_hub.gui.charts import FanChart, PriceVolumeChart, Sparkline
 from quant_hub.gui.components import (
     Card,
     DataTable,
+    ElidedLabel,
     EmptyState,
     KpiTile,
     MenuButton,
@@ -155,9 +156,10 @@ class DashboardPage(ScrollPage):
         self._symbol_box = Select()
         self._symbol_box.current_changed.connect(self._on_symbol_chosen)
         controls.addWidget(self._symbol_box)
-        self._series_meta = label("", "muted")
-        controls.addWidget(self._series_meta)
-        controls.addStretch(1)
+        # Elided, so the meta line never sets the page's minimum width. It
+        # takes the spare width that a stretch used to.
+        self._series_meta = ElidedLabel("", "muted")
+        controls.addWidget(self._series_meta, 1)
         self._windows = SegmentedControl(list(WINDOWS), self._window)
         self._windows.changed.connect(self._on_window_chosen)
         controls.addWidget(self._windows)
@@ -356,7 +358,7 @@ class DashboardPage(ScrollPage):
 
         if wanted is None:
             self._symbol = None
-            self._series_meta.setText("")
+            self._series_meta.set_full_text("")
             self._explorer_stack.setCurrentWidget(self._explorer_empty)
             self._sandbox_stack.setCurrentWidget(self._fan_empty)
             return
@@ -402,7 +404,7 @@ class DashboardPage(ScrollPage):
         snapshot = self._snapshot(self._symbol)
         summary = snapshot.summary
         self._loaded_key = (summary.symbol, summary.n_bars, summary.last)
-        self._series_meta.setText(
+        self._series_meta.set_full_text(
             f"{summary.bar_size} · {summary.source.upper()} · {summary.n_bars:,} bars")
         self._token += 1
         token = self._token
