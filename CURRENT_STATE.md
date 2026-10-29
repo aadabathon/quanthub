@@ -24,6 +24,26 @@ and resized.
 - Not tested: dragging a card past the visible edge (the page doesn't
   scroll yet).
 
+Also **2026-10-29**: allocation research on the owner's book, and
+[ALLOCATION_PLAN.md](ALLOCATION_PLAN.md) proposed. No app code changed.
+- **Three proposals, none with code yet:** TARGET_PLAN (a β target from
+  valuation and volatility), BUDGET_PLAN (a Treynor–Black risk budget),
+  and ALLOCATION_PLAN (comparing allocations, and the rules a core needs).
+- **The research is scratch scripts,** local and gitignored because they
+  name holdings: `spikes/target/` (timing rules on 1926–2026 public data)
+  and `spikes/whatif/` (weight vectors through `PortfolioService.analyse`).
+  - Adding β as volatility rose lowered risk-adjusted returns.
+  - The excess CAPE yield's level helped. So did vol targeting.
+  - Both survived a family-wise test across the 31 rules tried.
+- **Known limits found** (ALLOCATION_PLAN's findings):
+  - Section 4 grades an index fund like a single stock.
+  - Sizes are checked per holding only.
+  - The drawdown rule reads only the replayed lookback, which here held
+    no crash.
+  - A spend-the-cash rule can't be expressed.
+  - A what-if import leaves a permanent snapshot.
+  - Importing one export under two layouts drafted a phantom trade.
+
 Earlier the same day, G1 landed (D55): pages are docks.
 - Each page sits in one Qt dock (`gui/workspace.py`). Drag a page's title
   bar to put it beside another, onto its tabs, or out on its own (the
