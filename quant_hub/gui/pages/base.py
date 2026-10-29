@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from PySide6.QtCore import QObject, Qt, QTimer
+from PySide6.QtCore import QEvent, QObject, QSize, Qt, QTimer
 from PySide6.QtWidgets import QFrame, QScrollArea, QVBoxLayout, QWidget
 
 from quant_hub.data.types import PriceBasis, PriceHistory
@@ -93,15 +93,51 @@ class _BodyLayout(QVBoxLayout):
         return False
 
 
+class _PageScroll(QScrollArea):
+    """A ``ScrollPage``'s scroll area. It scrolls only vertically, so content
+    wider than the page would lose its right edge. Instead it asks for the
+    content's minimum width (plus the vertical scroll bar's), and the window
+    can't shrink below it. A plain QScrollArea's minimum ignores its content.
+
+    The content re-lays out on every label update. Its minimum is passed up
+    to the window only when it changes."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._content_width = 0
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802 (Qt override)
+        hint = super().minimumSizeHint()
+        return QSize(max(hint.width(), self._needed_width()), hint.height())
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802 (Qt override)
+        # setWidget installed this filter on the content. A LayoutRequest
+        # there means its minimum may have changed.
+        if watched is self.widget() and event.type() == QEvent.LayoutRequest:
+            width = self._needed_width()
+            if width != self._content_width:
+                self._content_width = width
+                self.updateGeometry()
+        return super().eventFilter(watched, event)
+
+    def _needed_width(self) -> int:
+        content = self.widget()
+        if content is None:
+            return 0
+        return (content.minimumSizeHint().width()
+                + self.verticalScrollBar().sizeHint().width() + 2 * self.frameWidth())
+
+
 class ScrollPage(Page):
     """A page whose content scrolls vertically instead of clipping when the
-    window is short. Build content into ``self.body``."""
+    window is short. The window can't be narrower than the content, so
+    nothing clips sideways either. Build content into ``self.body``."""
 
     def __init__(self) -> None:
         super().__init__()
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
-        scroll = QScrollArea()
+        scroll = _PageScroll()
         scroll.setObjectName("pageScroll")
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)

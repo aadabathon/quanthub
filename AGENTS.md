@@ -112,7 +112,11 @@ sets its own minimum height (D49). Check a new page's geometry (each
 card's height against its `minimumSizeHint`, each table's columns against
 its viewport) as well as its pixels. `DataTable.balance_columns` never
 shrinks a column below its natural width; pin long text columns with
-`fix_column` so they elide.
+`fix_column` so they elide. A page's minimum width sets the window's
+(the sidebar plus the widest page built), so keep every page within a
+1280 px window, half of a 2560 px monitor. A smoke test checks this with
+Windows fonts. Data-dependent text in a row of controls goes in an
+`ElidedLabel`, or it widens the page as the data grows.
 
 Qt WebEngine (the 3D surface, D32):
 - **Load order.** Import `QtWebEngineWidgets` before the `QApplication`

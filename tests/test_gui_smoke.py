@@ -141,6 +141,82 @@ def test_every_page_builds(qt_app):
         assert window._stack.currentWidget() is page
 
 
+def test_no_page_clips_at_the_windows_minimum_width(qt_app):
+    # Pages scroll only vertically, so content wider than the page would
+    # lose its right edge. Each page asks for its content's width instead,
+    # and the window can't shrink below the widest page built.
+    from PySide6.QtWidgets import QScrollArea, QWidget
+    app, window = qt_app
+    for name in list(window._factories):
+        window.show_page(name)
+        app.processEvents()
+    window.resize(window.minimumSize())
+    app.processEvents()
+    for name, page in window._pages.items():
+        window.show_page(name)
+        app.processEvents()
+        body = page.findChild(QWidget, "pageBody")
+        viewport = page.findChild(QScrollArea, "pageScroll").viewport()
+        assert body.width() <= viewport.width(), name
+
+
+_MIN_WIDTH = r"""
+import sys, time
+from pathlib import Path
+import numpy as np, pandas as pd
+from quant_hub.app import create_app
+from quant_hub.config import AppConfig
+from quant_hub.storage.bar_store import BarStore, InstrumentKey
+folder = Path(sys.argv[1])
+store = BarStore(folder / "market_data.db")
+dates = pd.bdate_range("2025-01-02", periods=300)
+closes = np.linspace(50.0, 60.0, len(dates))
+store.insert_bars(InstrumentKey("AAA"), "ibkr", "1 day", pd.DataFrame(
+    {"open": closes, "high": closes, "low": closes, "close": closes,
+     "volume": np.full(len(dates), 2e6)}, index=dates))
+store.close()
+app, window = create_app(AppConfig(db_path=folder / "market_data.db", ibkr_enabled=False,
+                                   default_symbol="AAA", regime_path=folder / "REGIME.md"),
+                         argv=["test"])
+window.show()
+dash = window._pages["Dashboard"]
+deadline = time.perf_counter() + 30
+while not dash._series_meta.full_text():
+    if time.perf_counter() > deadline:
+        print("timed out"); sys.exit(1)
+    app.processEvents(); time.sleep(0.005)
+for name in list(window._factories):
+    window.prepare_page(name)
+app.processEvents()
+print(f"RESULT: {window.minimumWidth()}")
+app.aboutToQuit.emit()
+"""
+
+
+def test_every_page_fits_a_1280_px_window_with_windows_fonts(tmp_path):
+    # 1280 px is half of a 2560 px monitor, so a window snapped to half the
+    # screen shows every page whole. The Dashboard charts a stored series
+    # (its meta line once set the width); the other pages are built but not
+    # shown, so this is their layouts' own width. Only real fonts give real
+    # widths (the offscreen fallback font is much wider), so it runs in its
+    # own process with Windows' fonts, and skips where there are none.
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    fonts = Path("C:/Windows/Fonts")
+    if not fonts.is_dir():
+        pytest.skip("needs the Windows fonts")
+    result = subprocess.run(
+        [sys.executable, "-c", _MIN_WIDTH, str(tmp_path)],
+        capture_output=True, text=True, timeout=180,
+        env={**os.environ, "QT_QPA_PLATFORM": "offscreen", "QT_QPA_FONTDIR": str(fonts)})
+    width = next((int(line[len("RESULT: "):]) for line in result.stdout.splitlines()
+                  if line.startswith("RESULT: ")), None)
+    assert width is not None, result.stdout + result.stderr
+    assert width <= 1280
+
+
 def test_research_runs_saves_reopens_and_retains_the_whole_grid(qt_app):
     app, window = qt_app
     page = window.show_page("Research")
