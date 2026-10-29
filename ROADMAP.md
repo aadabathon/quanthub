@@ -551,6 +551,35 @@ Each milestone needs approval before it starts:
 - **E5. The runner on paper:** shortfall and tracking measured.
 - **E6. Live:** its own decision, a dedicated account, small capital.
 
+## Proposed — pages as docks (G1, 2026-10-27, D55)
+
+The owner asked whether the whole app could be widgets they drag and drop.
+D55 proposes an answer: whole pages dock, and cards stay in their pages.
+D24 deferred drag-and-drop and saved layouts on purpose. G1 lifts that
+deferral for pages only. Nothing here is approved yet.
+
+G1 touches only `gui/` and `app.py`'s window sizing. It doesn't depend on
+the execution track or on LENS_PLAN, so where it sits in the order is the
+owner's call.
+
+- **G1. Pages as docks** (proposed):
+  - each page is one Qt dock: side by side, tabbed, or floating on the
+    second monitor
+  - the layout and the window's geometry are saved in the view-state
+    store, and Ctrl+K gains Reset layout
+  - a page is never narrower than its content: pages already ask for
+    their content's width (2026-10-29), and docks keep that
+  - `on_show`/`on_hide` follow visibility, and shutdown saves every
+    visible page
+  - the Volatility Lab floats only if its WebEngine check passes
+  - no new dependency; the sidebar, top bar, log drawer and status bar
+    stay as they are
+- Later, and not proposed:
+  - **G2,** the Dashboard as panels the owner arranges
+  - **G3,** panels from every page with linked inputs, which would break
+    the one-job-per-page rule and needs its own design
+  - either one only if G1 shows the owner rearranges pages in practice
+
 ## Intended stack flow (architecture already accommodates this)
 
 ```
