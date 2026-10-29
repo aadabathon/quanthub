@@ -84,15 +84,12 @@ def create_app(config: AppConfig | None = None,
     # This does not call on_show: no chain fetch or fit starts at launch.
     window.prepare_page("Volatility Lab")
     window.status.set_store_state("Local store ready", ok=True)
-    # Open at most of the screen (a workstation), capped so very large
-    # monitors still get a window rather than a wall, and centered.
-    available = app.primaryScreen().availableGeometry()
     # Only the height is fixed. The minimum width comes from the pages: each
     # asks for its content's width (base.ScrollPage), so none clips.
     window.setMinimumHeight(700)
-    window.resize(min(1920, int(available.width() * 0.88)),
-                  min(1240, int(available.height() * 0.88)))
-    window.move(available.center() - window.rect().center())
+    # Where the window was last time, or the default size on the main screen.
+    if not window.restore_geometry():
+        window.apply_default_size(app.primaryScreen())
 
     def on_quit() -> None:
         # One-shot: QApplication is a process singleton, so a later

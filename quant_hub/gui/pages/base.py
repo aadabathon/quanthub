@@ -3,7 +3,9 @@
 Pages are normally created on first navigation and stay alive, so their
 state survives switching (as in the Tk ``View``). The Volatility Lab is
 prepared before the main window is shown for WebEngine's graphics setup
-(D40). ``on_show``/``on_hide`` bracket visits: refresh on show, persist on hide.
+(D40). ``on_show``/``on_hide`` bracket the time a page can be seen: refresh
+on show, persist on hide. Pages live in docks (D55), so several can be shown
+at once.
 """
 
 from __future__ import annotations
@@ -80,7 +82,8 @@ class Page(QWidget):
         """Called each time the page becomes visible."""
 
     def on_hide(self) -> None:
-        """Called when another page replaces this one, and at shutdown."""
+        """Called when the page stops being visible (closed, or another tab
+        in front of it), and at shutdown."""
 
 
 class _BodyLayout(QVBoxLayout):

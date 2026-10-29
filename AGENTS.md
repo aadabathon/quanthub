@@ -112,11 +112,26 @@ sets its own minimum height (D49). Check a new page's geometry (each
 card's height against its `minimumSizeHint`, each table's columns against
 its viewport) as well as its pixels. `DataTable.balance_columns` never
 shrinks a column below its natural width; pin long text columns with
-`fix_column` so they elide. A page's minimum width sets the window's
-(the sidebar plus the widest page built), so keep every page within a
-1280 px window, half of a 2560 px monitor. A smoke test checks this with
-Windows fonts. Data-dependent text in a row of controls goes in an
-`ElidedLabel`, or it widens the page as the data grows.
+`fix_column` so they elide. A page's minimum width sets the window's:
+the sidebar plus the open pages, where a tab group needs its widest page
+and groups side by side add up. So keep every page within a 1280 px
+window, half of a 2560 px monitor. A smoke test checks this with Windows
+fonts. Data-dependent text in a row of controls goes in an `ElidedLabel`,
+or it widens the page as the data grows.
+
+Docked pages (D55, `gui/workspace.py`):
+- **Shown is the workspace's call.** Qt parks a group's back tabs outside
+  the workspace instead of hiding them, so a back tab's `isVisible()` is
+  true. Ask `window._workspace.shown()`.
+- **Navigate with `show_page`.** It opens a closed page as a tab of the
+  active one, and it has run the page's `on_show` when it returns (once the
+  window is shown).
+- **Splits in tests.** Split a page that's alone or the front tab
+  (`splitDockWidget(left, right)` right after `show_page(right)`). Qt nests
+  a split of a back tab inside the tab group, which leaves a page that's
+  neither a tab nor beside the others. Offscreen, the screen is 800 px and
+  every page is wider, so the fit check turns any split into a tab. Tests
+  that need pages side by side give it a wide screen (`_wide_screen`).
 
 Qt WebEngine (the 3D surface, D32):
 - **Load order.** Import `QtWebEngineWidgets` before the `QApplication`

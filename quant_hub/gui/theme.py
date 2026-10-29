@@ -92,6 +92,8 @@ FIELD_S = 88         # short numbers (alpha, seed, days)
 FIELD_M = 128        # symbols, sources, most numbers
 FIELD_L = 176        # free text
 SIDE_PANEL_WIDTH = 340   # right-hand inspector column on every page
+DOCK_TITLE_HEIGHT = 30   # a docked page's title bar (D55)
+DOCK_BUTTON = 24         # its float and close buttons, square
 
 
 def font_family(preferred: str) -> str:
@@ -186,6 +188,18 @@ QFrame#sidebar {{ background: {p.sidebar}; border-right: 1px solid {p.border}; }
 QFrame#topBar {{ background: {p.page}; border-bottom: 1px solid {p.border}; }}
 QFrame#statusBar {{ background: {p.sidebar}; border-top: 1px solid {p.border}; }}
 QFrame#logDrawer {{ background: {p.sidebar}; border-top: 1px solid {p.border}; }}
+
+/* ---- docked pages (D55): title bars, splitters, tab strips ------------- */
+QDockWidget {{ background: {p.page}; border: none; }}
+QFrame[role="dockTitle"] {{ background: {p.sidebar}; border-bottom: 1px solid {p.border}; }}
+QLabel[role="dockTitleText"] {{ color: {p.text_secondary}; font-weight: 600; }}
+QMainWindow::separator {{ background: {p.border}; width: 4px; height: 4px; }}
+QMainWindow::separator:hover {{ background: {p.accent}; }}
+QTabBar {{ background: {p.sidebar}; }}
+QTabBar::tab {{ background: {p.sidebar}; color: {p.text_secondary}; border: none;
+    border-top: 2px solid transparent; padding: 6px 16px; }}
+QTabBar::tab:hover {{ background: {p.hover}; color: {p.text}; }}
+QTabBar::tab:selected {{ background: {p.page}; color: {p.text}; border-top-color: {p.accent}; }}
 
 QPushButton[nav="true"] {{ background: transparent; border: 1px solid transparent;
     border-radius: {RADIUS_S}px; padding: 9px 12px; text-align: left; font-size: 14px;

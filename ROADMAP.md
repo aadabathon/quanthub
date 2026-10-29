@@ -551,18 +551,18 @@ Each milestone needs approval before it starts:
 - **E5. The runner on paper:** shortfall and tracking measured.
 - **E6. Live:** its own decision, a dedicated account, small capital.
 
-## Proposed — pages as docks (G1, 2026-10-27, D55)
+## Pages as docks (G1, approved and landed 2026-10-29, D55)
 
 The owner asked whether the whole app could be widgets they drag and drop.
 D55 proposes an answer: whole pages dock, and cards stay in their pages.
 D24 deferred drag-and-drop and saved layouts on purpose. G1 lifts that
-deferral for pages only. Nothing here is approved yet.
+deferral for pages only.
 
 G1 touches only `gui/` and `app.py`'s window sizing. It doesn't depend on
 the execution track or on LENS_PLAN, so where it sits in the order is the
 owner's call.
 
-- **G1. Pages as docks** (proposed):
+- **~~G1. Pages as docks~~** (landed 2026-10-29, D55; `gui/workspace.py`):
   - each page is one Qt dock: side by side, tabbed, or floating on the
     second monitor
   - the layout and the window's geometry are saved in the view-state

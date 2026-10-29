@@ -1544,10 +1544,11 @@ Positions carry no request id, so:
   local, masks ids and amounts by default. It waits on the owner's paper
   login and TWS.
 
-## D55 — G1: pages dock; cards stay in their page (proposed 2026-10-27; amends D24)
+## D55 — G1: pages dock; cards stay in their page (2026-10-27; amends D24)
 
-**Proposed, not approved.** This entry takes effect when the owner approves
-G1. No code changes before then.
+Proposed 2026-10-27. Approved 2026-10-29, when the owner said to carry on
+until done, and G1 landed the same day. What building it settled is at the
+end, under "As built".
 
 The owner asked whether everything could be widget-based: drag and drop,
 and snappy. D24 deferred the configurable-widget system, drag-and-drop and
@@ -1627,6 +1628,9 @@ The Dashboard's widget system stays deferred.
 - The Volatility Lab may float only if, after floating and docking back,
   the surface still draws and the main window isn't recreated. Otherwise
   its dock tabs and splits but doesn't float.
+- It passed, on the owner's display (2026-10-29): it redraws floating and
+  docked again, and the main window keeps its native window. So no page
+  is fixed (`main_window.FIXED_PAGES` is empty).
 - It's still prepared before the window's first show (D40).
 
 **One worker stays (D9).**
@@ -1653,3 +1657,30 @@ The Dashboard's widget system stays deferred.
 
 **Not done here:** cards that move, several named layouts, more workers.
 `CURRENT_STATE.md` records G1 when it lands.
+
+**As built (2026-10-29).** `gui/workspace.py`, the `DockTitleBar`
+component, and the docked-page styles in `gui/theme.py`.
+- **Qt doesn't hide back tabs.** It parks them outside the workspace,
+  still "visible", and `visibilityChanged` misfires when a dock floats.
+  So the workspace decides: a page is shown when its dock is open and it
+  floats or something of it is on screen. A dock's show, hide, move or
+  resize events schedule the settle. Check `Workspace.shown()`, not a
+  page's `isVisible()`.
+- **A drop that doesn't fit becomes a tab.** Qt grows the window for a
+  split, even past the screen (1600 → 2100 px in a test). When pages side
+  by side need more than the screen's width, the page dropped last joins
+  the active page's tabs. After a restore onto a smaller screen, every
+  docked page joins one group.
+- **A page docked back comes to the front.** Qt files it back behind its
+  old group's front tab, where it would be hidden.
+- **Snappy:** drops aren't animated, and pages build the first time
+  they're shown, so a restored layout doesn't build them all at launch.
+- **Small rules:** the last open page has no close button. The
+  workspace has no context menu, since Qt's would show docks outside
+  these rules. Tabs sit under a group, so the title bar stays the drag
+  handle.
+- **Tested:** the D55 list, plus a page docked back comes to the front,
+  and a layout from another version falls back to the default. The 1280
+  px check now opens every page as a tab, since a closed dock adds no
+  width. Dragging with a mouse is Qt's own, and the tests drive the
+  same moves through Qt's API.
