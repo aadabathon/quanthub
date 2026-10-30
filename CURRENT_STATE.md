@@ -1162,3 +1162,17 @@ pytest. Environment:
        installed (it needs IBKR's license accepted).
        `spikes/e1_check.py` (local) does the read-only check: by default
        it masks account ids and hides amounts.
+   - **Proposed, 2026-10-29: [SLEEVE_PLAN.md](SLEEVE_PLAN.md).** The owner
+     asked to redefine the track: an active sleeve of 5–15%, built from
+     themes they write and traded inside them by a machine. Options,
+     shorts and futures are in scope, and an LLM can be an engine.
+     - It would amend D52's scope and replace E4–E6 with S1–S7. E2 and E3
+       stay, with E2's order types covering every instrument from the
+       start.
+     - A scratch test on 1926–2026 public data
+       (`spikes/target/sleeves.py`, gitignored):
+       - turn-of-month alpha is gone since 2008
+       - the pre-holiday edge is eaten by commissions at small size
+       - trend survived publication
+     - No app code. It waits on the owner's approval and its eight
+       decisions.
