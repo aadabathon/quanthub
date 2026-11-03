@@ -54,7 +54,7 @@ from __future__ import annotations
 import logging
 import math
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -63,6 +63,7 @@ import pandas as pd
 
 from quant_hub.data.positions import Holding, Position, PositionSnapshot
 from quant_hub.data.ranges import weekdays_missed
+from quant_hub.data.splits import SplitGap
 from quant_hub.data.types import PriceBasis
 from quant_hub.importers.positions_csv import read_positions_files
 from quant_hub.models.portfolio import (
@@ -176,6 +177,8 @@ class PortfolioView:
     returns: pd.DataFrame | None = None  # the risk model's daily returns, benchmark included
     offline_reason: str | None = None   # set when prices came from the store (V0)
     sessions_missed: int = 0            # weekday sessions since the data's last day
+    # overnight gaps the size of a stock split, by symbol (D57): named, not repaired
+    split_gaps: Mapping[str, tuple[SplitGap, ...]] = field(default_factory=dict)
 
     @property
     def equity(self) -> float:
@@ -227,6 +230,7 @@ class PortfolioService:
         underlyings = sorted({p.symbol for p in positions if p.kind is Holding.EQUITY}
                              | {p.option.underlying for p in positions if p.option})
         closes, basis, offline = {}, PriceBasis.ADJUSTED, None
+        gaps: dict[str, tuple[SplitGap, ...]] = {}
         for symbol in [*underlyings, benchmark]:
             try:
                 history = self._market.get_return_history(symbol, start, now, source=source)
@@ -243,6 +247,8 @@ class PortfolioService:
                     left_out.append(reason)
                 continue
             closes[symbol] = history.closes
+            if history.split_gaps:
+                gaps[symbol] = history.split_gaps
             if history.basis is PriceBasis.TRADED:
                 basis = PriceBasis.TRADED
             offline = offline or history.offline_reason
@@ -341,7 +347,8 @@ class PortfolioService:
                              tuple(left_out), unmodelled / equity, len(options),
                              regressions, regression_note, growth, growth_note,
                              book_greeks(options) if options else None, returns,
-                             offline_reason=offline, sessions_missed=missed)
+                             offline_reason=offline, sessions_missed=missed,
+                             split_gaps=gaps)
 
 
 def _growth(report: RiskReport, rate: float,

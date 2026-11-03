@@ -10,12 +10,13 @@ at once.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 from PySide6.QtCore import QEvent, QObject, QSize, Qt, QTimer
 from PySide6.QtWidgets import QFrame, QScrollArea, QVBoxLayout, QWidget
 
+from quant_hub.data.splits import SplitGap
 from quant_hub.data.types import PriceBasis, PriceHistory
 from quant_hub.gui.components import CardGrid, SelectField
 from quant_hub.gui.theme import SPACE_L, SPACE_XL
@@ -31,12 +32,32 @@ LIVE_DELAY_MS = 150
 PRICE_BASES = {"Adjusted": PriceBasis.ADJUSTED, "Traded": PriceBasis.TRADED}
 
 
-def offline_note(history: PriceHistory) -> str:
-    """" · offline, stored through <day>" for a history the source served
-    from its store (V0), else "": appended wherever a page names its data."""
-    if history.offline_reason is None:
-        return ""
-    return f" · offline, stored bars through {history.end:%b %d, %Y}"
+def history_note(history: PriceHistory) -> str:
+    """What a page appends wherever it names its data, else "":
+    " · offline, stored bars through <day>" for a history the source served
+    from its store (V0), and " · split-sized gap <day>" for each overnight
+    gap the size of a stock split (D57)."""
+    note = ""
+    if history.offline_reason is not None:
+        note += f" · offline, stored bars through {history.end:%b %d, %Y}"
+    gaps = history.split_gaps
+    if len(gaps) == 1:
+        note += f" · split-sized gap {gaps[0].day:%b %d, %Y}: check it"
+    elif gaps:
+        note += (f" · {len(gaps)} split-sized gaps, {gaps[0].day:%b %d, %Y} to "
+                 f"{gaps[-1].day:%b %d, %Y}: check them")
+    return note
+
+
+def split_warning(symbol: str, gaps: Sequence[SplitGap]) -> str:
+    """One sentence naming ``symbol``'s split-sized gaps (D57), for a page's
+    warnings."""
+    days = "; ".join(f"×{g.gap:.2f} on {g.day:%b %d, %Y} ({g.ratio})" for g in gaps[:3])
+    more = f"; and {len(gaps) - 3} more" if len(gaps) > 3 else ""
+    what = ("an overnight gap the size of a stock split" if len(gaps) == 1 else
+            f"{len(gaps)} overnight gaps the size of a stock split")
+    return (f"{symbol} has {what}: {days}{more}. Some older IBKR history isn't "
+            "split-adjusted, so check before trusting numbers that include it.")
 
 
 def basis_field(saved: dict, width: int) -> SelectField:

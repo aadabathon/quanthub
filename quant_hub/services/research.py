@@ -136,6 +136,10 @@ class ResearchService:
         offline = next((h.offline_reason for h in histories if h.offline_reason), None)
         if offline:                     # stored bars, served while the source was offline (V0)
             provenance["offline"] = offline
+        gaps = {s: [[g.day.date().isoformat(), round(g.gap, 4), g.ratio] for g in h.split_gaps]
+                for h, s in zip(histories, experiment.symbols) if h.split_gaps}
+        if gaps:                        # overnight gaps the size of a split, named not repaired (D57)
+            provenance["split_gaps"] = gaps
         return prices, provenance
 
     def run(self, experiment: Experiment, *, prices: pd.DataFrame | None = None,

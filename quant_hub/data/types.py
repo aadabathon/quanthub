@@ -21,6 +21,8 @@ the source (D23):
 
 Both are adjusted backward from the present, so the latest prices are the
 same in each; they differ by a factor that steps at each ex-dividend date.
+Some of IBKR's older history isn't split-adjusted in either basis (D57):
+``PriceHistory.split_gaps`` names the overnight gaps the size of a split.
 """
 
 from __future__ import annotations
@@ -31,6 +33,8 @@ from enum import Enum
 
 import numpy as np
 import pandas as pd
+
+from quant_hub.data.splits import SplitGap, split_gaps
 
 REQUIRED_COLUMNS = ("close",)
 OPTIONAL_COLUMNS = ("open", "high", "low", "volume")
@@ -144,6 +148,13 @@ class PriceHistory:
     @property
     def end(self) -> datetime:
         return self.frame.index[-1].to_pydatetime()
+
+    @property
+    def split_gaps(self) -> tuple[SplitGap, ...]:
+        """Overnight gaps the size of a stock split: probably a split the
+        source left unadjusted (``data/splits.py``, D57). Callers name them;
+        nothing rescales the prices."""
+        return split_gaps(self.frame)
 
     def simple_returns(self) -> pd.Series:
         """Period-over-period simple returns r_t = S_t / S_{t-1} - 1."""
