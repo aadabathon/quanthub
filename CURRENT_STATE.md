@@ -1,7 +1,38 @@
 # CURRENT_STATE.md
 
 **Update this file whenever meaningful work lands.** Last updated:
-**2026-10-29**: G2 landed (D56): every card on every page can be dragged
+**2026-11-02**: the literature canon and its timeline landed (D58,
+LITERATURE_PLAN Lit-1 and Lit-2).
+- Research has a **Timeline** tab: 221 papers on 12 strand lanes, from
+  Bernoulli (1738) and Bachelier (1900) to 2024, with 320 typed links.
+  Drag to move through time, scroll to zoom, click a dot or chip for the
+  paper's card, double-click to open it.
+- Dots are filled when the paper lives in your code (36 do) and hollow when
+  it doesn't. Chips show ✓ for papers you've read. Picking a paper draws
+  its links, with critiques in orange.
+- The card shows the question, what changed, what it assumed, links both
+  ways, the modules, your reading status, and Open PDF / Open source /
+  Attach PDF.
+- The canon is JSON in `quant_hub/data/canon/`, checked by
+  `data/literature.py`. It replaces the five D42 seeds under the same ids,
+  so existing notes and PDFs stay attached. The Papers tab lists it too,
+  with canon metadata read-only.
+- Every DOI was checked against Crossref (210) or arXiv (1) for title,
+  first author and year when the canon was written. Ten entries have no
+  registered identifier and say so. The app itself makes no network calls
+  for this.
+- A test fails if a `models/` module has no paper behind it (three
+  exemptions, listed in the test).
+- Tested: the canon's rules on toy canons, coverage, the axis, spread and
+  label packing, the merge with the store, and a GUI smoke test. Checked
+  by eye in offscreen screenshots at 1440×1000 and 1600×1080: the full
+  view, a zoom, a selection and a search.
+- Not tested: on the owner's display with real mouse drags; the PDF and
+  source buttons opening files (only the calls are made).
+- Not done: Lit-3 to Lit-6 (the in-app resolver, LLM proposals, the feed
+  of new papers, reading paths).
+
+Also **2026-10-29**: G2 landed (D56): every card on every page can be dragged
 and resized.
 - Each page lays its cards on a snapping 12-column grid
   (`gui/card_grid.py`). Drag a card by its title or padding to move it,

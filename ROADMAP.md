@@ -582,6 +582,27 @@ owner's call.
 - Not proposed: **G3,** cards across pages with linked inputs. It would
   break the one-job-per-page rule and needs its own design.
 
+## Literature track ([LITERATURE_PLAN.md](LITERATURE_PLAN.md); Lit-1 and Lit-2 landed 2026-11-02, D58)
+
+A timeline of quant finance in its papers, each one tied to the modules
+that implement it. Read-only, no new dependencies.
+
+- **~~Lit-0. The spec~~**: the plan's format section, implemented in
+  `data/literature.py`.
+- **~~Lit-1. The canon~~** (D58): 221 papers in 12 strands, 1738–2024,
+  each DOI checked against Crossref or arXiv when written. A test makes
+  every `models/` module cite one.
+- **~~Lit-2. The timeline~~** (D58): Research's Timeline tab, with the paper
+  inspector.
+- **Lit-3. The resolver:** Crossref, arXiv and OpenAlex providers, each
+  terms-checked first (D34).
+- **Lit-4. LLM proposals:** proposal files checked by the resolver into
+  an inbox you triage.
+- **Lit-5. What's new:** recent papers ranked by how many canon papers
+  they cite.
+- **Lit-6. Reading paths:** a paper's ancestors in order, and
+  replication status.
+
 ## Intended stack flow (architecture already accommodates this)
 
 ```

@@ -1760,3 +1760,90 @@ lays its cards on a snapping grid (`gui/card_grid.py`, re-exported from
 - Templates (named layouts).
 - Cards across pages.
 - Scrolling the page while dragging a card past its edge.
+
+## D58 — Lit-1 and Lit-2: the literature canon and its timeline (2026-11-02)
+
+The owner's direction: "construct the entire timeline of quant finance in
+literature and make a cool graphic on the research page … a nice timeline
+and you can open the papers with little widgets on the timeline." That
+approves LITERATURE_PLAN's Lit-1 (the spine) and Lit-2 (the view) together,
+and takes the plan's recommended answers to its open decisions.
+
+**The canon (Lit-1).**
+- 221 papers in 12 strands, from Bernoulli (1738, translated 1954) and
+  Bachelier (1900) to 2024, with 320 typed links. It's package data in
+  `quant_hub/data/canon/`: `timeline.json` (the strands' order, the eras)
+  and one file per strand.
+- **One file per strand, not per paper** (the plan said per paper). A
+  strand reads as a story in one file, and 221 tiny files would bury the
+  diffs. Promotion from an inbox (Lit-4/5) can still append to a file.
+- **12 lanes, not 8.** The plan's eight left out rates and credit,
+  microstructure, risk measurement and machine learning, which the
+  "entire timeline" needs.
+- `data/literature.py` holds the records and the rules: unique ids, known
+  strands and link kinds, every directed link pointing back in time by the
+  year a paper *circulated* (Gatheral–Jacquier circulated 2012, published
+  2014), no directed cycles (Kahn's algorithm), and a source or a reason
+  there isn't one. `storage/canon_store.py` loads and checks it.
+- **Written by Claude, checked by machine.** Each entry was proposed by
+  Claude in the session and its DOI checked against Crossref, or its id
+  against arXiv (through DataCite, when arXiv rate-limited the check).
+  Title, first author and year all had to match. 211 matched. One wrong
+  DOI was caught and corrected (Hutchinson–Lo–Poggio). Ten have no
+  registered identifier: a book, a talk, two magazine pieces, a symposium
+  paper, two Industrial Management Review papers and three AER papers from
+  1958–81. They say so on their card ("Not machine-checked: …"). The check
+  ran once,
+  at writing time, and is recorded per entry; the app doesn't call
+  Crossref. That's still Lit-3, with its terms check (D34).
+- **Coverage.** `tests/test_literature.py` fails if a module in `models/`
+  has no canon paper in its `lives_in`, except an explicit list of three
+  modules that aren't from a paper: `backtest.py` (accounting),
+  `optimize.py` (Nelder–Mead) and `research_worlds.py` (synthetic
+  controls). The mapping came from what each module's docstring cites.
+  36 papers are implemented; the rest show as "not yet".
+
+**The merge with your catalog.** `ResearchService.papers()` lists the
+canon papers with your fields merged in by id, followed by your own
+papers. The canon owns title, authors, year, strand and source; the store
+keeps status, notes, PDF and linked runs (D42's table, unchanged, no
+migration). The five hard-coded D42 seeds are gone: their ids are canon
+ids, so existing notes and PDFs stay attached, as do the owner's imports
+(`markowitz1952`, `blackscholes1973`, …). The Papers tab shows canon
+metadata read-only. A canon file that fails its checks doesn't stop the
+app: the catalog falls back to your own papers and the Timeline tab says
+what's wrong.
+
+**The timeline (Lit-2).** Research gets a Timeline tab, between Saved runs
+and Papers: `gui/timeline.py` (the chart) and
+`gui/pages/research/timeline.py` (the tab and its inspector).
+- **Axis.** Years before 1950 are squeezed by 0.3 and years before 1900 by
+  0.05: piecewise linear, continuous and strictly increasing, derived in
+  the module docstring. Without it, 1738–1950 would take most of the
+  width for a dozen papers.
+- **Dots and chips.** Each paper is a dot on its strand's lane: filled
+  when it lives in your code, hollow when it doesn't, with a ✓ on its chip
+  when you've read it. Chips (the "little widgets") appear where they fit:
+  two rows per lane when lanes are 48 px or taller, placed greedily by
+  priority (the selection, its links, search matches, then the most-cited
+  papers). Zooming in reveals more. Same-year papers spread within their
+  year.
+- **Links.** All 320 links are drawn faintly. Picking a paper draws its
+  own links: builds-on kinds in light blue, critiques (corrects,
+  challenges) in orange and dashed, independent discoveries dotted.
+- **Interaction.** This is the one chart that pans and zooms (along time
+  only; the lanes stay put). The others stay view-only. Clicking a dot or
+  a chip selects the paper; double-clicking opens its PDF if you have one,
+  otherwise its source. Find dims everything but the matches.
+- **The inspector** shows the question, what changed, what it assumed, its
+  links both ways (each one click away), the modules it lives in, your
+  reading status (saved on change), Open PDF, Open source and Attach PDF,
+  and how the metadata was checked. It scrolls inside its card, using a
+  new `cardScroll` theme role (transparent, theme-only).
+- Like History and Library, the tab is a single view with no card grid
+  (D56).
+
+**Not done here:** Lit-3 (the in-app resolver), Lit-4 (LLM proposal files
+and the inbox), Lit-5 (the feed of new papers), Lit-6 (reading paths and
+replication status). The canon is quant-only; ML Cookbook gets the format
+after this lands.

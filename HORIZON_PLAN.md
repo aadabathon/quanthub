@@ -25,7 +25,7 @@ for the gaps, so the write-up and the repo tell the same story.
 | 5 | Exotic derivative pricing | European Black–Scholes–Merton and Monte Carlo. American exercise is a documented limit (D30, `models/carry.py`, `models/vol_surface.py`) | — | **Track X** |
 | 6 | Models run on your portfolio | The Portfolio page | LENS_PLAN L (the `portfolio` source) | Nothing new |
 | 7 | Useful whatever the trader's stack | IBKR, CSV bars, Fidelity and generic positions (D34) | Ken French, FRED and SEC providers | **Track S** |
-| 8 | All of the quant finance literature | The Papers catalog | LENS_PLAN's literature track | Nothing new |
+| 8 | All of the quant finance literature | The Papers catalog, and since 2026-11-02 a 221-paper canon on Research's Timeline tab (D58) | LENS_PLAN's literature track; [LITERATURE_PLAN.md](LITERATURE_PLAN.md) | Nothing new |
 | 9 | Open source | MIT-licensed since 2026-10-25 | — | ~~Decision 0~~ Done |
 
 Rows 1, 6 and 8 need nothing here: approving the existing plans covers

@@ -7,6 +7,30 @@ the Papers catalog (D42) and doesn't reorder or replace
 approval before it starts, and **do not build ahead** (AGENTS.md hard
 rule 5) still holds.
 
+**Status, 2026-11-02.** Lit-1 and Lit-2 landed together (D58), on your
+direction to build "the entire timeline of quant finance" with a timeline
+on the Research page. They took this plan's recommended answers to
+decisions 2–4 and 7. Where they differ from the text below:
+- **221 papers, not about 45,** in **12 strands, not 8.** Rates and
+  credit, microstructure, risk and machine learning were added.
+- **One JSON file per strand** in `quant_hub/data/canon/`, not one per
+  paper. A strand reads as one story, and 221 files would bury the diffs.
+- **The checks ran at writing time, from a script, not the app.** The
+  canon was written by Claude in a session. Every DOI was then checked
+  against Crossref (and one arXiv id through DataCite), and the result is
+  recorded per entry. That is Lit-4's propose-and-check flow done by
+  hand. The in-app resolver is still Lit-3.
+- **The chart is its own module,** `gui/timeline.py`, because it's the one
+  chart that pans and zooms.
+- **Coverage exemptions** are `backtest.py`, `optimize.py` and
+  `research_worlds.py`. `strategy.py` and `regime.py` turned out to cite
+  papers (Black–Scholes; Viterbi and Newey–West).
+- The format section below is Lit-0's spec, as implemented in
+  `data/literature.py`. It adds an optional `label` (for double
+  surnames) and era bands with short and long names.
+
+Still open: Lit-3 to Lit-6, and decisions 1, 5, 6 and 8.
+
 ## Why this exists
 
 Your direction of 2026-10-25: every open-ended, teaching project you run
