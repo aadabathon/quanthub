@@ -2165,3 +2165,50 @@ filling it is the owner's call (D47). Until then the parsers are verified
 on fixtures shaped from the real documents. Live checklist: SPY (a unit
 trust) and one series-trust ETF, comparing line count and weights with
 the issuer's site.
+
+## D63 — The data batch, part 4: daily chain snapshots and the NYSE calendar (2026-11-03)
+
+D59 chose daily chain snapshots, on first open, of a watchlist you set,
+with VARIANCE I3's wide request and VARIANCE decision 6's NYSE holiday
+rules. Built here.
+
+**The NYSE calendar** (`data/trading_calendar.py`, pure):
+- The holidays are computed by rule from 1998: New Year's, MLK, Washington's
+  Birthday, Good Friday (the anonymous Gregorian Easter), Memorial Day,
+  Juneteenth from 2022, Independence Day, Labor Day, Thanksgiving and
+  Christmas.
+- **Observed days:** Saturday moves to Friday and Sunday to Monday, but
+  a Saturday New Year isn't observed.
+- **Unscheduled closures are listed:** 9/11, the days of mourning, and
+  Hurricane Sandy.
+- **Not modeled:** early closes. A day that closes early still trades.
+- **Checked:** the published holiday lists for 2021, 2022, 2024, 2025 and
+  2026, and the day counts. Once, against every date in Ken French's daily
+  file from 1998 to 2026-09: 7,230 days, an exact match.
+
+**The collector** (`services/chain_collector.py`):
+- **When a symbol is due:** the New York date is a trading day, the time
+  is at least 09:45 (before the open, option quotes are the previous
+  session's), and no snapshot of it from that source is stamped today.
+  - Once per symbol per day; a reconnect collects nothing.
+  - A day without the app is missing. Nothing is backfilled.
+- **The request:** `VARIANCE_REQUEST`, −6 to +3 ATM sd, up to 41 strikes
+  per expiry. `ChainService` saves it as it saves every live fetch (D33).
+- **Fetch time** is logged per symbol, so the first real runs measure it.
+  VARIANCE decision 2 asked for that measurement before choosing the band;
+  the band is chosen, and the log now says what it costs.
+- A failed symbol is logged, and the rest still run.
+
+**The trigger.** When TWS connects, and the watchlist isn't empty, the
+main window queues the due symbols one per worker task. Pages share the
+single worker, so a page opened meanwhile waits for one fetch at most,
+not the whole list. Ctrl+K **Collect today's chains** runs the same thing
+by hand.
+
+**The setting:** `[collect] chains = ["SPX", "SPY"]` in `settings.toml`.
+It's empty by default, so nothing is collected until you set it. A bad
+value is reported, and the setting stays empty.
+
+**Not checked live:** TWS wasn't connected. The first connection after
+09:45 on a trading day, with a watchlist, is the live check: one snapshot
+per symbol, the fetch times in the log, and none on a reconnect.

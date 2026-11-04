@@ -21,6 +21,7 @@ from quant_hub.events import EventBus, EventBusLogHandler
 from quant_hub.tasks import TaskRunner
 from quant_hub.services.accounts import AccountService
 from quant_hub.services.cached_source import CachedSource
+from quant_hub.services.chain_collector import ChainCollector
 from quant_hub.services.external_data import ExternalDataService
 from quant_hub.services.file_import import FileImportService, FileSource
 from quant_hub.services.fund_holdings import FundHoldingsService
@@ -57,6 +58,7 @@ class Core:
     market_service: MarketService
     chain_store: ChainStore
     chains: ChainService
+    chain_collector: ChainCollector
     workstation: WorkstationService
     file_import: FileImportService
     position_store: PositionStore
@@ -191,6 +193,8 @@ def build_core(config: AppConfig | None = None) -> Core:
     return Core(
         config=config, bus=bus, broker=broker, store=store, state_store=state_store,
         market_service=market_service, chain_store=chain_store, chains=chains,
+        # The watchlist's chains, once a trading day after the open (D63).
+        chain_collector=ChainCollector(chains, chain_store, config.collect_chains),
         workstation=WorkstationService(store), file_import=FileImportService(store),
         position_store=position_store, portfolio=portfolio, tasks=TaskRunner(),
         research_store=research_store, research=ResearchService(market_service, research_store),

@@ -716,6 +716,21 @@ def test_ctrl_k_fetches_fund_holdings_on_the_worker(qt_app, monkeypatch):
     wait_for(app, lambda: asked == [("SPY", True)])
 
 
+def test_connecting_starts_the_daily_chains_one_symbol_per_task(qt_app, monkeypatch):
+    from quant_hub.broker.base import ConnectionEvent, ConnectionState
+    app, window = qt_app
+    collector = window._core.chain_collector
+    collected = []
+    monkeypatch.setattr(collector, "_watchlist", ("SPX", "SPY"))
+    monkeypatch.setattr(collector, "due", lambda: ["SPX", "SPY"])
+    monkeypatch.setattr(collector, "collect", collected.append)
+    window._on_connection(ConnectionEvent(ConnectionState.DISCONNECTED))
+    assert not window._collecting
+    window._on_connection(ConnectionEvent(ConnectionState.CONNECTED))
+    wait_for(app, lambda: collected == ["SPX", "SPY"] and not window._collecting)
+    assert "Collect today's chains" in window._top.search._commands
+
+
 # ----------------------------------------------------------------- GARCH Lab
 
 def test_garch_synthetic_fit_shows_truth(qt_app):

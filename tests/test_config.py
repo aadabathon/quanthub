@@ -104,3 +104,10 @@ def test_the_environment_can_name_another_file(tmp_path, monkeypatch):
     assert default_settings_path() == tmp_path / "paper.toml"
     monkeypatch.delenv(SETTINGS_ENV)
     assert default_settings_path() == Path.home() / ".quant_hub" / "settings.toml"
+
+
+def test_the_chain_watchlist_is_a_list_of_symbols(tmp_path):
+    config, problems = load_config(write(tmp_path, '[collect]\nchains = ["spx", " SPY ", "spx"]\n'))
+    assert config.collect_chains == ("SPX", "SPY") and problems == []
+    config, problems = load_config(write(tmp_path, '[collect]\nchains = "SPX"\n'))
+    assert config.collect_chains == () and "list of symbols" in problems[0]

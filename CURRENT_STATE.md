@@ -1,7 +1,17 @@
 # CURRENT_STATE.md
 
 **Update this file whenever meaningful work lands.** Last updated:
-**2026-11-03**: the data batch's part 3 landed (D62): funds' holdings from SEC
+**2026-11-03**: the data batch's part 4 landed (D63): daily chain snapshots
+and an NYSE trading calendar.
+- **The setting:** add `[collect] chains = ["SPX", "SPY"]` to `settings.toml`.
+- **What happens:** on each trading day, the first time TWS connects after
+  09:45 New York, each symbol's chain is fetched once with the wide band
+  (−6 to +3 sd, 41 strikes) and saved. Ctrl+K **Collect today's chains**
+  runs it by hand.
+- **The calendar** matches every trading day in Ken French's file from 1998.
+- **Not checked live:** TWS wasn't connected.
+
+Also **2026-11-03**: the data batch's part 3 landed (D62): funds' holdings from SEC
 N-PORT. Ctrl+K: **Fetch fund holdings…** takes a ticker and stores the latest
 public report (quarterly, about 60 days behind). Every report date is kept,
 in schema v8. It's for ALLOCATION A1's look-through N_eff; matching a fund's

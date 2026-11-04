@@ -23,6 +23,9 @@ file is easy to find and edit. What a user can set (D34):
 * ``[positions] folder``: where the owner saves broker exports. The review
   reads the newest one there, by the date inside it (W7); unset, it uses
   the newest snapshot imported on the Portfolio page.
+* ``[collect] chains``: symbols whose option chain is snapshotted once a
+  trading day, when TWS connects after the open (D63). Empty, nothing is
+  collected.
 
 A bad file never stops the app. Each problem (a syntax error, an unknown
 section or key, a wrong type) is reported, and that setting keeps its
@@ -88,6 +91,9 @@ class AppConfig:
     regime_path: Path = field(default_factory=_default_regime_path)
     positions_folder: Path | None = None
 
+    # Symbols whose chain is snapshotted once a trading day (D63).
+    collect_chains: tuple[str, ...] = ()
+
     default_symbol: str = "SPY"
 
     # Simulator defaults (annualized decimals; 252 steps = 1 year).
@@ -133,6 +139,11 @@ path = "~/.quant_hub/REGIME.md"
 # The folder you save broker exports to. The review reads the newest one by
 # the date inside it; without a folder, it uses the newest imported snapshot.
 # folder = "~/Documents/exports"
+
+[collect]
+# Option chains snapshotted once a trading day, the first time TWS connects
+# after the open, with a wide strike band. Each takes about a minute.
+# chains = ["SPX", "SPY"]
 """
 
 
@@ -167,6 +178,12 @@ def _client_id(value: Any, _base: Path) -> int:
     return value
 
 
+def _symbols(value: Any, _base: Path) -> tuple[str, ...]:
+    if not isinstance(value, list) or not all(isinstance(v, str) and v.strip() for v in value):
+        raise ValueError('must be a list of symbols in quotes, e.g. ["SPX", "SPY"]')
+    return tuple(dict.fromkeys(v.strip().upper() for v in value))
+
+
 def _identity(value: Any, _base: Path) -> str:
     if not isinstance(value, str) or "@" not in value or not value.strip():
         raise ValueError('must be your name and email in quotes, e.g. "Jane Doe jane@example.com"')
@@ -181,6 +198,7 @@ _SETTINGS = {
     "sec": {"identity": ("sec_identity", _identity)},
     "regime": {"path": ("regime_path", _path)},
     "positions": {"folder": ("positions_folder", _path)},
+    "collect": {"chains": ("collect_chains", _symbols)},
 }
 
 

@@ -22,6 +22,7 @@ from PySide6.QtGui import QKeySequence, QScreen, QShortcut
 from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, QInputDialog, QMainWindow, QVBoxLayout,
                                QWidget)
 
+from quant_hub.broker.base import ConnectionEvent, ConnectionState
 from quant_hub.core import Core
 from quant_hub.gui.components import CardGrid
 from quant_hub.gui.pages.base import Commands, Page, Shell
@@ -95,7 +96,12 @@ class MainWindow(QMainWindow):
             "Fetch Ken French factors": self.fetch_french,
             "Import Shiller CSV…": self.import_shiller,
             "Fetch fund holdings…": self.fetch_fund_holdings,
+            "Collect today's chains": self.collect_chains,
         })
+
+        # The daily chain snapshots start when TWS connects (D63).
+        core.bus.subscribe(ConnectionEvent, self._on_connection)
+        self._collecting = False
 
         self._pump_timer = QTimer(self)
         self._pump_timer.timeout.connect(self._pump)
@@ -164,6 +170,34 @@ class MainWindow(QMainWindow):
             self._core.tasks.submit(
                 lambda: self._core.fund_holdings.holdings(fund, refresh=True),
                 on_error=lambda exc: _logger.warning("fund holdings: %s", exc))
+
+    def _on_connection(self, event: ConnectionEvent) -> None:
+        if event.state is ConnectionState.CONNECTED and self._core.chain_collector.watchlist:
+            self.collect_chains()
+
+    def collect_chains(self) -> None:
+        """Snapshot the watchlist's chains that are due today (D63). One symbol
+        per worker task, so a page opened meanwhile waits for one fetch, not all."""
+        if self._collecting:
+            return
+        collector = self._core.chain_collector
+        self._collecting = True
+
+        def next_symbol(remaining: list[str]) -> None:
+            if not remaining:
+                self._collecting = False
+                return
+            _logger.info("daily chains: collecting %s (%d left after it)",
+                         remaining[0], len(remaining) - 1)
+            self._core.tasks.submit(lambda: collector.collect(remaining[0]),
+                                    on_done=lambda _o: next_symbol(remaining[1:]),
+                                    on_error=lambda _e: next_symbol(remaining[1:]))
+
+        def stopped(exc: Exception) -> None:
+            self._collecting = False
+            _logger.warning("daily chains: %s", exc)
+        self._core.tasks.submit(collector.due, on_done=lambda due: next_symbol(list(due)),
+                                on_error=stopped)
 
     def reset_cards(self) -> None:
         """The active page's cards back to the page's own layout."""

@@ -144,6 +144,8 @@ quant_hub/
 │   │                          short labels (Lit-1, D58)
 │   ├── canon/                 the canon itself, package data: timeline.json
 │   │                          (strands, eras) + one JSON file per strand
+│   ├── trading_calendar.py    NYSE holidays by rule from 1998 (Easter,
+│   │                          observed days, special closures); trading_days (D63)
 │   ├── holdings.py            Holding/FundHoldings: one N-PORT report as
 │   │                          filed; weights as fractions of net assets (D62)
 │   ├── series.py              SeriesMeta/FetchedSeries/StoredSeries: outside
@@ -252,6 +254,8 @@ quant_hub/
 │   │                          cheapest first, saved records, CSV (D48)
 │   ├── fundamentals.py        ticker/CIK → FinancialHistory: SEC facts kept a
 │   │                          day, refetched on demand, mapped offline (D47)
+│   ├── chain_collector.py     the watchlist's chains once a trading day after
+│   │                          09:45 NY, wide band, one symbol per task (D63)
 │   ├── fund_holdings.py       ticker → latest N-PORT report: checked monthly,
 │   │                          new filings kept beside old, offline (D62)
 │   ├── external_data.py       outside series: Ken French's files refreshed

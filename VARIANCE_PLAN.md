@@ -279,6 +279,10 @@ reads D57's `split_gaps` (PR #18).
   - **D57:** a window with a named gap is excluded and named.
 
 ### I3. History
+
+**Partly landed (D63):** daily wide-band snapshots of a watchlist, on first
+connect after the open, and the NYSE calendar (decision 6). VIX history comes
+through FRED (D60).
 - **A variance chain request** (decision 2): a wider band and more strikes,
   in the same store and with the same parity carry. Fetch time is measured
   first; today a symbol takes about 42 s.
