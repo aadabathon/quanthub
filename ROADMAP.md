@@ -606,10 +606,11 @@ that implement it. Read-only, no new dependencies.
 ## What's next (set 2026-11-03, D59)
 
 The order after the 2026-11-03 decisions:
-1. **The data batch**, each provider behind a terms check: Ken French,
-   FRED, CBOE VIX, a Shiller CSV, SEC N-PORT holdings, and daily option
-   chain snapshots. The standing direction: accumulate as much free data
-   as possible.
+1. **The data batch**, each provider behind a terms check: ~~Ken French~~
+   (landed 2026-11-03, D60, with the series store), FRED (VIX comes
+   through it: Cboe's own terms refuse storing), a Shiller CSV, SEC N-PORT
+   holdings, and daily option chain snapshots. The standing direction:
+   accumulate as much free data as possible.
 2. **ALLOCATION A1 → A2:** core-aware limits with look-through N_eff, and
    crash stress (measured, not graded).
 3. **HEDGE U1:** the hedge math ([HEDGE_PLAN.md](HEDGE_PLAN.md)), then

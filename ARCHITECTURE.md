@@ -144,6 +144,9 @@ quant_hub/
 │   │                          short labels (Lit-1, D58)
 │   ├── canon/                 the canon itself, package data: timeline.json
 │   │                          (strands, eras) + one JSON file per strand
+│   ├── series.py              SeriesMeta/FetchedSeries/StoredSeries: outside
+│   │                          series as fetched, with unit, citation and
+│   │                          vintage; fractions for returns (D60)
 │   ├── positions.py           Position/OptionContract/PositionSnapshot: what an
 │   │                          account holds, broker-agnostic (D39);
 │   │                          combine_snapshots: one export per account, one
@@ -247,6 +250,9 @@ quant_hub/
 │   │                          cheapest first, saved records, CSV (D48)
 │   ├── fundamentals.py        ticker/CIK → FinancialHistory: SEC facts kept a
 │   │                          day, refetched on demand, mapped offline (D47)
+│   ├── external_data.py       outside series: Ken French's files refreshed
+│   │                          when a week old, each failure keeping its
+│   │                          stored copy; reads served offline (D60)
 │   ├── file_import.py         CSV bars validated into the store under
 │   │                          "file" (all or nothing per file); FileSource
 │   │                          serves them; FileImportService for the GUI
@@ -265,6 +271,12 @@ quant_hub/
 ├── providers/sec_edgar.py     SEC companyfacts through the stdlib: the client
 │                              (identity, gzip, 10/s, typed errors), facts as
 │                              filed, and the mapping to FinancialHistory (D47)
+├── providers/ken_french.py    Ken French's daily FF3, FF5 and momentum zips
+│                              through the stdlib: client + pure parser,
+│                              percent → fraction, terms in the docstring (D60)
+├── storage/series_store.py    outside series as fetched: ext_series (meta,
+│                              fetched_at, file SHA-256) + ext_values,
+│                              replaced whole per fetch (schema v7, D60)
 ├── storage/regime_store.py    regime versions (by text hash), immutable
 │                              reviews with notes, hand-placed trades
 │                              (schema v6, D49)

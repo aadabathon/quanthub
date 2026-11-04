@@ -1,7 +1,22 @@
 # CURRENT_STATE.md
 
 **Update this file whenever meaningful work lands.** Last updated:
-**2026-11-03**: 58 open decisions settled (D59). Next: ALLOCATION A1 → A2,
+**2026-11-03**: the data batch's first increment landed (D60).
+- **Terms checked** for every approved source. Cboe directly fails its
+  terms (no storing), so VIX will come through FRED (`VIXCLS`) or IBKR.
+- **One store for outside series:** `ext_series` and `ext_values`, schema
+  v7, migrated after a backup.
+- **Ken French's daily factors:** FF3, FF5 and momentum, 11 series and
+  227,103 values from 1926. Ctrl+K: **Fetch Ken French factors**. The copy
+  is refreshed when a week old, and served offline.
+- Tested: the parser on real-format fixtures and malformed files, the
+  store, the service's stale, forced and failed paths, the v6 → v7
+  migration, and the Ctrl+K wiring. Checked live on a store copy; the
+  numbers agree with known history (2008: −36.5%).
+- Not yet: FRED, Shiller, N-PORT, the chain snapshots, a page for stored
+  data, and any model reading the factors.
+
+Also **2026-11-03**: 58 open decisions settled (D59). Next: ALLOCATION A1 → A2,
 then HEDGE U1. Data direction: accumulate as much free data as possible.
 Ken French, FRED, CBOE VIX, a Shiller CSV and SEC N-PORT holdings are
 approved, each behind a terms check, and option chains snapshot daily on

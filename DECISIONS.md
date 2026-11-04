@@ -1974,3 +1974,80 @@ The server doesn't collect data, because it never connects to IBKR.
 - SLEEVE's decisions 2–8: after the rewrite.
 - Whether M3's time-varying Markov extension is in.
 - E1's live check waits on the owner's paper login and ibapi 10.x.
+
+## D60 — The data batch, part 1: terms checked, a series store, Ken French (2026-11-03)
+
+D59 approved the data batch. Its first increment: every source's terms are
+checked, one store holds every outside series, and the first provider
+arrives.
+
+**The terms checks** (2026-11-03, D34):
+- **Ken French's library:** no license is stated, only "Copyright Eugene
+  F. Fama and Kenneth R. French". Used locally, never committed, cited
+  where shown. Approved.
+- **FRED:** the API needs a free key. Its terms ask for the line "This
+  product uses the FRED® API but is not endorsed or certified by the
+  Federal Reserve Bank of St. Louis." in the app. Third-party series
+  (copyright in their notes) are for personal use only. Approved, with
+  the key in the settings file like `[sec] identity`, never committed.
+- **Cboe directly: refused.** Cboe's terms allow downloading "one copy …
+  for your personal non-commercial use", but not to "store … in an
+  electronic retrieval system", and the store is one. **VIX comes from
+  FRED's `VIXCLS` instead**, under FRED's personal-use terms, or from
+  IBKR's index bars under the market-data license the app already works
+  under. This replaces D59's "CBOE's VIX history"; the history is the
+  same.
+- **Shiller:** local only (D59). **SEC N-PORT:** D47's fair-access policy
+  already covers it.
+
+**One store for every outside series** (`storage/series_store.py`,
+schema v7, after D36's backup):
+- **`ext_series`:** per series, its title, unit, frequency, the citation
+  its terms ask for, a vintage note ("CRSP 202609"), when it was fetched,
+  and the SHA-256 of the file it came from.
+- **`ext_values`:** its dated values.
+
+A fetch replaces each series whole, in one transaction. French's files
+carry their full history and are revised as CRSP updates, so "as fetched"
+means the latest file. A source that serves only a recent window will
+merge instead, decided with that source. The record types live in
+`data/series.py`: values are fractions for returns (0.01 = 1%), and
+missing values are left out, never filled.
+
+**Ken French** (`providers/ken_french.py`, stdlib only):
+- the daily FF3 file (from 1926-07-01), the 2×3 FF5 file (from
+  1963-07-01), and momentum (from 1926-11-03): eleven series,
+  227,103 values
+- one request per file, a plain User-Agent, typed errors
+- the parser keys on the header row and the 8-digit dates, never on line
+  numbers
+- −99.99 and −999 count as missing
+- the market's total return (Mkt-RF + RF) isn't stored, since it's an
+  identity of two stored series
+
+**The service** (`services/external_data.py`):
+- It refetches a dataset when its copy is more than a week old: the files
+  are rebuilt monthly. `force` refetches regardless.
+- A failed dataset keeps its stored copy and says so; the others still
+  fetch.
+- Reads come from the store, so it works offline.
+
+Ctrl+K's **Fetch Ken French factors** runs it on the worker, and the
+outcome goes to the log.
+
+**Checked live** on a copy of the owner's store:
+- v6 → v7 migrated, with its backup.
+- All three files were fetched, and a second refresh correctly skipped
+  them as fresh.
+- The data agrees with known history: the market returned 9.8% a year
+  from 1926 to 2026, its worst day was 1987-10-19 (−17.4%), 2008
+  returned −36.5%, and 2020-02-20 → 03-23 returned −34.2%.
+- The store grows by about 10 MB.
+
+**Not yet:**
+- FRED (and VIX through it), the Shiller import, N-PORT holdings, the
+  daily chain snapshots and the collection on first open: the next
+  increments.
+- A page listing what's stored.
+- No model reads the factors yet. ALLOCATION A2's crash stress and
+  LENS W2b's Fama–French regressions are the first readers.

@@ -21,6 +21,7 @@ from quant_hub.events import EventBus, EventBusLogHandler
 from quant_hub.tasks import TaskRunner
 from quant_hub.services.accounts import AccountService
 from quant_hub.services.cached_source import CachedSource
+from quant_hub.services.external_data import ExternalDataService
 from quant_hub.services.file_import import FileImportService, FileSource
 from quant_hub.services.fundamentals import FundamentalsService
 from quant_hub.services.market_service import MarketService
@@ -37,6 +38,7 @@ from quant_hub.storage.position_store import PositionStore
 from quant_hub.storage.regime_store import RegimeStore
 from quant_hub.storage.research_store import ResearchStore
 from quant_hub.storage.schema import prepare_store
+from quant_hub.storage.series_store import SeriesStore
 from quant_hub.storage.state_store import ViewStateStore
 from quant_hub.storage.valuation_store import ValuationStore
 
@@ -65,6 +67,8 @@ class Core:
     valuation: ValuationService
     regime_store: RegimeStore
     review: ReviewService
+    series_store: SeriesStore
+    external_data: ExternalDataService
     tasks: TaskRunner
     # Read-only IBKR accounts (E1); None when IBKR is off in settings.
     accounts: AccountService | None = None
@@ -83,6 +87,7 @@ class Core:
             ("closing fundamentals store", self.fundamentals_store.close),
             ("closing valuation store", self.valuation_store.close),
             ("closing regime store", self.regime_store.close),
+            ("closing series store", self.series_store.close),
         ):
             try:
                 step()
@@ -174,6 +179,8 @@ def build_core(config: AppConfig | None = None) -> Core:
     portfolio = PortfolioService(market_service, position_store)
     # The regime's versions and the review journal, same database (W7).
     regime_store = RegimeStore(config.db_path)
+    # External series as fetched (Ken French first), same database (D60).
+    series_store = SeriesStore(config.db_path)
     return Core(
         config=config, bus=bus, broker=broker, store=store, state_store=state_store,
         market_service=market_service, chain_store=chain_store, chains=chains,
@@ -184,5 +191,6 @@ def build_core(config: AppConfig | None = None) -> Core:
         valuation_store=valuation_store, valuation=valuation, regime_store=regime_store,
         review=ReviewService(portfolio, valuation, regime_store, config.regime_path,
                              config.positions_folder),
+        series_store=series_store, external_data=ExternalDataService(series_store),
         accounts=AccountService(broker) if ibkr else None,
     )

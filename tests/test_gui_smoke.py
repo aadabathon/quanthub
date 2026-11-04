@@ -687,6 +687,16 @@ def test_command_search_navigates(qt_app):
     wait_for(app, lambda: dash._symbol_box.current() == "AAA")
 
 
+def test_ctrl_k_fetches_ken_french_on_the_worker(qt_app, monkeypatch):
+    app, window = qt_app
+    calls = []
+    # No network in tests: the service's fetch is replaced, the wiring is real.
+    monkeypatch.setattr(window._core.external_data, "refresh_french",
+                        lambda force=False: calls.append(force) or [])
+    window._top.search._commands["Fetch Ken French factors"]()
+    wait_for(app, lambda: calls == [True])
+
+
 # ----------------------------------------------------------------- GARCH Lab
 
 def test_garch_synthetic_fit_shows_truth(qt_app):

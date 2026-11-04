@@ -14,6 +14,7 @@ cards, and "Reset this page's cards" does the active page's cards only.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 
 from PySide6.QtCore import QByteArray, QTimer
@@ -27,6 +28,8 @@ from quant_hub.gui.sidebar import Sidebar
 from quant_hub.gui.status_bar import LogDrawer, StatusBar
 from quant_hub.gui.top_bar import TopBar
 from quant_hub.gui.workspace import Workspace
+
+_logger = logging.getLogger(__name__)
 
 PUMP_INTERVAL_MS = 16
 LAYOUT_KEY = "workspace"
@@ -88,6 +91,7 @@ class MainWindow(QMainWindow):
             **{f"Go to {name}": (lambda n=name: self.show_page(n)) for name in self._factories},
             "Reset layout": self.reset_layout,
             "Reset this page's cards": self.reset_cards,
+            "Fetch Ken French factors": self.fetch_french,
         })
 
         self._pump_timer = QTimer(self)
@@ -127,6 +131,13 @@ class MainWindow(QMainWindow):
             for grid in page.findChildren(CardGrid):
                 grid.reset()
         self.apply_default_size(self.screen())
+
+    def fetch_french(self) -> None:
+        """Fetch Ken French's daily factor files now (D60), on the worker. The
+        service logs each dataset's outcome, which the status bar shows."""
+        self._core.tasks.submit(
+            lambda: self._core.external_data.refresh_french(force=True),
+            on_error=lambda exc: _logger.warning("Ken French fetch failed: %s", exc))
 
     def reset_cards(self) -> None:
         """The active page's cards back to the page's own layout."""
