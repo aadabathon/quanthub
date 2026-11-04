@@ -1974,3 +1974,298 @@ The server doesn't collect data, because it never connects to IBKR.
 - SLEEVE's decisions 2–8: after the rewrite.
 - Whether M3's time-varying Markov extension is in.
 - E1's live check waits on the owner's paper login and ibapi 10.x.
+
+## D60 — The data batch, part 1: terms checked, a series store, Ken French (2026-11-03)
+
+D59 approved the data batch. Its first increment: every source's terms are
+checked, one store holds every outside series, and the first provider
+arrives.
+
+**The terms checks** (2026-11-03, D34):
+- **Ken French's library:** no license is stated, only "Copyright Eugene
+  F. Fama and Kenneth R. French". Used locally, never committed, cited
+  where shown. Approved.
+- **FRED:** the API needs a free key. Its terms ask for the line "This
+  product uses the FRED® API but is not endorsed or certified by the
+  Federal Reserve Bank of St. Louis." in the app. Third-party series
+  (copyright in their notes) are for personal use only. Approved, with
+  the key in the settings file like `[sec] identity`, never committed.
+- **Cboe directly: refused.** Cboe's terms allow downloading "one copy …
+  for your personal non-commercial use", but not to "store … in an
+  electronic retrieval system", and the store is one. **VIX comes from
+  FRED's `VIXCLS` instead**, under FRED's personal-use terms, or from
+  IBKR's index bars under the market-data license the app already works
+  under. This replaces D59's "CBOE's VIX history"; the history is the
+  same.
+- **Shiller:** local only (D59). **SEC N-PORT:** D47's fair-access policy
+  already covers it.
+
+**One store for every outside series** (`storage/series_store.py`,
+schema v7, after D36's backup):
+- **`ext_series`:** per series, its title, unit, frequency, the citation
+  its terms ask for, a vintage note ("CRSP 202609"), when it was fetched,
+  and the SHA-256 of the file it came from.
+- **`ext_values`:** its dated values.
+
+A fetch replaces each series whole, in one transaction. French's files
+carry their full history and are revised as CRSP updates, so "as fetched"
+means the latest file. A source that serves only a recent window will
+merge instead, decided with that source. The record types live in
+`data/series.py`: values are fractions for returns (0.01 = 1%), and
+missing values are left out, never filled.
+
+**Ken French** (`providers/ken_french.py`, stdlib only):
+- the daily FF3 file (from 1926-07-01), the 2×3 FF5 file (from
+  1963-07-01), and momentum (from 1926-11-03): eleven series,
+  227,103 values
+- one request per file, a plain User-Agent, typed errors
+- the parser keys on the header row and the 8-digit dates, never on line
+  numbers
+- −99.99 and −999 count as missing
+- the market's total return (Mkt-RF + RF) isn't stored, since it's an
+  identity of two stored series
+
+**The service** (`services/external_data.py`):
+- It refetches a dataset when its copy is more than a week old: the files
+  are rebuilt monthly. `force` refetches regardless.
+- A failed dataset keeps its stored copy and says so; the others still
+  fetch.
+- Reads come from the store, so it works offline.
+
+Ctrl+K's **Fetch Ken French factors** runs it on the worker, and the
+outcome goes to the log.
+
+**Checked live** on a copy of the owner's store:
+- v6 → v7 migrated, with its backup.
+- All three files were fetched, and a second refresh correctly skipped
+  them as fresh.
+- The data agrees with known history: the market returned 9.8% a year
+  from 1926 to 2026, its worst day was 1987-10-19 (−17.4%), 2008
+  returned −36.5%, and 2020-02-20 → 03-23 returned −34.2%.
+- The store grows by about 10 MB.
+
+**Not yet:**
+- FRED (and VIX through it), the Shiller import, N-PORT holdings, the
+  daily chain snapshots and the collection on first open: the next
+  increments.
+- A page listing what's stored.
+- No model reads the factors yet. ALLOCATION A2's crash stress and
+  LENS W2b's Fama–French regressions are the first readers.
+
+## D61 — The data batch, part 2: Shiller's monthly data, from your CSV (2026-11-03)
+
+TARGET T1, built as D59 decided: a CSV you save from Excel (decision 2a),
+used locally only (decision 3). The owner asked for it before FRED, which
+waits for a free API key.
+
+**The step:** download `ie_data.xls` from Shiller's site, open it in Excel,
+Save As CSV with the Data sheet showing, then Ctrl+K: **Import Shiller
+CSV…**. The import runs on the worker and logs what it kept.
+
+**`importers/shiller_csv.py` reads T1's spec:**
+- Columns by header label: `P`, `D`, `E`, `CPI` and `Rate GS10` are
+  required, each once, and `CAPE` is read when present. A missing or
+  repeated label is named.
+- Dates: Shiller's `1871.1` is October, and the month is
+  round(100·(x − ⌊x⌋)). Months must be consecutive; a gap or a repeat names
+  its line. Each month is dated the 1st, FRED's convention, so the two
+  will line up.
+- Blank and `NA` cells are left out, never filled.
+- The last month is provisional and dropped. The footnotes ("Oct price is
+  Oct 2nd close", "Sept/Oct CPI estimated") and "earnings through …" go in
+  each series' note.
+- Quoted thousands separators and a Windows-encoded file are read.
+
+**One change from T1's text:** T1 planned its own tables
+(`valuation_months`, `valuation_imports`). D60's series store now holds
+every outside series, so Shiller goes there instead:
+- six series under `shiller`: `sp.price`, `sp.dividend`, `sp.earnings`,
+  `cpi`, `gs10`, `cape`
+- monthly; P, D, E and CPI as index levels, GS10 in percent, CAPE as a
+  ratio, a unit added to `data/series.py`
+
+An import replaces the series whole, since Shiller revises CPI and recent
+earnings, and the file's SHA-256 records which import a number came from.
+
+**Checked** on the owner's local copy from 2026-10-24:
+- 1871-01 to 2026-09, with 2026-10 dropped as provisional, and earnings
+  through 2026-06.
+- CAPE recomputed from the imported P, E and CPI (real price over the
+  10-year average of real earnings) agrees with Shiller's own CAPE column
+  within 0.2 points at five dates from 1929 to 2025. The gap comes from
+  his CPI reference and earnings timing.
+- Imported into a store copy beside Ken French's factors: 17 series in
+  all.
+
+**Not yet:** REGIME_MODEL is the first reader (valuation from CAPE and the
+excess CAPE yield), along with TARGET's superseded T2 rule as one of its
+inputs. FRED, N-PORT, the chain snapshots and a page for stored data are
+next.
+
+## D62 — The data batch, part 3: funds' holdings from SEC N-PORT (2026-11-03)
+
+D59 chose look-through N_eff for ALLOCATION A1, with fund holdings from
+SEC N-PORT filings through the existing SEC provider. Built here: the
+holdings arrive and accumulate. A1 reads them later.
+
+**What N-PORT is.** Every US registered fund, unit-trust ETFs like SPY
+included, files its full portfolio on Form N-PORT. The public filings
+(`NPORT-P`) arrive quarterly, about 60 days after the report date, as XML.
+D47's fair-access client covers them: a declared identity and at most ten
+requests a second. `SecClient` gains a public `get` for this.
+
+**Finding a fund's latest report** (`providers/sec_nport.py`, stdlib only):
+1. **The ticker.** SEC's fund ticker map (`company_tickers_mf.json`) gives
+   a series trust's CIK and series id. A unit trust has no series id; its
+   CIK comes from the company ticker map instead.
+2. **Its filings.** EDGAR's browse feed, as Atom, lists the series' (or
+   CIK's) `NPORT-P` filings, amendments included, newest first.
+3. **The report.** `primary_doc.xml` in the filing's folder. Each
+   `invstOrSec` keeps name, LEI, CUSIP, ISIN, ticker, balance, units, USD
+   value, the weight (`pctVal` ÷ 100, a fraction of net assets), the asset
+   and issuer categories, country and payoff.
+   - Matching is by local element name, so a namespace change doesn't
+     break it.
+   - `N/A` and blanks stay blank, never guessed.
+   - A document for another series is refused.
+
+The layout was read from SPY's real filing of 2026-08-28 (as of
+2026-06-30). The tests use fixtures in that shape, with made-up holdings.
+
+**Storage** (`storage/holdings_store.py`, schema v8, after the backup):
+- `fund_tickers`: the map, refreshed when a week old.
+- `fund_filings`: per fund and report date, with accession, net assets,
+  fetch time and the XML's SHA-256.
+- `fund_holdings`: the lines, in filing order.
+
+Every report date is kept, so a fund's holdings history accumulates (D59).
+A refetch of the same date, an amendment, replaces it.
+
+**The service** (`services/fund_holdings.py`):
+- It checks for a newer filing when the stored report was last checked
+  more than 30 days ago, or on refresh. That's one feed request, plus the
+  ticker map when it's a week old.
+- An already-stored accession is only marked as checked, with no document
+  fetch.
+- A failed check serves the stored report.
+- Without `[sec] identity` it names the setting.
+- Ctrl+K **Fetch fund holdings…** asks for a ticker and logs the report
+  date, the line count and the weight covered.
+
+**The bridge, an open question for A1.** Holdings carry CUSIP and ISIN, but
+rarely a ticker. Look-through N_eff only needs the fund's weights, but
+merging a fund's line with a stock you also hold directly needs an
+ISIN-to-ticker bridge. The candidates are IBKR's ISIN contract lookup
+(needs TWS, no new provider), OpenFIGI (a new provider, with a terms
+check), or name matching (fragile across share classes). That's A1's to
+choose; nothing here guesses.
+
+**Not checked live:** the owner's settings have no `[sec] identity`, and
+filling it is the owner's call (D47). Until then the parsers are verified
+on fixtures shaped from the real documents. Live checklist: SPY (a unit
+trust) and one series-trust ETF, comparing line count and weights with
+the issuer's site.
+
+## D63 — The data batch, part 4: daily chain snapshots and the NYSE calendar (2026-11-03)
+
+D59 chose daily chain snapshots, on first open, of a watchlist you set,
+with VARIANCE I3's wide request and VARIANCE decision 6's NYSE holiday
+rules. Built here.
+
+**The NYSE calendar** (`data/trading_calendar.py`, pure):
+- The holidays are computed by rule from 1998: New Year's, MLK, Washington's
+  Birthday, Good Friday (the anonymous Gregorian Easter), Memorial Day,
+  Juneteenth from 2022, Independence Day, Labor Day, Thanksgiving and
+  Christmas.
+- **Observed days:** Saturday moves to Friday and Sunday to Monday, but
+  a Saturday New Year isn't observed.
+- **Unscheduled closures are listed:** 9/11, the days of mourning, and
+  Hurricane Sandy.
+- **Not modeled:** early closes. A day that closes early still trades.
+- **Checked:** the published holiday lists for 2021, 2022, 2024, 2025 and
+  2026, and the day counts. Once, against every date in Ken French's daily
+  file from 1998 to 2026-09: 7,230 days, an exact match.
+
+**The collector** (`services/chain_collector.py`):
+- **When a symbol is due:** the New York date is a trading day, the time
+  is at least 09:45 (before the open, option quotes are the previous
+  session's), and no snapshot of it from that source is stamped today.
+  - Once per symbol per day; a reconnect collects nothing.
+  - A day without the app is missing. Nothing is backfilled.
+- **The request:** `VARIANCE_REQUEST`, −6 to +3 ATM sd, up to 41 strikes
+  per expiry. `ChainService` saves it as it saves every live fetch (D33).
+- **Fetch time** is logged per symbol, so the first real runs measure it.
+  VARIANCE decision 2 asked for that measurement before choosing the band;
+  the band is chosen, and the log now says what it costs.
+- A failed symbol is logged, and the rest still run.
+
+**The trigger.** When TWS connects, and the watchlist isn't empty, the
+main window queues the due symbols one per worker task. Pages share the
+single worker, so a page opened meanwhile waits for one fetch at most,
+not the whole list. Ctrl+K **Collect today's chains** runs the same thing
+by hand.
+
+**The setting:** `[collect] chains = ["SPX", "SPY"]` in `settings.toml`.
+It's empty by default, so nothing is collected until you set it. A bad
+value is reported, and the setting stays empty.
+
+**Not checked live:** TWS wasn't connected. The first connection after
+09:45 on a trading day, with a watchlist, is the live check: one snapshot
+per symbol, the fetch times in the log, and none on a reconnect.
+
+## D64 — A Data page: everything stored, where from, how fresh (2026-11-03)
+
+D59 set the direction to accumulate free data, and D60–D63 built four
+ways to fetch it. Until now the only way to see what had arrived was the
+log. The Data page (`gui/pages/data.py`, in the sidebar after Markets)
+lists what the store holds.
+
+**Cards.** The main column is 0–7 and the Preview panel is 8–11, laid out
+8 + 4 as on Review and Valuation (D56).
+- **Outside series** (D60, D61): source, series, title, frequency, range,
+  value count, and the day it was fetched. **Import Shiller CSV…** and
+  **Fetch Ken French** sit on the card.
+- **Fund holdings** (D62): each fund's newest N-PORT report, with its line
+  count, the sum of its stated weights, how many report dates are stored,
+  and when it was last checked. While `[sec] identity` is unset, a note
+  says how to set it. **Fetch holdings…** asks for a ticker.
+- **Option chains** (D63): per symbol, the days collected, snapshot count,
+  the newest one and its quotes. A line names the watchlist, or says how
+  to set one. **Collect today's chains** runs it by hand.
+- **Price history:** the daily bars per symbol, source and basis, from
+  the workstation overview the Dashboard reads.
+- **Preview:** select a series to plot it, with its range, fetch time,
+  note, and the citation its source's terms ask for (D60).
+- A table with no rows shrinks to its header and shows one line on how to
+  fill it.
+
+**The preview plots returns as Σ ln(1 + r).** A series whose unit is
+`fraction` (French's daily factors) is shown as its cumulative log
+return. The daily values themselves are noise at a century's scale, and
+the cumulative sum stays readable on a linear axis: a straight line is a
+constant growth rate. Every other unit (Shiller's index, dollar and
+percent series) is plotted as stored. The panel's title says which.
+
+**The buttons run the Ctrl+K commands.** `Shell` gains `run(name)`. The
+main window looks the name up among its published commands and raises
+`KeyError` for an unknown one. A button and the search therefore can't
+drift apart: each action has one implementation, in `main_window`, which
+already owns its dialogs and the worker queueing. After an action, the
+page queues a refresh. The worker runs jobs in order, so the refresh runs
+after the fetch and shows its result.
+
+**Reads.** One TaskRunner job builds the whole overview. The services
+gained the reads they lacked, all offline:
+- `FundHoldingsService.catalog()`, from `HoldingsStore.funds()`: one SQL
+  query over each fund's newest report.
+- `FundHoldingsService.has_identity`.
+- `ChainService.snapshots(symbol=None)`, which passes through to the
+  chain store.
+The page imports no store (test_layering).
+
+**At 1280 px** the Preview panel's minimum (`SIDE_PANEL_WIDTH`) is wider
+than four columns, so it drops below the series table, as D56's side
+panels do on narrow windows. From about 1440 px it sits beside the table.
+
+**Checked** on a copy of the store holding French's 11 series and
+Shiller's 6: screenshots at 1280 and 1440 wide, with Windows fonts.

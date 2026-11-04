@@ -78,6 +78,11 @@ holds the earlier timing results and the multiple-testing check.
 
 ### A1. Core-aware limits, and sleeve totals
 
+**Data ready (D62):** funds' N-PORT holdings are stored, with weights,
+CUSIP and ISIN. Still A1's to choose: the ISIN → ticker bridge for merging a
+fund's lines with stocks held directly (IBKR's ISIN lookup, OpenFIGI, or
+names).
+
 A W7 change, through `importers/regime_md.py`, `data/regime.py` and
 `services/review.py`.
 

@@ -114,8 +114,8 @@ quant_hub/
 │                              simulator.py, options_lab/ (page, underlying,
 │                              pricer, strategy, monte_carlo), volatility_lab.py,
 │                              kalman_lab.py, markov_lab.py, valuation.py,
-│                              review.py, research/ (page, history, timeline,
-│                              library)
+│                              review.py, data.py (D64), research/ (page,
+│                              history, timeline, library)
 ├── config.py                  AppConfig
 ├── events.py                  EventBus (thread-safe), LogEvent, log handler
 ├── broker/
@@ -144,6 +144,13 @@ quant_hub/
 │   │                          short labels (Lit-1, D58)
 │   ├── canon/                 the canon itself, package data: timeline.json
 │   │                          (strands, eras) + one JSON file per strand
+│   ├── trading_calendar.py    NYSE holidays by rule from 1998 (Easter,
+│   │                          observed days, special closures); trading_days (D63)
+│   ├── holdings.py            Holding/FundHoldings: one N-PORT report as
+│   │                          filed; weights as fractions of net assets (D62)
+│   ├── series.py              SeriesMeta/FetchedSeries/StoredSeries: outside
+│   │                          series as fetched, with unit, citation and
+│   │                          vintage; fractions for returns (D60)
 │   ├── positions.py           Position/OptionContract/PositionSnapshot: what an
 │   │                          account holds, broker-agnostic (D39);
 │   │                          combine_snapshots: one export per account, one
@@ -247,6 +254,14 @@ quant_hub/
 │   │                          cheapest first, saved records, CSV (D48)
 │   ├── fundamentals.py        ticker/CIK → FinancialHistory: SEC facts kept a
 │   │                          day, refetched on demand, mapped offline (D47)
+│   ├── chain_collector.py     the watchlist's chains once a trading day after
+│   │                          09:45 NY, wide band, one symbol per task (D63)
+│   ├── fund_holdings.py       ticker → latest N-PORT report: checked monthly,
+│   │                          new filings kept beside old, offline (D62)
+│   ├── external_data.py       outside series: Ken French's files refreshed
+│   │                          when a week old, each failure keeping its
+│   │                          stored copy; Shiller CSV imports (D61);
+│   │                          reads served offline (D60)
 │   ├── file_import.py         CSV bars validated into the store under
 │   │                          "file" (all or nothing per file); FileSource
 │   │                          serves them; FileImportService for the GUI
@@ -262,9 +277,22 @@ quant_hub/
 ├── importers/regime_md.py     REGIME.md → RuleSet: rows by their label, blanks
 │                              off, "by k SE", every bad value names its line
 │                              (W7, D49)
+├── importers/shiller_csv.py   Shiller's ie_data Data sheet saved as CSV →
+│                              monthly series by header label; Oct = 1871.1,
+│                              provisional last month dropped (T1, D61)
 ├── providers/sec_edgar.py     SEC companyfacts through the stdlib: the client
 │                              (identity, gzip, 10/s, typed errors), facts as
 │                              filed, and the mapping to FinancialHistory (D47)
+├── providers/ken_french.py    Ken French's daily FF3, FF5 and momentum zips
+│                              through the stdlib: client + pure parser,
+│                              percent → fraction, terms in the docstring (D60)
+├── providers/sec_nport.py     funds' N-PORT: the fund ticker map, the EDGAR
+│                              Atom feed, primary_doc.xml → FundHoldings (D62)
+├── storage/holdings_store.py  fund ticker map + every N-PORT report date kept
+│                              (schema v8, D62)
+├── storage/series_store.py    outside series as fetched: ext_series (meta,
+│                              fetched_at, file SHA-256) + ext_values,
+│                              replaced whole per fetch (schema v7, D60)
 ├── storage/regime_store.py    regime versions (by text hash), immutable
 │                              reviews with notes, hand-placed trades
 │                              (schema v6, D49)
@@ -347,6 +375,9 @@ Review     = the front door (after Dashboard): the owner's REGIME.md checked
              against the newest export: checklist, thesis by stream, gates,
              the days that decide the numbers (Portfolio's, D53), journal
              and trades (W7, D49)
+Data       = everything stored, its source and freshness: outside series
+             with a preview and citation, fund holdings, chain snapshots,
+             price history; its buttons run the Ctrl+K commands (D64)
 RESEARCH…  = GARCH Lab, Vol Lab, Kalman Lab, Markov Lab, Research
 ```
 
@@ -483,7 +514,9 @@ Key properties (decisions D17–D21):
   window is shown (D40), so Qt establishes its graphics surface up front.
   Preparation does not run jobs: `on_show` refreshes on visits, and
   `on_hide` persists via `ViewStateStore`. Pages reach the shell
-  only through `Shell` (`navigate`, `publish_commands` for Ctrl+K).
+  only through `Shell` (`navigate`, `publish_commands` for Ctrl+K, and
+  `run` to run a published command by name, so a button and Ctrl+K share
+  one implementation, D64).
 - **Card grid (D56).** A page lays its cards on `CardGrid` (`gui/card_grid.py`,
   imported from `components`): `add(name, card, x, y, w, h)` or
   `add_column(...)` with default places on 12 columns, then

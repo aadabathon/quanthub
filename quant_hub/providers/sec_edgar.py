@@ -182,6 +182,11 @@ class SecClient:
     def companyfacts(self, cik: int) -> dict:
         return json.loads(self._get(FACTS_URL.format(cik=int(cik))))
 
+    def get(self, url: str) -> bytes:
+        """Any SEC URL under the same policy: identity, throttle, typed errors.
+        ``providers/sec_nport.py`` fetches through it (D62)."""
+        return self._get(url)
+
     def _get(self, url: str) -> bytes:
         with self._lock:                                 # one request at a time, spaced
             wait = self._last + MIN_INTERVAL_S - self._clock()

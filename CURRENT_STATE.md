@@ -1,7 +1,55 @@
 # CURRENT_STATE.md
 
 **Update this file whenever meaningful work lands.** Last updated:
-**2026-11-03**: 58 open decisions settled (D59). Next: ALLOCATION A1 → A2,
+**2026-11-03**: a **Data page** (D64), in the sidebar after Markets, lists
+everything stored, with where it came from and how fresh it is: outside
+series, fund holdings, chain snapshots and price history. Selecting a
+series previews it with its citation; French's daily returns are plotted
+as Σ ln(1 + r). The fetch and import buttons run the same Ctrl+K commands.
+Checked with screenshots on a copy of your store.
+
+Also **2026-11-03**: the data batch's part 4 landed (D63): daily chain snapshots
+and an NYSE trading calendar.
+- **The setting:** add `[collect] chains = ["SPX", "SPY"]` to `settings.toml`.
+- **What happens:** on each trading day, the first time TWS connects after
+  09:45 New York, each symbol's chain is fetched once with the wide band
+  (−6 to +3 sd, 41 strikes) and saved. Ctrl+K **Collect today's chains**
+  runs it by hand.
+- **The calendar** matches every trading day in Ken French's file from 1998.
+- **Not checked live:** TWS wasn't connected.
+
+Also **2026-11-03**: the data batch's part 3 landed (D62): funds' holdings from SEC
+N-PORT. Ctrl+K: **Fetch fund holdings…** takes a ticker and stores the latest
+public report (quarterly, about 60 days behind). Every report date is kept,
+in schema v8. It's for ALLOCATION A1's look-through N_eff; matching a fund's
+lines to stocks you hold needs an ISIN → ticker bridge, which is A1's call.
+**Not checked live:** fetching needs `[sec] identity` in your settings, which
+isn't set. Tests use fixtures shaped like SPY's real filing.
+
+Also **2026-11-03**: the data batch's part 2 landed (D61): Shiller's monthly
+data. Save `ie_data.xls`'s Data sheet as CSV in Excel, then Ctrl+K:
+**Import Shiller CSV…**. It holds price, dividends, earnings, CPI, GS10 and
+CAPE from 1871 in the D60 series store. The provisional last month is
+dropped, with its footnotes kept. Checked on your local copy: CAPE
+recomputed from the imported series is within 0.2 points of Shiller's
+own. Tested on a made-up fixture: Shiller's data is never committed.
+
+Also **2026-11-03**: the data batch's first increment landed (D60).
+- **Terms checked** for every approved source. Cboe directly fails its
+  terms (no storing), so VIX will come through FRED (`VIXCLS`) or IBKR.
+- **One store for outside series:** `ext_series` and `ext_values`, schema
+  v7, migrated after a backup.
+- **Ken French's daily factors:** FF3, FF5 and momentum, 11 series and
+  227,103 values from 1926. Ctrl+K: **Fetch Ken French factors**. The copy
+  is refreshed when a week old, and served offline.
+- Tested: the parser on real-format fixtures and malformed files, the
+  store, the service's stale, forced and failed paths, the v6 → v7
+  migration, and the Ctrl+K wiring. Checked live on a store copy; the
+  numbers agree with known history (2008: −36.5%).
+- Not yet: FRED, Shiller, N-PORT, the chain snapshots, a page for stored
+  data, and any model reading the factors.
+
+Also **2026-11-03**: 58 open decisions settled (D59). Next: ALLOCATION A1 → A2,
 then HEDGE U1. Data direction: accumulate as much free data as possible.
 Ken French, FRED, CBOE VIX, a Shiller CSV and SEC N-PORT holdings are
 approved, each behind a terms check, and option chains snapshot daily on

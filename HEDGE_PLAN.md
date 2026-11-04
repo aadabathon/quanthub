@@ -315,7 +315,7 @@ A dock (D55) with cards on the grid (D56):
    - your trend fund
 
    VIX calls wait for data.
-3. **Settled 2026-11-03 (D59):** CBOE's VIX history, through VARIANCE I3's provider (approved). The question was: **The VIX source:** VARIANCE I3's CBOE provider, IBKR index bars, or
+3. **Settled 2026-11-03 (D59):** CBOE's VIX history, through VARIANCE I3's provider (approved). **Changed by D60:** Cboe's terms refuse storing the data, so VIX comes from FRED's `VIXCLS` (or IBKR's index bars). The question was: **The VIX source:** VARIANCE I3's CBOE provider, IBKR index bars, or
    both.
 4. **Settled 2026-11-03 (D59):** IBKR's index as deep as it goes for the option candidates, and Ken French's series for the linear ones. The question was: **The index history:** IBKR as deep as it goes (checked first), or a
    longer series without strikes for the linear candidates only.

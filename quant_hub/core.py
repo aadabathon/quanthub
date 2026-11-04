@@ -21,7 +21,10 @@ from quant_hub.events import EventBus, EventBusLogHandler
 from quant_hub.tasks import TaskRunner
 from quant_hub.services.accounts import AccountService
 from quant_hub.services.cached_source import CachedSource
+from quant_hub.services.chain_collector import ChainCollector
+from quant_hub.services.external_data import ExternalDataService
 from quant_hub.services.file_import import FileImportService, FileSource
+from quant_hub.services.fund_holdings import FundHoldingsService
 from quant_hub.services.fundamentals import FundamentalsService
 from quant_hub.services.market_service import MarketService
 from quant_hub.services.option_chains import ChainService
@@ -33,10 +36,12 @@ from quant_hub.services.workstation import WorkstationService
 from quant_hub.storage.bar_store import BarStore
 from quant_hub.storage.chain_store import ChainStore
 from quant_hub.storage.fundamentals_store import FundamentalsStore
+from quant_hub.storage.holdings_store import HoldingsStore
 from quant_hub.storage.position_store import PositionStore
 from quant_hub.storage.regime_store import RegimeStore
 from quant_hub.storage.research_store import ResearchStore
 from quant_hub.storage.schema import prepare_store
+from quant_hub.storage.series_store import SeriesStore
 from quant_hub.storage.state_store import ViewStateStore
 from quant_hub.storage.valuation_store import ValuationStore
 
@@ -53,6 +58,7 @@ class Core:
     market_service: MarketService
     chain_store: ChainStore
     chains: ChainService
+    chain_collector: ChainCollector
     workstation: WorkstationService
     file_import: FileImportService
     position_store: PositionStore
@@ -65,6 +71,10 @@ class Core:
     valuation: ValuationService
     regime_store: RegimeStore
     review: ReviewService
+    series_store: SeriesStore
+    external_data: ExternalDataService
+    holdings_store: HoldingsStore
+    fund_holdings: FundHoldingsService
     tasks: TaskRunner
     # Read-only IBKR accounts (E1); None when IBKR is off in settings.
     accounts: AccountService | None = None
@@ -83,6 +93,8 @@ class Core:
             ("closing fundamentals store", self.fundamentals_store.close),
             ("closing valuation store", self.valuation_store.close),
             ("closing regime store", self.regime_store.close),
+            ("closing series store", self.series_store.close),
+            ("closing holdings store", self.holdings_store.close),
         ):
             try:
                 step()
@@ -174,9 +186,15 @@ def build_core(config: AppConfig | None = None) -> Core:
     portfolio = PortfolioService(market_service, position_store)
     # The regime's versions and the review journal, same database (W7).
     regime_store = RegimeStore(config.db_path)
+    # External series as fetched (Ken French first), same database (D60).
+    series_store = SeriesStore(config.db_path)
+    # Funds' N-PORT holdings, same database (D62); fetching needs [sec] identity.
+    holdings_store = HoldingsStore(config.db_path)
     return Core(
         config=config, bus=bus, broker=broker, store=store, state_store=state_store,
         market_service=market_service, chain_store=chain_store, chains=chains,
+        # The watchlist's chains, once a trading day after the open (D63).
+        chain_collector=ChainCollector(chains, chain_store, config.collect_chains),
         workstation=WorkstationService(store), file_import=FileImportService(store),
         position_store=position_store, portfolio=portfolio, tasks=TaskRunner(),
         research_store=research_store, research=ResearchService(market_service, research_store),
@@ -184,5 +202,8 @@ def build_core(config: AppConfig | None = None) -> Core:
         valuation_store=valuation_store, valuation=valuation, regime_store=regime_store,
         review=ReviewService(portfolio, valuation, regime_store, config.regime_path,
                              config.positions_folder),
+        series_store=series_store, external_data=ExternalDataService(series_store),
+        holdings_store=holdings_store,
+        fund_holdings=FundHoldingsService(holdings_store, config.sec_identity),
         accounts=AccountService(broker) if ibkr else None,
     )

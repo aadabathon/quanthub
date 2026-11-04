@@ -279,6 +279,10 @@ reads D57's `split_gaps` (PR #18).
   - **D57:** a window with a named gap is excluded and named.
 
 ### I3. History
+
+**Partly landed (D63):** daily wide-band snapshots of a watchlist, on first
+connect after the open, and the NYSE calendar (decision 6). VIX history comes
+through FRED (D60).
 - **A variance chain request** (decision 2): a wider band and more strikes,
   in the same store and with the same parity carry. Fetch time is measured
   first; today a symbol takes about 42 s.
@@ -359,7 +363,7 @@ reads D57's `split_gaps` (PR #18).
    - a button
    - the first Volatility Lab visit of each trading day
    - or a headless job while TWS runs
-5. **Settled 2026-11-03 (D59):** yes, a CBOE provider after its terms check. The question was: **VIX history from CBOE:** a new provider with a terms check, or your
+5. **Settled 2026-11-03 (D59):** yes, a CBOE provider after its terms check. **Changed by D60:** Cboe's terms refuse storing the data, so VIX comes from FRED's `VIXCLS` (or IBKR's index bars). The question was: **VIX history from CBOE:** a new provider with a terms check, or your
    own snapshots only.
 6. **Settled 2026-11-03 (D59):** a small NYSE holiday rule set in `data/`, tested. The question was: **Trading days:**
    - a small NYSE holiday rule set in `data/`, tested

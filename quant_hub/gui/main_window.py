@@ -14,12 +14,15 @@ cards, and "Reset this page's cards" does the active page's cards only.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 
 from PySide6.QtCore import QByteArray, QTimer
 from PySide6.QtGui import QKeySequence, QScreen, QShortcut
-from PySide6.QtWidgets import QHBoxLayout, QMainWindow, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, QInputDialog, QMainWindow, QVBoxLayout,
+                               QWidget)
 
+from quant_hub.broker.base import ConnectionEvent, ConnectionState
 from quant_hub.core import Core
 from quant_hub.gui.components import CardGrid
 from quant_hub.gui.pages.base import Commands, Page, Shell
@@ -27,6 +30,8 @@ from quant_hub.gui.sidebar import Sidebar
 from quant_hub.gui.status_bar import LogDrawer, StatusBar
 from quant_hub.gui.top_bar import TopBar
 from quant_hub.gui.workspace import Workspace
+
+_logger = logging.getLogger(__name__)
 
 PUMP_INTERVAL_MS = 16
 LAYOUT_KEY = "workspace"
@@ -49,7 +54,8 @@ class MainWindow(QMainWindow):
         self._first = next(iter(self._factories))
         self._pages: dict[str, Page] = {}
         self._commands: dict[str, Commands] = {}
-        self._shell = Shell(navigate=self.show_page, publish_commands=self._publish_commands)
+        self._shell = Shell(navigate=self.show_page, publish_commands=self._publish_commands,
+                            run=self._run_command)
 
         root = QWidget()
         root.setObjectName("appRoot")
@@ -88,7 +94,15 @@ class MainWindow(QMainWindow):
             **{f"Go to {name}": (lambda n=name: self.show_page(n)) for name in self._factories},
             "Reset layout": self.reset_layout,
             "Reset this page's cards": self.reset_cards,
+            "Fetch Ken French factors": self.fetch_french,
+            "Import Shiller CSV…": self.import_shiller,
+            "Fetch fund holdings…": self.fetch_fund_holdings,
+            "Collect today's chains": self.collect_chains,
         })
+
+        # The daily chain snapshots start when TWS connects (D63).
+        core.bus.subscribe(ConnectionEvent, self._on_connection)
+        self._collecting = False
 
         self._pump_timer = QTimer(self)
         self._pump_timer.timeout.connect(self._pump)
@@ -127,6 +141,64 @@ class MainWindow(QMainWindow):
             for grid in page.findChildren(CardGrid):
                 grid.reset()
         self.apply_default_size(self.screen())
+
+    def fetch_french(self) -> None:
+        """Fetch Ken French's daily factor files now (D60), on the worker. The
+        service logs each dataset's outcome, which the status bar shows."""
+        self._core.tasks.submit(
+            lambda: self._core.external_data.refresh_french(force=True),
+            on_error=lambda exc: _logger.warning("Ken French fetch failed: %s", exc))
+
+    def import_shiller(self, path: str | None = None) -> None:
+        """Import the CSV saved from Shiller's ie_data.xls (D61), on the worker.
+        Asks for the file unless ``path`` is given; the service logs the result."""
+        if path is None:
+            path, _ = QFileDialog.getOpenFileName(
+                self, "Import Shiller's data (the Data sheet saved as CSV)", "",
+                "CSV files (*.csv)")
+        if path:
+            self._core.tasks.submit(
+                lambda: self._core.external_data.import_shiller(path),
+                on_error=lambda exc: _logger.warning("Shiller import failed: %s", exc))
+
+    def fetch_fund_holdings(self, fund: str | None = None) -> None:
+        """A fund's latest N-PORT holdings from the SEC (D62), on the worker.
+        Asks for the ticker unless ``fund`` is given; the service logs the result."""
+        if fund is None:
+            fund, ok = QInputDialog.getText(self, "Fund holdings (SEC N-PORT)", "Fund ticker:")
+            fund = fund if ok else ""
+        if fund.strip():
+            self._core.tasks.submit(
+                lambda: self._core.fund_holdings.holdings(fund, refresh=True),
+                on_error=lambda exc: _logger.warning("fund holdings: %s", exc))
+
+    def _on_connection(self, event: ConnectionEvent) -> None:
+        if event.state is ConnectionState.CONNECTED and self._core.chain_collector.watchlist:
+            self.collect_chains()
+
+    def collect_chains(self) -> None:
+        """Snapshot the watchlist's chains that are due today (D63). One symbol
+        per worker task, so a page opened meanwhile waits for one fetch, not all."""
+        if self._collecting:
+            return
+        collector = self._core.chain_collector
+        self._collecting = True
+
+        def next_symbol(remaining: list[str]) -> None:
+            if not remaining:
+                self._collecting = False
+                return
+            _logger.info("daily chains: collecting %s (%d left after it)",
+                         remaining[0], len(remaining) - 1)
+            self._core.tasks.submit(lambda: collector.collect(remaining[0]),
+                                    on_done=lambda _o: next_symbol(remaining[1:]),
+                                    on_error=lambda _e: next_symbol(remaining[1:]))
+
+        def stopped(exc: Exception) -> None:
+            self._collecting = False
+            _logger.warning("daily chains: %s", exc)
+        self._core.tasks.submit(collector.due, on_done=lambda due: next_symbol(list(due)),
+                                on_error=stopped)
 
     def reset_cards(self) -> None:
         """The active page's cards back to the page's own layout."""
@@ -175,6 +247,13 @@ class MainWindow(QMainWindow):
         for group in self._commands.values():
             merged |= group
         self._top.search.set_commands(merged)
+
+    def _run_command(self, name: str) -> None:
+        for group in self._commands.values():
+            if name in group:
+                group[name]()
+                return
+        raise KeyError(f"no command named {name!r}")
 
     def _focus_search(self) -> None:
         self._top.search.setFocus()
