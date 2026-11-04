@@ -115,6 +115,11 @@ hundreds of names count. It needs `[sec] identity` in `settings.toml`,
 and TWS connected once to look up the ISINs of the stocks you hold
 directly.
 
+Beside the drawdown tolerance, the review's Crash stress card replays the
+book's β through every crash since 1926 (Ken French's daily market). It's
+measured, never graded: a floor for what a crash would cost, which a
+two-year lookback can't see (A2).
+
 When a day carries most of the variance of the mix or of a holding (the
 review flags it, the same days the Portfolio page flags,
 `models/portfolio.py`), grade the return-based numbers: ___ (as measured /

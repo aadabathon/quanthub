@@ -330,3 +330,53 @@ def test_without_the_cores_report_effective_holdings_say_how_to_get_it(world):
     assert neff.check.outcome is Outcome.MISSING
     assert neff.check.reason.startswith("AAA's N-PORT holdings aren't stored")
     assert "[sec] identity" in neff.check.reason
+
+
+def french_store(days=3_000):
+    """Made-up daily market and bill series under French's names, with a
+    planted slide, in an in-memory series store."""
+    from quant_hub.data.series import FetchedSeries, SeriesMeta
+    from quant_hub.storage.series_store import SeriesStore
+    dates = pd.bdate_range("1990-01-02", periods=days)
+    rng = np.random.default_rng(5)
+    excess = rng.normal(0.0003, 0.01, days)
+    excess[1000:1100] -= 0.006
+    store = SeriesStore(":memory:")
+
+    def series(name, values):
+        meta = SeriesMeta("french", name, name, "fraction", "daily", "made up")
+        return FetchedSeries(meta, tuple(d.strftime("%Y-%m-%d") for d in dates),
+                             tuple(float(v) for v in values))
+    store.save([series("ff3.mkt_rf", excess), series("ff3.rf", np.full(days, 0.0001))],
+               NOW, "h")
+    return store
+
+
+def test_the_books_beta_is_replayed_through_the_stored_crashes(world):
+    from quant_hub.models.stress import worst_fall
+    from quant_hub.services.external_data import ExternalDataService
+    from quant_hub.services.portfolio import PORTFOLIO_ROW
+    service, store, *_ = world
+    french = french_store()
+    service._external = ExternalDataService(french)
+    review = service.run({"credit calm": True})
+    crash = review.crash
+    beta, error = review.graded.regressions.beta(PORTFOLIO_ROW)
+    assert (crash.beta, crash.error) == (pytest.approx(beta), pytest.approx(error))
+    market = french.series("french", "ff3.mkt_rf").values
+    bills = french.series("french", "ff3.rf").values
+    assert crash.worst.depth == pytest.approx(worst_fall(market, bills, beta))
+    (_, low), (_, high) = crash.band
+    assert low <= crash.worst.depth <= high
+    saved = store.review(review.review_id).payload["crash"]
+    assert saved["worst"] == pytest.approx(crash.worst.depth) and saved["data"][0] == "1990-01-02"
+
+
+def test_without_frenchs_market_the_crash_stress_says_how_to_get_it(world):
+    from quant_hub.services.external_data import ExternalDataService
+    from quant_hub.storage.series_store import SeriesStore
+    service, *_ = world
+    service._external = ExternalDataService(SeriesStore(":memory:"))
+    review = service.run({"credit calm": True})
+    assert review.crash is None
+    assert "Fetch Ken French factors" in review.crash_note

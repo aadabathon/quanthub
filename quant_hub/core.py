@@ -195,6 +195,7 @@ def build_core(config: AppConfig | None = None) -> Core:
     fund_holdings = FundHoldingsService(holdings_store, config.sec_identity)
     # Held symbols' ISINs from IBKR, kept in the same database (A1, D66).
     security_ids = SecurityIdService(holdings_store, broker if ibkr else None)
+    external_data = ExternalDataService(series_store)
     return Core(
         config=config, bus=bus, broker=broker, store=store, state_store=state_store,
         market_service=market_service, chain_store=chain_store, chains=chains,
@@ -207,8 +208,8 @@ def build_core(config: AppConfig | None = None) -> Core:
         valuation_store=valuation_store, valuation=valuation, regime_store=regime_store,
         review=ReviewService(portfolio, valuation, regime_store, config.regime_path,
                              config.positions_folder, fund_holdings=fund_holdings,
-                             security_ids=security_ids),
-        series_store=series_store, external_data=ExternalDataService(series_store),
+                             security_ids=security_ids, external_data=external_data),
+        series_store=series_store, external_data=external_data,
         holdings_store=holdings_store, fund_holdings=fund_holdings, security_ids=security_ids,
         accounts=AccountService(broker) if ibkr else None,
     )

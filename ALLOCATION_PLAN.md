@@ -123,6 +123,10 @@ A W7 change, through `importers/regime_md.py`, `data/regime.py` and
 
 ### A2. Crash stress, measured
 
+**Status:** landed 2026-11-04 (D67). The row below wasn't added:
+decision 4 settled on measuring only, so crash stress is a Review card
+with an error band, never a graded rule.
+
 **A new section 4 row:**
 
 | Rule | Your value | Unit | Measured by | On breach |

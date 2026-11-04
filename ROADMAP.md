@@ -616,7 +616,8 @@ The order after the 2026-11-03 decisions:
 2. **ALLOCATION A1 → A2:** core-aware limits with look-through N_eff, and
    crash stress (measured, not graded). ~~A1~~ landed 2026-11-04: the
    core exemption, sleeve totals and β netting (D65), and the look-through
-   N_eff through IBKR's ISIN lookup (D66). A2 is next.
+   N_eff through IBKR's ISIN lookup (D66). ~~A2~~ landed 2026-11-04: crash
+   stress on Review, measured, never graded (D67).
 3. **HEDGE U1:** the hedge math ([HEDGE_PLAN.md](HEDGE_PLAN.md)), then
    U2–U5.
 4. **ALLOCATION A3–A4:** the What-if page and snapshot hygiene.

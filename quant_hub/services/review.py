@@ -41,6 +41,9 @@ One run is the plan's job chain, on the task-worker thread:
      fund's newest N-PORT report, its lines matched to the stocks held
      directly by ISIN (``services/security_ids.py``). Without a stored
      report the rule has no data, and says how to get one.
+   - **Crash stress** (A2, D67): the book's β, with its Newey–West
+     error band, replayed through Ken French's daily market from 1926
+     (``models/stress.py``). Measured, never graded.
 8. **The journal.** The run is stored whole. Notes and hand-placed trades
    are added after.
 
@@ -85,9 +88,11 @@ from quant_hub.models.regime import (
     volatility_forecast,
 )
 from quant_hub.models.regression import NEWEY_WEST, regress_returns, residual_correlation
+from quant_hub.models.stress import CrashStress, crash_stress
 from quant_hub.providers.sec_edgar import SecError
 from quant_hub.providers.sec_nport import NportError
 from quant_hub.services.fund_holdings import FundHoldingsService
+from quant_hub.services.external_data import ExternalDataService
 from quant_hub.services.portfolio import PORTFOLIO_ROW, PortfolioService, PortfolioView
 from quant_hub.services.security_ids import SecurityIdService
 from quant_hub.services.valuation import ValuationService, refusal
@@ -98,6 +103,8 @@ DEFAULT_BENCHMARK = "SPY"       # REGIME.md section 2: "SPY by default"
 DEFAULT_LOOKBACK = 730          # section 2: "730 by default"
 PORTFOLIO = "portfolio"
 NO_ERROR = "no standard error yet"
+CRASH_MARKET = ("french", "ff3.mkt_rf")      # the market's daily excess return, from 1926
+CRASH_BILLS = ("french", "ff3.rf")           # the T-bill's daily return
 THESIS_RULES = ("6.hurdle", "6.correlation", "6.stream-beta")
 """Section 1's tests: the growth hurdle, orthogonality and beta creep."""
 CORE_EXEMPT = ("4.max-weight", "4.max-risk-share")
@@ -162,6 +169,8 @@ class Review:
     notes: tuple[str, ...]
     netting: CoreNetting | None = None  # the core's β and the rest's (A1)
     netting_note: str = ""              # why there's none, when section 3 has a core
+    crash: CrashStress | None = None    # the book's β through every stored crash (A2)
+    crash_note: str = ""                # why there's none
 
     def breaches(self, consequence=None) -> list[ItemCheck]:
         """Breached checks, optionally of one grade or effect."""
@@ -173,11 +182,13 @@ class ReviewService:
     def __init__(self, portfolio: PortfolioService, valuation: ValuationService,
                  store: RegimeStore, regime_path: Path, positions_folder: Path | None = None,
                  now=datetime.now, fund_holdings: FundHoldingsService | None = None,
-                 security_ids: SecurityIdService | None = None) -> None:
+                 security_ids: SecurityIdService | None = None,
+                 external_data: ExternalDataService | None = None) -> None:
         self._portfolio = portfolio
         self._valuation = valuation
         self._funds = fund_holdings
         self._ids = security_ids
+        self._external = external_data
         self._store = store
         self._regime_path = Path(regime_path)
         self._folder = Path(positions_folder) if positions_folder else None
@@ -299,14 +310,15 @@ class ReviewService:
         streams = self._streams(rules, checks, run_at)
         drafts = _drafts(previous, snapshot) if previous is not None else ()
         netting, netting_note = _netting(graded, rules)
+        crash, crash_note = self._crash(graded)
         payload = _payload(rules, snapshot, files, checks, streams, influential, removed, calm,
-                           volatility, view, netting)
+                           volatility, view, netting, crash)
         review_id = self._store.save_review(run_at, version_id, snapshot.as_of.date().isoformat(),
                                             payload)
         return Review(run_at, review_id, version_id, rules, snapshot,
                       tuple(p.name for p in files), skipped, view, graded, influential, removed,
                       tuple(checks), tuple(streams), calm, volatility, tuple(drafts),
-                      tuple(notes), netting, netting_note)
+                      tuple(notes), netting, netting_note, crash, crash_note)
 
     # ------------------------------------------------------------ the journal
     def reviews(self, limit: int | None = None) -> list[ReviewRecord]:
@@ -403,6 +415,28 @@ class ReviewService:
             implied[ticker] = ((implied_growth(hist, assumptions, price), cagr)
                                if cagr is not None else "no trailing revenue CAGR in the filings")
         return measures, implied
+
+    def _crash(self, view: PortfolioView) -> tuple[CrashStress | None, str]:
+        """A2: the book's β (W2's, with its Newey–West error; the risk
+        model's without one) through Ken French's daily market. None, with
+        how to get it, when the series isn't stored."""
+        if self._external is None:
+            return None, "The review has no outside series to replay."
+        try:
+            market = self._external.series(*CRASH_MARKET).values
+            bills = self._external.series(*CRASH_BILLS).values
+        except LookupError as exc:
+            return None, f"Crash stress needs Ken French's daily market: {exc}."
+        if view.regressions is not None:
+            beta, error = view.regressions.beta(PORTFOLIO_ROW)
+        elif view.report.beta is not None:
+            beta, error = view.report.beta, None
+        else:
+            return None, "No β to replay: the book has no benchmark history."
+        try:
+            return crash_stress(market, bills, beta, error), ""
+        except ValueError as exc:
+            return None, f"The crash replay failed: {exc}."
 
     def _look_through(self, view: PortfolioView, rules: RuleSet
                       ) -> tuple[Measure | None, str, list[str]]:
@@ -783,7 +817,7 @@ def _payload(rules: RuleSet, snapshot: PositionSnapshot, files: Sequence[Path],
              influential: Sequence[InfluentialDay], removed: Sequence[date],
              calm: CalmGate | None,
              volatility: float | None, view: PortfolioView,
-             netting: CoreNetting | None = None) -> dict:
+             netting: CoreNetting | None = None, crash: CrashStress | None = None) -> dict:
     """What the journal keeps of a run: enough to show it again and to
     count section 1's runs, nothing the store would need to understand."""
     return {
@@ -812,4 +846,10 @@ def _payload(rules: RuleSet, snapshot: PositionSnapshot, files: Sequence[Path],
             "core": list(netting.core), "core_weight": _finite(netting.core_weight),
             "core_beta": _finite(netting.core_beta), "rest_weight": _finite(netting.rest_weight),
             "rest_beta": _finite(netting.rest_beta)},
+        "crash": None if crash is None else {
+            "beta": _finite(crash.beta), "error": _finite(crash.error) if crash.error else None,
+            "worst": _finite(crash.worst.depth), "peak": crash.worst.peak.isoformat(),
+            "trough": crash.worst.trough.isoformat(),
+            "band": [_finite(d) for _, d in crash.band] if crash.band else None,
+            "data": [crash.first.isoformat(), crash.last.isoformat()]},
     }

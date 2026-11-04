@@ -2407,3 +2407,81 @@ with its backup.
 
 **Not checked live:** fetching the core's report needs `[sec] identity`,
 and the ISIN lookup needs TWS. Neither was available.
+
+## D67 — ALLOCATION A2: crash stress, measured (2026-11-04)
+
+ALLOCATION_PLAN's third finding was that the drawdown check never sees a
+crash. It reads the worst fall of today's mix over the lookback, which can
+be two calm years. D59 settled the rest:
+- **Data (decision 3):** the longest history, which is Ken French's
+  market from 1926.
+- **Grading (decision 4):** measured only, shown with its dates and its
+  error band, never graded. So there's no section 4 row: the plan's
+  proposed "Crash stress" row isn't added.
+
+**The replay** (`models/stress.py`, math in its docstring). A book with
+β b to the market holds b in the market and 1 − b in T-bills, borrowing
+at the bill rate above 1, and is rebalanced daily:
+
+    Vₜ = Π (1 + r_s + b·x_s)
+
+Here x_s is French's `Mkt-RF` and r_s his `RF`. The measure is V's
+largest peak-to-trough fall, with its peak, its trough and the day V
+regained the peak. The five worst falls are listed, each a separate spell
+under water.
+- A day whose factor is zero or less wipes the book out. V stays at zero
+  from then. At β 6, that day is 19 October 1987.
+- **The fall grows with |β|.** In logs, each spell's change is concave in
+  b. The worst fall is set by the minimum over spells, which is concave
+  too, zero at b = 0 and never positive (with bills ≥ 0). So it can't
+  rise as b moves away from zero. That's why the error band's two ends
+  bound the fall.
+
+**The β** is W2's regression of the book on the benchmark, the one the
+Beta row grades, with its Newey–West error. The band is β̂ ± 1.96 SE, a
+95% band. Without regressions, it's the risk model's β with no band.
+
+**On the Review page**, a "Crash stress" card:
+- the worst fall at β̂, its dates, and the band's falls
+- the drawdown over the century, with your drawdown tolerance drawn
+  across it
+- the five worst falls, with when each was regained
+- a note: **a floor, not an estimate.** The replay holds β fixed and
+  carries no stock-specific risk, and correlations rise in crashes
+  (Longin and Solnik, 2001), so a book of stocks loses more.
+
+The journal keeps the β, the worst fall, its dates, the band and the
+data's span.
+
+**What it treats as one:** French's market is CRSP's value-weighted
+index, and β is measured against the benchmark (SPY by default), which
+tracks it closely.
+
+**Not from a paper:** `models/stress.py` is daily accounting, like
+`backtest.py`, so test_literature lists it among the exemptions. Roy
+(1952) and Longin–Solnik (2001) are cited for context only.
+
+**Without French's series** stored, the card says how to fetch them:
+Ctrl+K, **Fetch Ken French factors**. The review reads the stored copy
+only and never fetches.
+
+**Checked on the stored French series at β 1:**
+- 1929–32: −84.1%, regained in 1945
+- 2007–09: −54.6%
+- 2000–02: −49.2%
+- 1973–74: −48.2%
+Those are the market's own total-return falls.
+
+**Tests:**
+- β = 1 is the market's own total-return path
+- β = 0 never falls
+- the fall grows with |β| on both sides
+- planted slides found worst first, with exact dates and recoveries
+- a spell not yet regained
+- the band's ends, a wipe-out, and refusals
+- the review: β and SE from the regression, the band, the journal, and
+  no French series
+- the Review card, with made-up series and without any
+
+**Checked** with a screenshot of the Review page: the tests' made-up book,
+with your stored French series.

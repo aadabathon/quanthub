@@ -1906,6 +1906,9 @@ def test_review_runs_the_checklist_and_keeps_the_journal(qt_app, tmp_path):
     assert page._netting_card.isVisibleTo(page) and page._netting.rowCount() == 3
     assert page._netting.item(0, 0).text() == "Core: AAA"
     assert "For β between 0.50 and 1.50" in page._netting_text.text()
+    # A2 without French's market stored: the card says how to get it.
+    assert page._crash_card.isVisibleTo(page) and not page._crash_chart.isVisibleTo(page)
+    assert "Fetch Ken French factors" in page._crash_text.text()
     # CCC's +500% day decides the mix and CCC's own series: a row for each (D53).
     assert page._streams.rowCount() == 2 and page._influence.rowCount() == 2
     assert [page._influence.item(r, 1).text() for r in range(2)] == ["the mix", "CCC"]
@@ -1925,6 +1928,29 @@ def test_review_runs_the_checklist_and_keeps_the_journal(qt_app, tmp_path):
     wait_for(app, lambda: page._header._status.full_text() == "Notes saved.", timeout_s=30)
     assert window._core.regime_store.review(page._last.review_id).notes == "first review"
 
+
+
+def test_review_replays_the_books_beta_through_the_stored_crashes(qt_app, tmp_path):
+    from test_review_service import french_store
+    app, window = qt_app
+    made_up = french_store()
+    window._core.series_store.save(
+        [_as_fetched(made_up.series("french", name)) for name in ("ff3.mkt_rf", "ff3.rf")],
+        pd.Timestamp("2026-11-04").to_pydatetime(), "h")
+    page = _review(app, window, tmp_path)
+    page._ticks["credit calm"].setChecked(True)
+    page._run()
+    wait_for(app, lambda: page._last is not None, timeout_s=90)
+    assert page._last.crash is not None
+    assert page._crash_chart.isVisibleTo(page) and page._crash_falls.rowCount() >= 1
+    assert page._crash_text.text().startswith(f"At β {page._last.crash.beta:.2f}, the worst fall")
+    assert "95% band" in page._crash_text.text() and "1990-01-02" in page._crash_floor.text()
+
+
+def _as_fetched(stored):
+    from quant_hub.data.series import FetchedSeries
+    return FetchedSeries(stored.meta, tuple(d.strftime("%Y-%m-%d") for d in stored.values.index),
+                         tuple(float(v) for v in stored.values))
 
 def test_review_names_an_unreadable_rules_line(qt_app, tmp_path):
     from test_review_service import RULES

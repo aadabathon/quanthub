@@ -184,6 +184,9 @@ quant_hub/
 │   ├── allocation.py          the core and the rest: the book's β split,
 │   │                          the core weight for the Beta band (A1, D65);
 │   │                          effective holdings looking through it (D66)
+│   ├── stress.py              crash stress: a constant-β replay through
+│   │                          French's market from 1926, its worst falls,
+│   │                          the β band's (A2, D67)
 │   ├── dcf.py                 unlevered-FCF DCF (the owner's, ported):
 │   │                          projection, terminal conventions, valuation
 │   │                          date, sensitivity, multiples, margin of safety,

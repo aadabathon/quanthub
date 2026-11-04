@@ -178,6 +178,21 @@ def _netting_text(n) -> str:
             f"{reach} {now}{inside}")
 
 
+def _crash_text(c) -> str:
+    """The worst fall at the book's β, its dates, and the β band's
+    (``models/stress.py``)."""
+    w = c.worst
+    back = f"back at the peak {w.recovered}" if w.recovered else "not yet back at the peak"
+    text = (f"At β {c.beta:.2f}, the worst fall was {w.depth:.1%}: from {w.peak} to "
+            f"{w.trough}, {back}.")
+    if c.band is not None:
+        (b_low, d_low), (b_high, d_high) = c.band
+        low, high = sorted((d_low, d_high))
+        text += (f" For β {b_low:.2f} to {b_high:.2f}, its 95% band, the worst fall is "
+                 f"{low:.1%} to {high:.1%}.")
+    return text
+
+
 def _severity(c: Check) -> int:
     if c.outcome is Outcome.BREACH:
         return 0 if c.consequence in _SEVERE else 1 if c.consequence in _MILD else 2
@@ -203,6 +218,7 @@ class ReviewPage(ScrollPage):
             grid.add(f"{name} tile", tile, 2 * column, 0, 2)
         grid.add_column([("checklist", self._build_checklist(), None),
                          ("netting", self._build_netting(), None),
+                         ("crash", self._build_crash(), None),
                          ("streams", self._build_streams(), None),
                          ("market", self._build_market(), None),
                          ("influence", self._build_influence(), None),
@@ -238,6 +254,23 @@ class ReviewPage(ScrollPage):
         self._netting_card.body.addWidget(self._netting_text)
         self._netting_card.setVisible(False)
         return self._netting_card
+
+    def _build_crash(self) -> Card:
+        self._crash_card = Card("Crash stress", "The book's β through every stored crash "
+                                "since 1926: a floor, not an estimate (A2)")
+        self._crash_text = label("", wrap=True)
+        self._crash_card.body.addWidget(self._crash_text)
+        self._crash_chart = StackedTimeSeries()
+        self._crash_chart.setFixedHeight(240)
+        self._crash_card.body.addWidget(self._crash_chart)
+        self._crash_falls = DataTable([("Fall", "right"), ("Peak", "left"), ("Trough", "left"),
+                                       ("Back at the peak", "left")], row_height=_ROW)
+        self._crash_falls.balance_columns()
+        self._crash_card.body.addWidget(self._crash_falls)
+        self._crash_floor = label("", "muted", wrap=True)
+        self._crash_card.body.addWidget(self._crash_floor)
+        self._crash_card.setVisible(False)
+        return self._crash_card
 
     def _build_streams(self) -> Card:
         self._streams_card = Card("Thesis by stream", "Section 1: the growth hurdle, "
@@ -413,6 +446,7 @@ class ReviewPage(ScrollPage):
         self._tiles["gates"].set_value(str(len(gates)), "critical" if gates else "good")
         self._render_checklist(review)
         self._render_netting(review)
+        self._render_crash(review)
         self._render_streams(review)
         self._render_market(review)
         self._render_influence(review)
@@ -452,6 +486,35 @@ class ReviewPage(ScrollPage):
         self._netting.setVisible(True)
         self._netting.setFixedHeight(_HEADER + len(rows) * _ROW)
         self._netting_text.setText(_netting_text(n))
+
+    def _render_crash(self, review: Review) -> None:
+        c = review.crash
+        self._crash_card.setVisible(True)
+        for widget in (self._crash_chart, self._crash_falls, self._crash_floor):
+            widget.setVisible(c is not None)
+        if c is None:
+            self._crash_text.setText(review.crash_note)
+            return
+        self._crash_text.setText(_crash_text(c))
+        rule = review.rules.rule("4.drawdown")
+        tolerance = rule.limit.upper if rule is not None and rule.limit.upper is not None else None
+        references = [("your tolerance", -tolerance)] if tolerance is not None else []
+        # Down to the deeper of the worst fall and the tolerance, so both show.
+        floor = -min(1.0, 1.1 * max(c.worst.depth, tolerance or 0.0, 0.05))
+        self._crash_chart.set_panels(c.drawdown.index, [Panel(
+            "Drawdown of the β replay", [Series("Drawdown", c.drawdown.to_numpy(), PALETTE.series,
+                                                fmt="{:.1%}")],
+            axis="percent", references=references, y_range=(floor, 0.0))])
+        rows = [[f"{f.depth:.1%}", f.peak.isoformat(), f.trough.isoformat(),
+                 f.recovered.isoformat() if f.recovered else ("not yet", PALETTE.muted)]
+                for f in c.falls]
+        self._crash_falls.set_rows(rows)
+        self._crash_falls.setFixedHeight(_HEADER + max(len(rows), 1) * _ROW)
+        self._crash_floor.setText(
+            "A floor: the replay holds β fixed and carries no stock-specific risk, and "
+            "correlations rise in crashes, so a book of stocks loses more. Ken French's daily "
+            f"market (CRSP value-weighted) and T-bills, {c.first} to {c.last}, rebalanced daily. "
+            "Measured, never graded.")
 
     def _render_streams(self, review: Review) -> None:
         rows = [[v.sleeve, ", ".join(v.breaches) or ("none", PALETTE.muted), str(v.run),
@@ -571,5 +634,6 @@ class ReviewPage(ScrollPage):
                       self._drafts, self._trades, self._history):
             table.setFixedHeight(_HEADER + _ROW)
         self._netting_card.setVisible(False)
+        self._crash_card.setVisible(False)
         self._influence_card.set_subtitle("Run a review to see it")
         self._header.set_status("Run a review: it reads your rules and the newest export.")

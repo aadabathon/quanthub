@@ -1,7 +1,17 @@
 # CURRENT_STATE.md
 
 **Update this file whenever meaningful work lands.** Last updated:
-**2026-11-04**: ALLOCATION A1, part 2 (D66): effective holdings look
+**2026-11-04**: ALLOCATION A2 (D67): crash stress on the Review page.
+- The book's β, with its 95% band, is replayed through Ken French's daily
+  market from 1926: held at β, the rest in T-bills, rebalanced daily.
+- The card shows the worst fall with its dates, the band's falls, the
+  century's drawdown against your tolerance, and the five worst falls.
+- It's measured, never graded, and labelled a floor: a book of stocks
+  loses more than its β replay.
+- It needs French's series (Ctrl+K: **Fetch Ken French factors**), which
+  are already in your store.
+
+Also **2026-11-04**: ALLOCATION A1, part 2 (D66): effective holdings look
 through the core. That completes A1.
 - The count reads the core fund's newest N-PORT report, so its hundreds
   of names count. A stock you hold directly that's also inside the fund
