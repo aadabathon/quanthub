@@ -1221,3 +1221,20 @@ pytest. Environment:
        - trend survived publication
      - No app code. It waits on the owner's approval and its eight
        decisions.
+8. **Proposed, 2026-11-03: [VARIANCE_PLAN.md](VARIANCE_PLAN.md),** I1 → I4.
+   The owner raised a Carr–Madan calculator and chose the variance side
+   first: the 1998 spanning result read off their chains as a model-free
+   variance strike, and the variance risk premium against GARCH, trailing
+   realized, and the realized that follows.
+   - A scratch check on a synthetic equity smile (ATM 14.0%, skew ≈ −1.2):
+     - √(variance strike) is 16.6%
+     - today's chain request (−2.5 to +1.5 ATM sd) holds only 86% of the
+       variance
+     - so the Term structure view's ATM-vs-GARCH gap understates the
+       premium (0.2 against 2.8 vol points beside a 13.8% GARCH month)
+   - The local store has no chain snapshots yet, so a premium history
+     needs daily snapshots or CBOE's VIX history (its decision 5).
+   - FFT pricing and Heston calibration (Carr–Madan 1999) are left for a
+     later plan.
+   - No app code. It waits on the owner's approval and its seven
+     decisions.
