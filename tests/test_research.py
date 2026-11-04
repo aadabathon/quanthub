@@ -145,6 +145,27 @@ def test_market_panel_uses_explicit_basis_intersection_and_no_fills(service):
     np.testing.assert_allclose(research.reopen(run.id).result.equity, run.result.equity)
 
 
+def test_split_sized_gaps_are_saved_with_the_run(service):
+    # D57: a series with a split left in is named in the run's provenance.
+    _, store, _ = service
+    dates = pd.bdate_range("2025-01-02", periods=180)
+    class Source:
+        name = "fixture"
+        def get_history(self, symbol, start, end, basis):
+            close = np.linspace(90, 120, len(dates))
+            if symbol == "B":
+                close[90:] /= 2
+            return PriceHistory(symbol, self.name, pd.DataFrame({"close": close}, index=dates), basis)
+    research = ResearchService(MarketService([Source()]), store)
+    experiment = replace(small_experiment(), source="fixture", symbols=("A", "B"), basis="adjusted")
+    _, provenance = research.prices(experiment)
+    ((day, gap, ratio),) = provenance["split_gaps"]["B"]
+    assert (day, ratio) == (dates[90].date().isoformat(), "2:1") and gap == pytest.approx(0.5, abs=0.01)
+    assert set(provenance["split_gaps"]) == {"B"}
+    run = research.run(experiment)
+    assert research.reopen(run.id).payload["provenance"]["split_gaps"] == provenance["split_gaps"]
+
+
 def test_reimporting_the_same_pdf_keeps_its_metadata_and_notes(service, tmp_path):
     research, _, _ = service
     path = tmp_path / "paper.pdf"

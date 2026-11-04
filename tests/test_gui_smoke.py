@@ -1068,6 +1068,42 @@ def test_portfolio_offline_uses_the_store_and_flags_a_deciding_day(tmp_path):
         _close(app, window)
 
 
+def test_portfolio_names_a_split_left_in_the_history(tmp_path):
+    """D57: a stored series with an unadjusted 2:1 split is analysed as it is,
+    and the page's warning names the holding, the day and the ratio."""
+    from quant_hub.data.ranges import DateRange
+    db = tmp_path / "market_data.db"
+    store = BarStore(db)
+    dates = pd.bdate_range("2025-01-02", periods=300)
+    rng = np.random.default_rng(6)
+    for symbol in ("AAA", "BBB", "SPY"):
+        closes = 50 * np.exp(np.cumsum(rng.normal(0.0, 0.012, len(dates))))
+        if symbol == "AAA":
+            closes[200:] /= 2
+        frame = pd.DataFrame({"open": closes, "high": closes, "low": closes, "close": closes,
+                              "volume": np.full(len(dates), 1e6)}, index=dates)
+        store.insert_bars(InstrumentKey(symbol), "ibkr", "1 day", frame)
+        store.add_coverage(InstrumentKey(symbol), "ibkr", "1 day",
+                           DateRange(dates[0], dates[-1]))
+    store.close()
+    app, window = create_app(AppConfig(db_path=db), argv=["test"])
+    window.show()
+    try:
+        window._core.state_store.save("portfolio", {"source": "ibkr", "mode": "Imported"})
+        page = window.show_page("Portfolio")
+        positions = tmp_path / "positions.csv"
+        positions.write_text("symbol,quantity,price\nAAA,100,25\nBBB,10,50\n", encoding="utf-8")
+        page.import_file(positions)
+        wait_for(app, lambda: page._view is not None
+                 and page._view.snapshot.source != "Example", timeout_s=30)
+        assert list(page._view.split_gaps) == ["AAA"]
+        text = page._warning._text.text()
+        assert "AAA has an overnight gap the size of a stock split" in text
+        assert f"on {dates[200]:%b %d, %Y} (2:1)" in text
+    finally:
+        _close(app, window)
+
+
 
 # ----------------------------------------------------------------- Valuation
 def _valuation(app, window, **state):
