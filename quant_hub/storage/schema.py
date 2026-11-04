@@ -38,6 +38,8 @@ Versions:
   trades (``regime_versions``, ``reviews``, ``trades``).
 * **7** (D60): external series as fetched, and their values (``ext_series``,
   ``ext_values``).
+* **8** (D62): funds' holdings as filed on N-PORT, and the fund ticker map
+  (``fund_tickers``, ``fund_filings``, ``fund_holdings``).
 
 Steps are frozen: each one spells out its own SQL, never the stores'
 current schema, which keeps moving. A test holds a migrated file and a new
@@ -60,7 +62,7 @@ from quant_hub.storage.bar_store import StorageError
 
 _logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 BACKUP_DIR = "backups"
 
 _TABLE = """
@@ -156,9 +158,16 @@ def _series(conn: sqlite3.Connection) -> None:
         conn.execute(statement)
 
 
+def _holdings(conn: sqlite3.Connection) -> None:
+    """7 -> 8: funds' N-PORT holdings and the fund ticker map (D62)."""
+    from quant_hub.storage.holdings_store import V8_TABLES
+    for statement in V8_TABLES:
+        conn.execute(statement)
+
+
 _STEPS: dict[int, Callable[[sqlite3.Connection], None]] = {
     0: _adopt, 1: _price_basis, 2: _research, 3: _fundamentals, 4: _valuations, 5: _regime,
-    6: _series,
+    6: _series, 7: _holdings,
 }
 
 

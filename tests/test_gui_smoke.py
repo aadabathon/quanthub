@@ -706,6 +706,16 @@ def test_ctrl_k_imports_a_shiller_csv_on_the_worker(qt_app, monkeypatch):
     wait_for(app, lambda: paths == ["C:/somewhere/ie_data.csv"])
 
 
+def test_ctrl_k_fetches_fund_holdings_on_the_worker(qt_app, monkeypatch):
+    app, window = qt_app
+    asked = []
+    monkeypatch.setattr(window._core.fund_holdings, "holdings",
+                        lambda fund, refresh=False: asked.append((fund, refresh)))
+    assert "Fetch fund holdings…" in window._top.search._commands
+    window.fetch_fund_holdings("SPY")                    # the dialog's answer, given
+    wait_for(app, lambda: asked == [("SPY", True)])
+
+
 # ----------------------------------------------------------------- GARCH Lab
 
 def test_garch_synthetic_fit_shows_truth(qt_app):

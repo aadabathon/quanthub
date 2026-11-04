@@ -19,7 +19,8 @@ from collections.abc import Callable
 
 from PySide6.QtCore import QByteArray, QTimer
 from PySide6.QtGui import QKeySequence, QScreen, QShortcut
-from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QMainWindow, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, QInputDialog, QMainWindow, QVBoxLayout,
+                               QWidget)
 
 from quant_hub.core import Core
 from quant_hub.gui.components import CardGrid
@@ -93,6 +94,7 @@ class MainWindow(QMainWindow):
             "Reset this page's cards": self.reset_cards,
             "Fetch Ken French factors": self.fetch_french,
             "Import Shiller CSV…": self.import_shiller,
+            "Fetch fund holdings…": self.fetch_fund_holdings,
         })
 
         self._pump_timer = QTimer(self)
@@ -151,6 +153,17 @@ class MainWindow(QMainWindow):
             self._core.tasks.submit(
                 lambda: self._core.external_data.import_shiller(path),
                 on_error=lambda exc: _logger.warning("Shiller import failed: %s", exc))
+
+    def fetch_fund_holdings(self, fund: str | None = None) -> None:
+        """A fund's latest N-PORT holdings from the SEC (D62), on the worker.
+        Asks for the ticker unless ``fund`` is given; the service logs the result."""
+        if fund is None:
+            fund, ok = QInputDialog.getText(self, "Fund holdings (SEC N-PORT)", "Fund ticker:")
+            fund = fund if ok else ""
+        if fund.strip():
+            self._core.tasks.submit(
+                lambda: self._core.fund_holdings.holdings(fund, refresh=True),
+                on_error=lambda exc: _logger.warning("fund holdings: %s", exc))
 
     def reset_cards(self) -> None:
         """The active page's cards back to the page's own layout."""

@@ -1,7 +1,15 @@
 # CURRENT_STATE.md
 
 **Update this file whenever meaningful work lands.** Last updated:
-**2026-11-03**: the data batch's part 2 landed (D61): Shiller's monthly
+**2026-11-03**: the data batch's part 3 landed (D62): funds' holdings from SEC
+N-PORT. Ctrl+K: **Fetch fund holdings…** takes a ticker and stores the latest
+public report (quarterly, about 60 days behind). Every report date is kept,
+in schema v8. It's for ALLOCATION A1's look-through N_eff; matching a fund's
+lines to stocks you hold needs an ISIN → ticker bridge, which is A1's call.
+**Not checked live:** fetching needs `[sec] identity` in your settings, which
+isn't set. Tests use fixtures shaped like SPY's real filing.
+
+Also **2026-11-03**: the data batch's part 2 landed (D61): Shiller's monthly
 data. Save `ie_data.xls`'s Data sheet as CSV in Excel, then Ctrl+K:
 **Import Shiller CSV…**. It holds price, dividends, earnings, CPI, GS10 and
 CAPE from 1871 in the D60 series store. The provisional last month is

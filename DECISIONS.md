@@ -2101,3 +2101,67 @@ earnings, and the file's SHA-256 records which import a number came from.
 excess CAPE yield), along with TARGET's superseded T2 rule as one of its
 inputs. FRED, N-PORT, the chain snapshots and a page for stored data are
 next.
+
+## D62 — The data batch, part 3: funds' holdings from SEC N-PORT (2026-11-03)
+
+D59 chose look-through N_eff for ALLOCATION A1, with fund holdings from
+SEC N-PORT filings through the existing SEC provider. Built here: the
+holdings arrive and accumulate. A1 reads them later.
+
+**What N-PORT is.** Every US registered fund, unit-trust ETFs like SPY
+included, files its full portfolio on Form N-PORT. The public filings
+(`NPORT-P`) arrive quarterly, about 60 days after the report date, as XML.
+D47's fair-access client covers them: a declared identity and at most ten
+requests a second. `SecClient` gains a public `get` for this.
+
+**Finding a fund's latest report** (`providers/sec_nport.py`, stdlib only):
+1. **The ticker.** SEC's fund ticker map (`company_tickers_mf.json`) gives
+   a series trust's CIK and series id. A unit trust has no series id; its
+   CIK comes from the company ticker map instead.
+2. **Its filings.** EDGAR's browse feed, as Atom, lists the series' (or
+   CIK's) `NPORT-P` filings, amendments included, newest first.
+3. **The report.** `primary_doc.xml` in the filing's folder. Each
+   `invstOrSec` keeps name, LEI, CUSIP, ISIN, ticker, balance, units, USD
+   value, the weight (`pctVal` ÷ 100, a fraction of net assets), the asset
+   and issuer categories, country and payoff.
+   - Matching is by local element name, so a namespace change doesn't
+     break it.
+   - `N/A` and blanks stay blank, never guessed.
+   - A document for another series is refused.
+
+The layout was read from SPY's real filing of 2026-08-28 (as of
+2026-06-30). The tests use fixtures in that shape, with made-up holdings.
+
+**Storage** (`storage/holdings_store.py`, schema v8, after the backup):
+- `fund_tickers`: the map, refreshed when a week old.
+- `fund_filings`: per fund and report date, with accession, net assets,
+  fetch time and the XML's SHA-256.
+- `fund_holdings`: the lines, in filing order.
+
+Every report date is kept, so a fund's holdings history accumulates (D59).
+A refetch of the same date, an amendment, replaces it.
+
+**The service** (`services/fund_holdings.py`):
+- It checks for a newer filing when the stored report was last checked
+  more than 30 days ago, or on refresh. That's one feed request, plus the
+  ticker map when it's a week old.
+- An already-stored accession is only marked as checked, with no document
+  fetch.
+- A failed check serves the stored report.
+- Without `[sec] identity` it names the setting.
+- Ctrl+K **Fetch fund holdings…** asks for a ticker and logs the report
+  date, the line count and the weight covered.
+
+**The bridge, an open question for A1.** Holdings carry CUSIP and ISIN, but
+rarely a ticker. Look-through N_eff only needs the fund's weights, but
+merging a fund's line with a stock you also hold directly needs an
+ISIN-to-ticker bridge. The candidates are IBKR's ISIN contract lookup
+(needs TWS, no new provider), OpenFIGI (a new provider, with a terms
+check), or name matching (fragile across share classes). That's A1's to
+choose; nothing here guesses.
+
+**Not checked live:** the owner's settings have no `[sec] identity`, and
+filling it is the owner's call (D47). Until then the parsers are verified
+on fixtures shaped from the real documents. Live checklist: SPY (a unit
+trust) and one series-trust ETF, comparing line count and weights with
+the issuer's site.

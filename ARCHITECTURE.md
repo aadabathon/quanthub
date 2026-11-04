@@ -144,6 +144,8 @@ quant_hub/
 │   │                          short labels (Lit-1, D58)
 │   ├── canon/                 the canon itself, package data: timeline.json
 │   │                          (strands, eras) + one JSON file per strand
+│   ├── holdings.py            Holding/FundHoldings: one N-PORT report as
+│   │                          filed; weights as fractions of net assets (D62)
 │   ├── series.py              SeriesMeta/FetchedSeries/StoredSeries: outside
 │   │                          series as fetched, with unit, citation and
 │   │                          vintage; fractions for returns (D60)
@@ -250,6 +252,8 @@ quant_hub/
 │   │                          cheapest first, saved records, CSV (D48)
 │   ├── fundamentals.py        ticker/CIK → FinancialHistory: SEC facts kept a
 │   │                          day, refetched on demand, mapped offline (D47)
+│   ├── fund_holdings.py       ticker → latest N-PORT report: checked monthly,
+│   │                          new filings kept beside old, offline (D62)
 │   ├── external_data.py       outside series: Ken French's files refreshed
 │   │                          when a week old, each failure keeping its
 │   │                          stored copy; Shiller CSV imports (D61);
@@ -278,6 +282,10 @@ quant_hub/
 ├── providers/ken_french.py    Ken French's daily FF3, FF5 and momentum zips
 │                              through the stdlib: client + pure parser,
 │                              percent → fraction, terms in the docstring (D60)
+├── providers/sec_nport.py     funds' N-PORT: the fund ticker map, the EDGAR
+│                              Atom feed, primary_doc.xml → FundHoldings (D62)
+├── storage/holdings_store.py  fund ticker map + every N-PORT report date kept
+│                              (schema v8, D62)
 ├── storage/series_store.py    outside series as fetched: ext_series (meta,
 │                              fetched_at, file SHA-256) + ext_values,
 │                              replaced whole per fetch (schema v7, D60)
