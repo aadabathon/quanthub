@@ -74,7 +74,7 @@ from quant_hub.gui.components import (
     label,
     metric_row,
 )
-from quant_hub.gui.pages.base import ScrollPage, saved_grid
+from quant_hub.gui.pages.base import ScrollPage, saved_grid, split_warning
 from quant_hub.gui.theme import PALETTE, SIDE_PANEL_WIDTH, SPACE_L, SPACE_M
 from quant_hub.models.growth import ADDS, COSTS, GrowthReport, what_if
 from quant_hub.models.portfolio import InfluentialDay
@@ -687,6 +687,7 @@ class PortfolioPage(ScrollPage):
 
     def _render_notes(self, view: PortfolioView, fallback: bool) -> None:
         warnings = list(view.left_out)
+        warnings.extend(split_warning(symbol, gaps) for symbol, gaps in view.split_gaps.items())
         if view.snapshot.source == "IBKR":
             warnings.extend(f"Left out by IBKR's read: {note}." for note in self._broker_left_out)
         if view.unmodelled > 0:

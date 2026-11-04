@@ -415,6 +415,10 @@ Key properties (decisions D17–D21):
   adjusted request of a day, since every ex-date rescales the past. That
   daily refetch runs the split guard (adjusted/traded must be a dividend
   step function), which refetches traded history that straddles a split.
+  It can't see a split IBKR left unadjusted in both bases, as it did in
+  much of its pre-2006 history. `PriceHistory.split_gaps`
+  (`data/splits.py`, D57) names those overnight gaps, and pages show them.
+  Nothing repairs them.
   `bars` keys on the basis (schema v2), and `refreshes` records each
   series' last full refetch.
 - **Schema and backups** (D36): `build_core` runs

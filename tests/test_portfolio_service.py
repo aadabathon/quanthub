@@ -123,6 +123,32 @@ class TestAnalyse:
         fresh = online.analyse(snap, None, "synthetic", "SPY", 730, 0.04, now=NOW)
         assert fresh.offline_reason is None and fresh.sessions_missed == 0
 
+    def test_split_sized_gaps_are_named_by_symbol(self, store):
+        # D57: a split the source left unadjusted is carried to the page, not repaired.
+        from quant_hub.data.types import PriceBasis, PriceHistory
+
+        class Unadjusted:
+            name = "unadjusted"
+
+            def get_history(self, symbol, start, end, basis=PriceBasis.TRADED):
+                h = SyntheticSource().get_history(symbol, start, end, basis)
+                frame = h.frame.copy()
+                if symbol == "AAA":
+                    frame.iloc[200:] /= 2
+                return PriceHistory(h.symbol, self.name, frame, h.basis)
+
+            def get_quote(self, symbol):
+                raise AssertionError("not used")
+
+        service = PortfolioService(MarketService(sources=[Unadjusted()]), store)
+        snap = snapshot(equity("AAA", 100, 50.0), equity("BBB", 10, 25.0))
+        view = service.analyse(snap, None, "unadjusted", "SPY", 730, 0.04, now=NOW)
+        ((symbol, (gap,)),) = view.split_gaps.items()
+        assert symbol == "AAA" and gap.ratio == "2:1"
+        assert gap.day == view.returns.index[199].to_pydatetime()
+        plain = PortfolioService(MarketService(sources=[SyntheticSource()]), store)
+        assert plain.analyse(snap, None, "synthetic", "SPY", 730, 0.04, now=NOW).split_gaps == {}
+
     def test_one_account_at_a_time(self, service):
         snap = snapshot(equity("AAA", 100, 50.0, "Individual"), equity("BBB", 10, 25.0, "ROTH"))
         view = service.analyse(snap, "ROTH", "synthetic", "SPY", 730, 0.04, now=NOW)

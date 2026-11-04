@@ -1,5 +1,5 @@
 """Research experiments: forward decisions, retained evidence, explicit selection."""
-from datetime import date
+from datetime import date, datetime
 
 import numpy as np
 from PySide6.QtWidgets import QVBoxLayout, QWidget
@@ -10,7 +10,8 @@ from quant_hub.gui.components import (
     Card, DataTable, EmptyState, Field, MetricTile, PageHeader, PageStack,
     SegmentedControl, SelectField, TextArea, button, form_grid, label,
 )
-from quant_hub.gui.pages.base import PRICE_BASES, ScrollPage, basis_field, saved_grid
+from quant_hub.data.splits import SplitGap
+from quant_hub.gui.pages.base import PRICE_BASES, ScrollPage, basis_field, saved_grid, split_warning
 from quant_hub.gui.pages.research.history import SavedRuns
 from quant_hub.gui.pages.research.library import PaperLibrary
 from quant_hub.gui.theme import PALETTE, SIDE_PANEL_WIDTH, SPACE_L, SPACE_M
@@ -322,6 +323,9 @@ class ResearchPage(ScrollPage):
             f"Sharpe inference assumes independent returns. "
             + (f"{warning_count} fit(s) did not converge. " if warning_count else "")
             + ("Implementation changed since this run; saved decisions replayed. " if run.code_changed else "")
+            + "".join(split_warning(symbol, [SplitGap(datetime.fromisoformat(day), gap, ratio)
+                                             for day, gap, ratio in rows]) + " "
+                      for symbol, rows in prov.get("split_gaps", {}).items())
             + f"Evidence {payload['evidence_sha256'][:12]}.")
         trade_rows = []
         for i, day in enumerate(result.trades.index):

@@ -1,8 +1,33 @@
 # CURRENT_STATE.md
 
 **Update this file whenever meaningful work lands.** Last updated:
-**2026-10-29**: G2 landed (D56): every card on every page can be dragged
-and resized.
+**2026-11-02**: split-sized gaps are named (D57).
+- Found on a copy of the store: IBKR leaves much of its pre-2006 daily
+  history unadjusted for splits, in both bases. MSFT's 2:1 of 2003, for
+  example, is a one-day fall of 49%. The cache's split guard can't see this.
+- `data/splits.py` finds overnight gaps the size of a split (bands around
+  3:2, 2:1, 3:1, 4:1 and their reverses, and any move of ×5 or more).
+  Every `PriceHistory` has `split_gaps`.
+- Where they show:
+  - the GARCH, Kalman and Markov labs, in the line naming their data
+  - Portfolio's warnings
+  - Research, saved in the run's provenance and shown under the chart
+- Nothing is repaired: a real crash can look exactly like a split.
+- Tested: 36 unit tests (`tests/test_splits.py`), a portfolio-service test,
+  a research test and a Portfolio page smoke test.
+- Live, through TWS on a store copy (2026-11-02):
+  - MSFT, INTC, NVDA and AAPL show their old splits in both bases, and SPY
+    shows none.
+  - A 730-day Portfolio window sees no gaps. A 9,000-day window names
+    MSFT's 2003 split.
+  - A Research run over 2001–2004 saves it.
+  - AAPL's genuine fall of 2000-09-29 is named too, a known false alarm.
+- Not covered yet: the Review page, Markets, the Options Lab's realized
+  vol and the Volatility Lab's overlay. There's no real adjustment either;
+  that needs a split calendar.
+
+Before that, **2026-10-29**: G2 landed (D56): every card on every page can
+be dragged and resized.
 - Each page lays its cards on a snapping 12-column grid
   (`gui/card_grid.py`). Drag a card by its title or padding to move it,
   and drag its corner grip to resize it. The other cards make room, and

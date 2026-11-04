@@ -1760,3 +1760,46 @@ lays its cards on a snapping grid (`gui/card_grid.py`, re-exported from
 - Templates (named layouts).
 - Cards across pages.
 - Scrolling the page while dragging a card past its edge.
+
+## D57 — Split-sized overnight gaps are named, never repaired (2026-11-02)
+
+**Found (2026-11-01, on a copy of the store).** Some of IBKR's older daily
+history isn't split-adjusted in either basis. MSFT, CSCO, INTC, ORCL, NVDA,
+AAPL and others keep their 2:1 splits from 1999 through May 2005 as a
+one-day fall of about 50%. Their later splits (NVDA's 2006 and 2007,
+AAPL's 2014 and 2020) are adjusted. TRADES and ADJUSTED_LAST carry the same
+step, so F3's split guard (adjusted/traded must be a dividend step
+function, D38) can't see it. One fake −50% day poisons every number built
+on the series.
+
+**Decision.** `data/splits.py` finds overnight gaps the size of a split:
+the log gap x_t = ln(O_t / C_{t−1}) within τ = 0.07 of −ln k for k ∈ {3/2,
+2, 3, 4}, of +ln k for k ∈ {2, 3, 4}, or beyond ×5 either way. A day whose close
+is more than 0.25 (log) from its open is skipped: that's a bad print or a
+news day. A day without an open is tested on its close. The derivation and
+the calibration are in the module docstring.
+- Every `PriceHistory` has `split_gaps`.
+- The GARCH, Kalman and Markov labs append it to the line that names their
+  data (`history_note`, formerly `offline_note`).
+- Portfolio carries the gaps per holding (`PortfolioView.split_gaps`) and
+  names them among its warnings.
+- Research saves them in a run's provenance and shows them under the
+  chart.
+
+**Why name and not repair.** A genuine overnight fall inside a band can't
+be told from a split by open, high, low, close and volume. AAPL's of
+2000-09-29 opened at ×0.527. A repair would erase a real crash, the worst
+failure a risk tool can have, while a false note costs a glance. On the
+store copy (41 symbols, 162,666 overnight gaps) the bands found all 16
+unadjusted 2:1 splits and a 3:1, plus two days that aren't known splits.
+Refusing the request was rejected too: it would block every long history
+of a stock with one real crash in a band.
+
+**Not done:**
+- Real adjustment, which needs a source with a split calendar (a new
+  provider, for discussion).
+- The Review page, Markets, the Options Lab's realized vol and the
+  Volatility Lab's overlay don't show the note yet. The Dashboard charts
+  the step as it is.
+- A 5:4 split or a stock dividend under about 28% isn't named, and neither
+  is a split on a day that moved more than 25% after the open.
