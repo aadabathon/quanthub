@@ -27,6 +27,7 @@ from quant_hub.gui.pages.kalman_lab import KalmanLabPage
 from quant_hub.gui.pages.markets import MarketsPage
 from quant_hub.gui.pages.markov_lab import MarkovLabPage
 from quant_hub.gui.pages.options_lab import OptionsLabPage
+from quant_hub.gui.pages.data import DataPage
 from quant_hub.gui.pages.research import ResearchPage
 from quant_hub.gui.pages.portfolio import PortfolioPage
 from quant_hub.gui.pages.review import ReviewPage
@@ -60,10 +61,13 @@ def _sections(core: Core) -> PageSections:
         core.valuation, core.portfolio, core.tasks, core.state_store))
     review = ("Review", "ph.clipboard-text", lambda _shell: ReviewPage(
         core.review, core.tasks, core.state_store))
+    data = ("Data", "ph.database", lambda shell: DataPage(
+        shell, core.external_data, core.fund_holdings, core.chains, core.chain_collector,
+        core.workstation, core.tasks, core.state_store))
     research = ("Research", "ph.file-text", lambda _shell: ResearchPage(
         core.research, core.market_service, core.tasks, core.state_store))
     return [
-        (None, [dashboard, review, markets, portfolio, valuation, simulator, options]),
+        (None, [dashboard, review, markets, data, portfolio, valuation, simulator, options]),
         ("Research", [garch, vol_lab, kalman, markov, research]),
     ]
 

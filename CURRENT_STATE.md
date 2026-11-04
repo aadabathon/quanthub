@@ -1,7 +1,14 @@
 # CURRENT_STATE.md
 
 **Update this file whenever meaningful work lands.** Last updated:
-**2026-11-03**: the data batch's part 4 landed (D63): daily chain snapshots
+**2026-11-03**: a **Data page** (D64), in the sidebar after Markets, lists
+everything stored, with where it came from and how fresh it is: outside
+series, fund holdings, chain snapshots and price history. Selecting a
+series previews it with its citation; French's daily returns are plotted
+as Σ ln(1 + r). The fetch and import buttons run the same Ctrl+K commands.
+Checked with screenshots on a copy of your store.
+
+Also **2026-11-03**: the data batch's part 4 landed (D63): daily chain snapshots
 and an NYSE trading calendar.
 - **The setting:** add `[collect] chains = ["SPX", "SPY"]` to `settings.toml`.
 - **What happens:** on each trading day, the first time TWS connects after

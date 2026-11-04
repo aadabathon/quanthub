@@ -2212,3 +2212,60 @@ value is reported, and the setting stays empty.
 **Not checked live:** TWS wasn't connected. The first connection after
 09:45 on a trading day, with a watchlist, is the live check: one snapshot
 per symbol, the fetch times in the log, and none on a reconnect.
+
+## D64 — A Data page: everything stored, where from, how fresh (2026-11-03)
+
+D59 set the direction to accumulate free data, and D60–D63 built four
+ways to fetch it. Until now the only way to see what had arrived was the
+log. The Data page (`gui/pages/data.py`, in the sidebar after Markets)
+lists what the store holds.
+
+**Cards.** The main column is 0–7 and the Preview panel is 8–11, laid out
+8 + 4 as on Review and Valuation (D56).
+- **Outside series** (D60, D61): source, series, title, frequency, range,
+  value count, and the day it was fetched. **Import Shiller CSV…** and
+  **Fetch Ken French** sit on the card.
+- **Fund holdings** (D62): each fund's newest N-PORT report, with its line
+  count, the sum of its stated weights, how many report dates are stored,
+  and when it was last checked. While `[sec] identity` is unset, a note
+  says how to set it. **Fetch holdings…** asks for a ticker.
+- **Option chains** (D63): per symbol, the days collected, snapshot count,
+  the newest one and its quotes. A line names the watchlist, or says how
+  to set one. **Collect today's chains** runs it by hand.
+- **Price history:** the daily bars per symbol, source and basis, from
+  the workstation overview the Dashboard reads.
+- **Preview:** select a series to plot it, with its range, fetch time,
+  note, and the citation its source's terms ask for (D60).
+- A table with no rows shrinks to its header and shows one line on how to
+  fill it.
+
+**The preview plots returns as Σ ln(1 + r).** A series whose unit is
+`fraction` (French's daily factors) is shown as its cumulative log
+return. The daily values themselves are noise at a century's scale, and
+the cumulative sum stays readable on a linear axis: a straight line is a
+constant growth rate. Every other unit (Shiller's index, dollar and
+percent series) is plotted as stored. The panel's title says which.
+
+**The buttons run the Ctrl+K commands.** `Shell` gains `run(name)`. The
+main window looks the name up among its published commands and raises
+`KeyError` for an unknown one. A button and the search therefore can't
+drift apart: each action has one implementation, in `main_window`, which
+already owns its dialogs and the worker queueing. After an action, the
+page queues a refresh. The worker runs jobs in order, so the refresh runs
+after the fetch and shows its result.
+
+**Reads.** One TaskRunner job builds the whole overview. The services
+gained the reads they lacked, all offline:
+- `FundHoldingsService.catalog()`, from `HoldingsStore.funds()`: one SQL
+  query over each fund's newest report.
+- `FundHoldingsService.has_identity`.
+- `ChainService.snapshots(symbol=None)`, which passes through to the
+  chain store.
+The page imports no store (test_layering).
+
+**At 1280 px** the Preview panel's minimum (`SIDE_PANEL_WIDTH`) is wider
+than four columns, so it drops below the series table, as D56's side
+panels do on narrow windows. From about 1440 px it sits beside the table.
+
+**Checked** on a copy of the store holding French's 11 series and
+Shiller's 6: screenshots at 1280 and 1440 wide, with Windows fonts.

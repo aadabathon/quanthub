@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -42,6 +43,19 @@ V8_TABLES = (
     "pct REAL, asset_cat TEXT NOT NULL, issuer_cat TEXT NOT NULL, country TEXT NOT NULL, "
     "payoff TEXT NOT NULL, PRIMARY KEY (fund, report_date, line)) WITHOUT ROWID",
 )
+
+
+@dataclass(frozen=True)
+class FundRow:
+    """One stored fund, its newest report summarized (the Data page)."""
+    fund: str
+    fund_name: str
+    report_date: str
+    filed: str
+    lines: int
+    weight: float          # the stated weights' sum, a fraction
+    reports: int           # report dates stored
+    fetched_at: datetime   # when the newest report was last checked
 
 
 class HoldingsStore:
@@ -121,6 +135,20 @@ class HoldingsStore:
         return (FundHoldings(fund.upper(), int(cik), series, name, report_date, accession, filed,
                              net, holdings),
                 datetime.strptime(fetched, _TIME_FORMAT))
+
+    def funds(self) -> list[FundRow]:
+        """Every stored fund, with its newest report summarized."""
+        rows = self._read(
+            "SELECT f.fund, f.fund_name, f.report_date, f.filed, f.fetched_at, "
+            "(SELECT COUNT(*) FROM fund_holdings h WHERE h.fund=f.fund AND h.report_date=f.report_date), "
+            "(SELECT COALESCE(SUM(h.pct), 0) FROM fund_holdings h WHERE h.fund=f.fund "
+            "AND h.report_date=f.report_date), "
+            "(SELECT COUNT(*) FROM fund_filings g WHERE g.fund=f.fund) "
+            "FROM fund_filings f WHERE f.report_date = (SELECT MAX(report_date) FROM fund_filings g "
+            "WHERE g.fund=f.fund) ORDER BY f.fund")
+        return [FundRow(fund, name, date, filed, int(lines), float(weight), int(reports),
+                        datetime.strptime(fetched, _TIME_FORMAT))
+                for fund, name, date, filed, fetched, lines, weight, reports in rows]
 
     def report_dates(self, fund: str) -> list[str]:
         rows = self._read("SELECT report_date FROM fund_filings WHERE fund=? ORDER BY report_date",

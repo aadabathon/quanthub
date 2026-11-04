@@ -21,7 +21,7 @@ from quant_hub.data.options import ChainRequest, OptionChain, OptionChainSource
 from quant_hub.models.carry import implied_carry
 from quant_hub.models.market_surface import MarketSurface
 from quant_hub.models.vol_surface import fit_surface
-from quant_hub.storage.chain_store import ChainStore
+from quant_hub.storage.chain_store import ChainSnapshotSummary, ChainStore
 
 _logger = logging.getLogger(__name__)
 
@@ -66,6 +66,10 @@ class ChainService:
         snapshot = self._store.save(chain)
         _logger.info("%s chain from %s saved as snapshot #%d", symbol, source, snapshot)
         return chain, snapshot
+
+    def snapshots(self, symbol: str | None = None) -> list[ChainSnapshotSummary]:
+        """Stored snapshots, newest first (the Data page); offline."""
+        return self._store.snapshots(symbol)
 
 
 def load_market_surface(chains: ChainService, symbol: str) -> tuple[MarketSurface, int]:

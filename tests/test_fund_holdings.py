@@ -117,3 +117,20 @@ def test_the_store_replaces_a_report_date_and_keeps_others(setup):
     report, fetched = store.latest("spy")
     assert [h.name for h in report.holdings] == ["Only"] and report.accession == "a-2"
     assert store.accession("SPY", "a-1") is None and store.accession("SPY", "a-2") == "2026-06-30"
+
+
+def test_the_catalog_summarizes_each_funds_newest_report(setup):
+    service, store, sec, clock = setup
+    assert service.catalog() == [] and service.has_identity
+    service.holdings("XYZ")
+    sec.pages[feed_url("S000000001")] = FEED.replace(b"26-000002", b"26-000003", 1)
+    sec.pages[document_url(999999, "0000000000-26-000003")] = nport_xml("S000000001", date="2026-09-30")
+    clock["now"] = T0 + timedelta(days=40)
+    service.holdings("XYZ")
+    service.holdings("UIT")
+    uit, xyz = service.catalog()                          # by ticker
+    assert (xyz.fund, xyz.report_date, xyz.lines, xyz.reports) == ("XYZ", "2026-09-30", 2, 2)
+    assert xyz.weight == pytest.approx(0.06 - 0.005)      # the stated weights, as fractions
+    assert xyz.fetched_at == T0 + timedelta(days=40)
+    assert (uit.fund, uit.reports) == ("UIT", 1)
+    assert not FundHoldingsService(store, "  ", lambda _id: sec).has_identity

@@ -81,6 +81,18 @@ class TestChainService:
         assert (stored, same) == (live, snapshot)
         assert len(source.requests) == 1        # "stored" never touches the provider
 
+    def test_snapshots_lists_every_symbol_newest_first_offline(self):
+        store, source = ChainStore(":memory:"), _FakeSource()
+        service = ChainService([source], store)
+        assert service.snapshots() == []
+        store.save(chain("SPY", datetime(2026, 10, 15, 12, 30)))
+        store.save(chain("SPX", datetime(2026, 10, 16, 12, 30)))
+        store.save(chain("SPY", datetime(2026, 10, 16, 12, 31)))
+        assert [(s.symbol, s.as_of.day) for s in service.snapshots()] == [
+            ("SPY", 16), ("SPX", 16), ("SPY", 15)]
+        assert [s.as_of.day for s in service.snapshots("SPY")] == [16, 15]
+        assert source.requests == []
+
     def test_errors_name_what_is_missing(self):
         service = ChainService([_FakeSource()], ChainStore(":memory:"))
         with pytest.raises(NoStoredChainError, match="no saved SPY chain"):

@@ -114,8 +114,8 @@ quant_hub/
 │                              simulator.py, options_lab/ (page, underlying,
 │                              pricer, strategy, monte_carlo), volatility_lab.py,
 │                              kalman_lab.py, markov_lab.py, valuation.py,
-│                              review.py, research/ (page, history, timeline,
-│                              library)
+│                              review.py, data.py (D64), research/ (page,
+│                              history, timeline, library)
 ├── config.py                  AppConfig
 ├── events.py                  EventBus (thread-safe), LogEvent, log handler
 ├── broker/
@@ -375,6 +375,9 @@ Review     = the front door (after Dashboard): the owner's REGIME.md checked
              against the newest export: checklist, thesis by stream, gates,
              the days that decide the numbers (Portfolio's, D53), journal
              and trades (W7, D49)
+Data       = everything stored, its source and freshness: outside series
+             with a preview and citation, fund holdings, chain snapshots,
+             price history; its buttons run the Ctrl+K commands (D64)
 RESEARCH…  = GARCH Lab, Vol Lab, Kalman Lab, Markov Lab, Research
 ```
 
@@ -511,7 +514,9 @@ Key properties (decisions D17–D21):
   window is shown (D40), so Qt establishes its graphics surface up front.
   Preparation does not run jobs: `on_show` refreshes on visits, and
   `on_hide` persists via `ViewStateStore`. Pages reach the shell
-  only through `Shell` (`navigate`, `publish_commands` for Ctrl+K).
+  only through `Shell` (`navigate`, `publish_commands` for Ctrl+K, and
+  `run` to run a published command by name, so a button and Ctrl+K share
+  one implementation, D64).
 - **Card grid (D56).** A page lays its cards on `CardGrid` (`gui/card_grid.py`,
   imported from `components`): `add(name, card, x, y, w, h)` or
   `add_column(...)` with default places on 12 columns, then

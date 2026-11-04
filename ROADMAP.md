@@ -611,7 +611,8 @@ The order after the 2026-11-03 decisions:
    through it: Cboe's own terms refuse storing), ~~a Shiller CSV~~ (landed
    2026-11-03, D61), ~~SEC N-PORT~~ (landed 2026-11-03, D62)
    holdings, and ~~daily option chain snapshots~~ (landed 2026-11-03, D63). The standing direction:
-   accumulate as much free data as possible.
+   accumulate as much free data as possible. ~~A Data page~~ lists what's
+   stored (landed 2026-11-03, D64).
 2. **ALLOCATION A1 → A2:** core-aware limits with look-through N_eff, and
    crash stress (measured, not graded).
 3. **HEDGE U1:** the hedge math ([HEDGE_PLAN.md](HEDGE_PLAN.md)), then

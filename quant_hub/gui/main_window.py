@@ -54,7 +54,8 @@ class MainWindow(QMainWindow):
         self._first = next(iter(self._factories))
         self._pages: dict[str, Page] = {}
         self._commands: dict[str, Commands] = {}
-        self._shell = Shell(navigate=self.show_page, publish_commands=self._publish_commands)
+        self._shell = Shell(navigate=self.show_page, publish_commands=self._publish_commands,
+                            run=self._run_command)
 
         root = QWidget()
         root.setObjectName("appRoot")
@@ -246,6 +247,13 @@ class MainWindow(QMainWindow):
         for group in self._commands.values():
             merged |= group
         self._top.search.set_commands(merged)
+
+    def _run_command(self, name: str) -> None:
+        for group in self._commands.values():
+            if name in group:
+                group[name]()
+                return
+        raise KeyError(f"no command named {name!r}")
 
     def _focus_search(self) -> None:
         self._top.search.setFocus()

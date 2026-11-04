@@ -39,7 +39,7 @@ from quant_hub.providers.sec_nport import (
     parse_nport,
 )
 from quant_hub.services.fundamentals import NO_IDENTITY
-from quant_hub.storage.holdings_store import HoldingsStore
+from quant_hub.storage.holdings_store import FundRow, HoldingsStore
 
 _logger = logging.getLogger(__name__)
 
@@ -82,6 +82,14 @@ class FundHoldingsService:
 
     def report_dates(self, fund: str) -> list[str]:
         return self._store.report_dates(fund)
+
+    @property
+    def has_identity(self) -> bool:
+        return bool(self._identity)
+
+    def catalog(self) -> list[FundRow]:
+        """Every stored fund's newest report, summarized (offline)."""
+        return self._store.funds()
 
     def _check(self, fund: str, stored: tuple[FundHoldings, datetime] | None) -> None:
         cik, series = self._resolve(fund)

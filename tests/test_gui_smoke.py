@@ -731,6 +731,47 @@ def test_connecting_starts_the_daily_chains_one_symbol_per_task(qt_app, monkeypa
     assert "Collect today's chains" in window._top.search._commands
 
 
+
+def test_the_data_page_lists_the_store_and_its_buttons_run_the_commands(qt_app, monkeypatch):
+    from datetime import datetime
+
+    from PySide6.QtWidgets import QPushButton
+
+    from quant_hub.data.series import FetchedSeries, SeriesMeta
+    from tests.test_chain_store import chain
+    app, window = qt_app
+    core = window._core
+    meta = SeriesMeta("french", "ff3.mkt_rf", "Market minus risk-free", "fraction", "daily",
+                      "Courtesy of Kenneth R. French.")
+    core.series_store.save([FetchedSeries(meta, ("2026-10-01", "2026-10-02"), (0.01, -0.02))],
+                           datetime(2026, 11, 3, 9), "sha")
+    core.chain_store.save(chain("SPY"))
+    page = window.show_page("Data")
+    wait_for(app, lambda: page._series_rows and page._bars.rowCount() == 2)
+    assert page._series.item(0, 1).text() == "ff3.mkt_rf"
+    assert page._chain_table.item(0, 0).text() == "SPY"
+    assert page._holdings.rowCount() == 0 and page._empty_hints[page._holdings].isVisibleTo(page)
+    assert not page._empty_hints[page._series].isVisibleTo(page)
+    assert page._identity_note.isVisibleTo(page)              # the tests set no [sec] identity
+    assert "1 outside series" in page._header._status.full_text()
+
+    page._series.selectRow(0)
+    wait_for(app, lambda: page._preview_stack.currentIndex() == 1)
+    assert page._citation._text.text() == "Courtesy of Kenneth R. French."
+    plotted = page._preview_chart._panels[0].series[0].values
+    assert plotted[-1] == pytest.approx(np.log(1.01) + np.log(0.98))   # Σ ln(1 + r)
+
+    # The buttons run the Ctrl+K commands themselves (Shell.run).
+    calls = []
+    monkeypatch.setattr(core.external_data, "refresh_french",
+                        lambda force=False: calls.append(force) or [])
+    fetch = next(b for b in page.findChildren(QPushButton) if b.text() == "Fetch Ken French")
+    fetch.click()
+    wait_for(app, lambda: calls == [True])
+    with pytest.raises(KeyError, match="no command named"):
+        window._run_command("Nothing like this")
+
+
 # ----------------------------------------------------------------- GARCH Lab
 
 def test_garch_synthetic_fit_shows_truth(qt_app):
