@@ -83,6 +83,8 @@ def test_ibkr_turned_off_leaves_no_controls_or_sources(tmp_path):
         assert lab._source.current() == "synthetic"     # its saved default was ibkr
         assert core.accounts is None
         assert not hasattr(window.show_page("Portfolio"), "_broker_button")   # E1
+        # A1 part 2: the ISIN bridge asks nothing of a broker that's off.
+        assert core.security_ids.isins(["AAA"]) == ({}, {"AAA": "IBKR is off in settings"})
     finally:
         _close(app, window)
 

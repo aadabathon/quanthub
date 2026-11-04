@@ -182,7 +182,8 @@ quant_hub/
 │   │                          D49); the days that decide the numbers are
 │   │                          portfolio.py's (D53)
 │   ├── allocation.py          the core and the rest: the book's β split,
-│   │                          the core weight for the Beta band (A1, D65)
+│   │                          the core weight for the Beta band (A1, D65);
+│   │                          effective holdings looking through it (D66)
 │   ├── dcf.py                 unlevered-FCF DCF (the owner's, ported):
 │   │                          projection, terminal conventions, valuation
 │   │                          date, sensitivity, multiples, margin of safety,
@@ -260,6 +261,8 @@ quant_hub/
 │   │                          09:45 NY, wide band, one symbol per task (D63)
 │   ├── fund_holdings.py       ticker → latest N-PORT report: checked monthly,
 │   │                          new filings kept beside old, offline (D62)
+│   ├── security_ids.py        held symbols' ISINs: stored, else IBKR's when
+│   │                          connected; the look-through's bridge (D66)
 │   ├── external_data.py       outside series: Ken French's files refreshed
 │   │                          when a week old, each failure keeping its
 │   │                          stored copy; Shiller CSV imports (D61);
@@ -291,7 +294,7 @@ quant_hub/
 ├── providers/sec_nport.py     funds' N-PORT: the fund ticker map, the EDGAR
 │                              Atom feed, primary_doc.xml → FundHoldings (D62)
 ├── storage/holdings_store.py  fund ticker map + every N-PORT report date kept
-│                              (schema v8, D62)
+│                              (schema v8, D62); held symbols' ISINs (v9, D66)
 ├── storage/series_store.py    outside series as fetched: ext_series (meta,
 │                              fetched_at, file SHA-256) + ext_values,
 │                              replaced whole per fetch (schema v7, D60)

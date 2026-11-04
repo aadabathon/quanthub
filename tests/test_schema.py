@@ -97,7 +97,8 @@ def test_a_file_from_before_versioning_is_backed_up_then_adopted(tmp_path):
         (5, "2026-10-15T19:30:05", str(result.backup)),
         (6, "2026-10-15T19:30:05", str(result.backup)),
         (7, "2026-10-15T19:30:05", str(result.backup)),
-        (8, "2026-10-15T19:30:05", str(result.backup))]
+        (8, "2026-10-15T19:30:05", str(result.backup)),
+        (9, "2026-10-15T19:30:05", str(result.backup))]
     assert rows(db, "SELECT COUNT(*) FROM bars") == [(count,)]
     # Up to date now: the next start changes nothing and copies nothing.
     again = prepare_store(db, clock)
@@ -201,6 +202,18 @@ def test_version_7_gains_the_fund_holdings_tables_shaped_like_a_new_files(tmp_pa
     tables = ("fund_tickers", "fund_filings", "fund_holdings")
     shapes = [{t: rows(p, f"PRAGMA table_info({t})") for t in tables} for p in (old, new)]
     assert shapes[0] == shapes[1] and all(shapes[0].values())
+
+
+def test_version_8_gains_the_security_ids_table_shaped_like_a_new_files(tmp_path):
+    from quant_hub.storage.holdings_store import HoldingsStore
+    old, new = tmp_path / "old.db", tmp_path / "new.db"
+    seeded_store(old, version=8)
+    result = prepare_store(old, clock)
+    assert (result.migrated_from, result.version) == (8, 9) and result.backup.is_file()
+    prepare_store(new, clock)
+    HoldingsStore(new).close()
+    shapes = [rows(p, "PRAGMA table_info(security_ids)") for p in (old, new)]
+    assert shapes[0] == shapes[1] and shapes[0]
 
 
 def test_a_migrated_file_has_the_same_tables_as_a_new_one(tmp_path):

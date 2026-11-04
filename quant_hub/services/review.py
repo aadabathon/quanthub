@@ -37,6 +37,10 @@ One run is the plan's job chain, on the task-worker thread:
    - The book's β is split into the core's and the rest's
      (``models/allocation.py``), with the core weight that would bring it
      into the Beta band. Shown, never applied.
+   - Effective holdings look through the core (part 2, D66): each core
+     fund's newest N-PORT report, its lines matched to the stocks held
+     directly by ISIN (``services/security_ids.py``). Without a stored
+     report the rule has no data, and says how to get one.
 8. **The journal.** The run is stored whole. Notes and hand-placed trades
    are added after.
 
@@ -55,11 +59,12 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from quant_hub.data.holdings import FundHoldings, valid_isin
 from quant_hub.data.positions import OPTION_MULTIPLIER, Holding, PositionSnapshot
 from quant_hub.data.regime import Grade, Measure, Rule, RuleSet
 from quant_hub.importers.positions_csv import read_positions_csv, read_positions_files
 from quant_hub.importers.regime_md import parse_regime
-from quant_hub.models.allocation import CoreNetting, core_netting
+from quant_hub.models.allocation import CoreNetting, core_netting, look_through
 from quant_hub.models.dcf import (
     ValuationError,
     calibration,
@@ -80,8 +85,13 @@ from quant_hub.models.regime import (
     volatility_forecast,
 )
 from quant_hub.models.regression import NEWEY_WEST, regress_returns, residual_correlation
+from quant_hub.providers.sec_edgar import SecError
+from quant_hub.providers.sec_nport import NportError
+from quant_hub.services.fund_holdings import FundHoldingsService
 from quant_hub.services.portfolio import PORTFOLIO_ROW, PortfolioService, PortfolioView
+from quant_hub.services.security_ids import SecurityIdService
 from quant_hub.services.valuation import ValuationService, refusal
+from quant_hub.storage.bar_store import StorageError
 from quant_hub.storage.regime_store import RegimeStore, ReviewRecord, TradeRecord
 
 DEFAULT_BENCHMARK = "SPY"       # REGIME.md section 2: "SPY by default"
@@ -162,9 +172,12 @@ class Review:
 class ReviewService:
     def __init__(self, portfolio: PortfolioService, valuation: ValuationService,
                  store: RegimeStore, regime_path: Path, positions_folder: Path | None = None,
-                 now=datetime.now) -> None:
+                 now=datetime.now, fund_holdings: FundHoldingsService | None = None,
+                 security_ids: SecurityIdService | None = None) -> None:
         self._portfolio = portfolio
         self._valuation = valuation
+        self._funds = fund_holdings
+        self._ids = security_ids
         self._store = store
         self._regime_path = Path(regime_path)
         self._folder = Path(positions_folder) if positions_folder else None
@@ -253,6 +266,14 @@ class ReviewService:
 
         wanted = {rule.measure for rule in rules.rules}
         measures, missing = _book_measures(graded, snapshot, wanted)
+        if "effective holdings" in wanted and rules.core & {row.symbol for row in graded.rows}:
+            effective, reason, look_notes = self._look_through(graded, rules)
+            measures.pop("effective holdings", None)
+            if effective is None:
+                missing["effective holdings"] = reason
+            else:
+                measures["effective holdings"] = [(PORTFOLIO, effective, "")]
+            notes.extend(look_notes)
         sleeves = _sleeve_measures(graded, rules, benchmark, rate, wanted)
         measures.update(sleeves[0])
         missing.update(sleeves[1])
@@ -383,6 +404,53 @@ class ReviewService:
                                if cagr is not None else "no trailing revenue CAGR in the filings")
         return measures, implied
 
+    def _look_through(self, view: PortfolioView, rules: RuleSet
+                      ) -> tuple[Measure | None, str, list[str]]:
+        """Effective holdings with the core looked through (part 2, D66):
+        the measure, or None and why, and the run's notes on it."""
+        held = {row.symbol: row.weight for row in view.rows}
+        core = sorted(rules.core & set(held))
+        if self._funds is None:
+            return None, "the review has no fund holdings to look through", []
+        reports: dict[str, FundHoldings] = {}
+        for fund in core:
+            try:
+                reports[fund] = self._funds.holdings(fund)
+            except (SecError, NportError, LookupError, StorageError) as exc:
+                return None, (f"{fund}'s N-PORT holdings aren't stored, so the core can't be "
+                              f"looked through: {exc}"), []
+        direct = sorted(s for s in held if s not in rules.core)
+        if self._ids is not None:
+            isins, unmatched = self._ids.isins(direct)
+        else:
+            isins, unmatched = {}, {s: "no ISIN lookup" for s in direct}
+        key_of = {s: isins.get(s) or f"ticker:{s}" for s in direct}
+        weights: dict[str, float] = {}
+        for s in direct:
+            weights[key_of[s]] = weights.get(key_of[s], 0.0) + held[s]
+        funds = {fund: (held[fund], [(_line_key(h, key_of), h.pct) for h in report.holdings
+                                     if h.pct is not None])
+                 for fund, report in reports.items()}
+        result = look_through(weights, funds)
+        notes = [f"Effective holdings look through {fund}'s N-PORT report as of "
+                 f"{report.report_date} ({len(report.holdings)} lines, "
+                 f"{report.weight_covered:.0%} of its net assets)." for fund, report in reports.items()]
+        notes.append(f"Looked through: {result.n_effective:.1f}; counting each fund as one name: "
+                     f"{view.report.n_effective:.1f}.")
+        inside = [f"{s} (+{result.through_funds[key_of[s]]:.1%} of equity through it)"
+                  for s in direct if key_of[s] in result.through_funds]
+        if inside:
+            notes.append(f"Held directly and inside the core: {', '.join(inside)}.")
+        by_reason: dict[str, list[str]] = {}
+        for symbol, reason in unmatched.items():
+            by_reason.setdefault(reason, []).append(symbol)
+        for reason, symbols in sorted(by_reason.items()):
+            notes.append(f"No ISIN for {', '.join(symbols)} ({reason}), so "
+                         f"{'it' if len(symbols) == 1 else 'they'} can't be matched to the "
+                         "core's lines; with TWS connected, the next review looks "
+                         f"{'it' if len(symbols) == 1 else 'them'} up.")
+        return Measure.exact(result.n_effective, note=f"looked through {', '.join(core)}"), "", notes
+
     def _streams(self, rules: RuleSet, checks: Sequence[ItemCheck],
                  run_at: datetime) -> list[StreamVerdict]:
         """Section 1: each stream's breaches today, and the run they extend."""
@@ -409,6 +477,20 @@ class ReviewService:
 
 
 # ---------------------------------------------------------------- measures
+
+def _line_key(line, key_of: Mapping[str, str]) -> str:
+    """A fund line's name for the look-through: its ISIN when it has a valid
+    one; else a held symbol's key when its ticker is that symbol; else its
+    ticker, CUSIP or name. Never matched by guesswork (``models/allocation``)."""
+    if line.isin and valid_isin(line.isin.upper()):
+        return line.isin.upper()
+    ticker = line.ticker.strip().upper()
+    if ticker:
+        return key_of.get(ticker, f"ticker:{ticker}")
+    if line.cusip.strip():
+        return f"cusip:{line.cusip.strip().upper()}"
+    return f"name:{line.name.strip()}"
+
 
 def _blank(row: str):
     raise ReviewError(f"REGIME.md section 2: '{row}' is blank, and the review needs it")

@@ -19,8 +19,10 @@ becomes (``providers/sec_nport.py``) and the store keeps
   date, net assets, and its holdings in filing order.
 
 Holdings carry CUSIP and ISIN but rarely a ticker. Matching a fund's line
-to a stock you hold directly needs a bridge from those to tickers, and
-that's A1's to choose. Nothing here guesses one.
+to a stock you hold directly needs a bridge between them. A1 chose IBKR's
+contract details for the stocks held directly (``services/security_ids``).
+``valid_isin`` checks an ISIN's form and check digit (ISO 6166) before
+it's stored or matched. Nothing here guesses a match.
 """
 
 from __future__ import annotations
@@ -80,3 +82,30 @@ class FundHoldings:
     def weight_covered(self) -> float:
         """The sum of the stated weights: about 1, less cash and other assets."""
         return sum(h.pct for h in self.holdings if h.pct is not None)
+
+
+_ISIN = re.compile(r"[A-Z]{2}[A-Z0-9]{9}\d")
+
+
+def isin_check_digit(body: str) -> int:
+    """ISO 6166's check digit for an ISIN's first eleven characters.
+
+    Letters become two digits (A = 10 … Z = 35), then the Luhn sum runs
+    over the digit string from the right, doubling the rightmost digit and
+    every second one after it (the check digit, not yet there, would sit to
+    its right). The check digit brings the sum to a multiple of 10.
+    """
+    if not re.fullmatch(r"[A-Z0-9]{11}", body):
+        raise ValueError(f"an ISIN's body is 11 letters or digits, not {body!r}")
+    digits = "".join(str(int(c, 36)) for c in body)
+    total = 0
+    for i, ch in enumerate(reversed(digits)):
+        d = int(ch) * (2 if i % 2 == 0 else 1)
+        total += d - 9 if d > 9 else d
+    return (10 - total % 10) % 10
+
+
+def valid_isin(text: str) -> bool:
+    """A country code, nine letters or digits, and a correct check digit."""
+    return (bool(_ISIN.fullmatch(text))
+            and isin_check_digit(text[:11]) == int(text[11]))

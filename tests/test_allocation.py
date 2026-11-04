@@ -1,11 +1,13 @@
 """The core and the rest (ALLOCATION A1, models/allocation.py): the book's β
 splits exactly into the core's and the rest's, the core weight for a target
-β lands the book on it, and every input that can't be netted is refused."""
+β lands the book on it, and every input that can't be netted is refused.
+The look-through count (part 2): the risk report's count without funds, n
+for n equal lines, one name for a stock held twice."""
 
 import numpy as np
 import pytest
 
-from quant_hub.models.allocation import core_netting
+from quant_hub.models.allocation import core_netting, look_through
 
 
 def sample_beta(r: np.ndarray, m: np.ndarray) -> float:
@@ -76,3 +78,53 @@ def test_the_weights_reachable_without_leverage(band, reachable):
     n = core_netting({"SPY": 0.5, "A": 0.3}, {"SPY": 1.0, "A": 1.0}, {"SPY"}, band=band)
     assert n.room == pytest.approx(0.7) and n.rest_beta == pytest.approx(0.3)
     assert n.reachable() == (pytest.approx(reachable) if reachable else None)
+
+
+# ------------------------------------------------------------ look-through
+
+def herfindahl_count(weights):
+    gross = sum(abs(w) for w in weights)
+    return 1.0 / sum((abs(w) / gross) ** 2 for w in weights)
+
+
+def test_without_funds_it_is_the_risk_reports_count():
+    direct = {"A": 0.3, "B": 0.2, "C": -0.1, "D": 0.05}
+    result = look_through(direct, {})
+    assert result.n_effective == pytest.approx(herfindahl_count(direct.values()))
+    assert look_through({f"N{i}": 0.1 for i in range(7)}, {}).n_effective == pytest.approx(7)
+
+
+def test_a_fund_of_n_equal_lines_counts_n_and_scale_doesnt_matter():
+    lines = [(f"L{i}", 1 / 400) for i in range(400)]
+    assert look_through({}, {"F": (0.8, lines)}).n_effective == pytest.approx(400)
+    small = look_through({"A": 0.05}, {"F": (0.5, lines)}).n_effective
+    big = look_through({"A": 0.5}, {"F": (5.0, lines)}).n_effective
+    assert small == pytest.approx(big)
+
+
+def test_a_name_held_directly_and_inside_the_fund_is_one_more_concentrated_name():
+    lines = [("X", 0.01)] + [(f"L{i}", 0.01) for i in range(99)]
+    merged = look_through({"X": 0.1}, {"F": (0.5, lines)})
+    assert merged.exposures["X"] == pytest.approx(0.1 + 0.5 * 0.01)
+    assert merged.through_funds == {"X": pytest.approx(0.005)}
+    apart = look_through({"Y": 0.1}, {"F": (0.5, lines)})            # not in the fund
+    assert apart.through_funds == {} and merged.n_effective < apart.n_effective
+    expected = [0.105] + [0.005] * 99
+    assert merged.n_effective == pytest.approx(herfindahl_count(expected))
+
+
+def test_lines_of_one_name_add_up_and_two_funds_overlap():
+    a = look_through({}, {"F": (0.5, [("X", 0.6), ("X", 0.4)])})
+    assert a.n_effective == pytest.approx(1.0)
+    b = look_through({}, {"F": (0.5, [("X", 0.5), ("Y", 0.5)]), "G": (0.5, [("X", 1.0)])})
+    assert b.exposures == {"X": pytest.approx(0.75), "Y": pytest.approx(0.25)}
+
+
+def test_what_cant_be_looked_through_is_refused_and_nothing_counts_zero():
+    with pytest.raises(ValueError, match="both held directly"):
+        look_through({"F": 0.1}, {"F": (0.5, [("X", 1.0)])})
+    with pytest.raises(ValueError, match="finite"):
+        look_through({}, {"F": (0.5, [("X", float("inf"))])})
+    with pytest.raises(ValueError, match="finite"):
+        look_through({"A": float("nan")}, {})
+    assert look_through({}, {}).n_effective == 0.0

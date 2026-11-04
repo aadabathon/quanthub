@@ -109,7 +109,11 @@ Sleeve size outside its intended range: ___ (fail / warn / note)
 
 With a core in section 3, the review splits the book's β into the core's
 and the rest's, and shows the core weight that would bring the book into
-the Beta band (A1). It's shown, never applied.
+the Beta band (A1). It's shown, never applied. The effective-holdings
+count looks through the core fund's latest N-PORT report, so its
+hundreds of names count. It needs `[sec] identity` in `settings.toml`,
+and TWS connected once to look up the ISINs of the stocks you hold
+directly.
 
 When a day carries most of the variance of the mix or of a holding (the
 review flags it, the same days the Portfolio page flags,

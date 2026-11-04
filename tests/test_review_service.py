@@ -272,3 +272,61 @@ def test_no_core_means_no_netting(world):
     assert review.netting is None and review.netting_note == ""
     weights = {c.item: c.check for c in by_key(review, "4.max-weight")}
     assert weights["AAA"].outcome is Outcome.BREACH            # not a core: graded as a name
+
+
+def core_report(bbb_isin: str):
+    """A made-up N-PORT report for the core AAA: 100 lines at 1% each. One
+    is BBB, by ISIN; the rest carry only a CUSIP. CCC isn't in it."""
+    from quant_hub.data.holdings import FundHoldings, Holding
+    lines = [Holding("Bee Bee Bee Inc", isin=bbb_isin, pct=0.01)]
+    lines += [Holding(f"Other {i}", cusip=f"00000{i:04d}", pct=0.01) for i in range(99)]
+    return FundHoldings("AAA", 1, "", "AAA Index Trust", "2026-09-30", "a-1", "2026-10-20",
+                        1e9, tuple(lines))
+
+
+class StubIsins:
+    def __init__(self, isins, missing):
+        self.result = (isins, missing)
+
+    def isins(self, symbols):
+        return self.result
+
+
+def look_through_world(world, report=None):
+    from quant_hub.services.fund_holdings import FundHoldingsService
+    from quant_hub.storage.holdings_store import HoldingsStore
+    service, _, regime, _, _ = world
+    holdings = HoldingsStore(":memory:")
+    if report is not None:
+        holdings.save(report, NOW, "h")
+    service._funds = FundHoldingsService(holdings, "", now=lambda: NOW)
+    regime.write_text(RULES.replace(ROW["neff"], row("neff", "5")), encoding="utf-8")
+    return service
+
+
+def test_effective_holdings_look_through_the_core_and_merge_a_stock_held_twice(world):
+    from quant_hub.data.holdings import isin_check_digit
+    bbb = "US00000BBB0" + str(isin_check_digit("US00000BBB0"))
+    service = look_through_world(world, core_report(bbb))
+    service._ids = StubIsins({"BBB": bbb}, {"CCC": "IBKR lists no ISIN for it"})
+    review = service.run({"credit calm": True})
+    (neff,) = by_key(review, "4.effective-holdings")
+    # AAA 40% over 100 lines at 1%; BBB 20% plus 0.4% through AAA; CCC 10% alone.
+    exposures = [0.2 + 0.4 * 0.01, 0.1] + [0.4 * 0.01] * 99
+    gross = sum(exposures)
+    assert neff.check.measure.estimate == pytest.approx(gross ** 2 / sum(y * y for y in exposures))
+    assert neff.check.outcome is Outcome.PASS               # about 9, over the floor of 5
+    notes = " ".join(review.notes)
+    assert "AAA's N-PORT report as of 2026-09-30 (100 lines, 100% of its net assets)" in notes
+    assert "counting each fund as one name: 2.3" in notes
+    assert "Held directly and inside the core: BBB (+0.4% of equity through it)" in notes
+    assert "No ISIN for CCC (IBKR lists no ISIN for it)" in notes
+
+
+def test_without_the_cores_report_effective_holdings_say_how_to_get_it(world):
+    service = look_through_world(world)
+    review = service.run({"credit calm": True})
+    (neff,) = by_key(review, "4.effective-holdings")
+    assert neff.check.outcome is Outcome.MISSING
+    assert neff.check.reason.startswith("AAA's N-PORT holdings aren't stored")
+    assert "[sec] identity" in neff.check.reason

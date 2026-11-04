@@ -58,12 +58,59 @@ What it is not
 * **The βs are estimates.** Each carries sampling error, and a stock's β
   tends to rise in a crash. ALLOCATION A2's crash stress is the check on
   that.
+
+Effective holdings, looking through the core
+=============================================
+
+Mathematical description
+------------------------
+The review's effective-holdings count is the inverse Herfindahl index of
+the book's exposures to distinct names :math:`k`:
+
+.. math::  N_\text{eff} = \frac{1}{\sum_k s_k^2}, \qquad
+           s_k = \frac{|y_k|}{\sum_j |y_j|}
+
+:math:`n` equal positions give :math:`n`, and one position gives 1. The
+count is scale-free, so weights or dollars give the same number. It's the
+risk report's ``n_effective`` when every holding is its own name.
+
+A core fund is one line in the book but hundreds of names. Looking
+through a fund :math:`F` held at weight :math:`w_F`, whose report lists
+line :math:`j` at a fraction :math:`p_{F,j}` of its net assets, the book's
+exposure to name :math:`k` is
+
+.. math::  y_k = \sum_{i \,:\, \mathrm{key}(i) = k} w_i
+           + \sum_F w_F \sum_{j \in F \,:\, \mathrm{key}(j) = k} p_{F,j}
+
+where :math:`i` runs over the holdings held directly. A stock held directly
+and also inside the fund is one name, with the two exposures added, so
+owning it twice makes the book more concentrated, not more diverse.
+
+The keys (``services/review.py``) are ISINs where both sides have one. A
+stock held directly gets its ISIN from IBKR's contract details, stored
+once. A name is never matched by guesswork: without the same ISIN (or,
+for a line with none, the same ticker) a stock and a line stay two names.
+
+What it leaves out
+------------------
+* **The fund's uninvested part.** Lines without a stated weight, and
+  whatever net assets the lines don't add up to (cash, receivables,
+  liabilities), aren't names. The book's own count leaves out the book's
+  cash the same way.
+* **Funds outside the core** are one name each. A stream's ETF is often
+  futures and bills, which aren't the independent bets this counts.
+* **The report's date.** N-PORT reports are public quarterly, about 60
+  days after their date, so the fund's weights have drifted since.
+* **Correlation.** Like the original count, it counts names, not
+  independent risks. Five hundred large-cap stocks are less diverse than
+  five hundred uncorrelated bets. The Euler risk shares and the residual
+  correlations are the review's checks on that.
 """
 
 from __future__ import annotations
 
 import math
-from collections.abc import Collection, Mapping
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 
 
@@ -136,3 +183,45 @@ def core_netting(weights: Mapping[str, float], betas: Mapping[str, float],
                 raise ValueError("the band's sides must be finite")
         for_band = tuple(None if side is None else (side - b_rest) / b_core for side in band)
     return CoreNetting(tuple(held), w_core, b_core, w_rest, b_rest, band, for_band)
+
+
+@dataclass(frozen=True)
+class LookThrough:
+    """The module docstring's look-through count, with what went into it."""
+
+    n_effective: float
+    exposures: Mapping[str, float]     # y_k by key
+    through_funds: Mapping[str, float]  # for each direct key also in a fund: Σ w_F p_F,j
+
+
+def look_through(direct: Mapping[str, float],
+                 funds: Mapping[str, tuple[float, Sequence[tuple[str, float]]]]) -> LookThrough:
+    """Effective holdings with each fund in ``funds`` looked through.
+
+    ``direct`` is each name held directly, by key, at its weight in the
+    book. ``funds`` maps each looked-through fund to (its weight in the
+    book, its lines as (key, fraction of the fund's net assets)). A fund
+    must not also be in ``direct``. Zero exposure overall gives 0, as the
+    risk report does. Raises ``ValueError`` for a non-finite input.
+    """
+    overlap = set(direct) & set(funds)
+    if overlap:
+        raise ValueError(f"{sorted(overlap)[0]} is both held directly and looked through")
+    exposures: dict[str, float] = {}
+    for key, weight in direct.items():
+        if not math.isfinite(weight):
+            raise ValueError(f"{key}: weights must be finite")
+        exposures[key] = exposures.get(key, 0.0) + weight
+    through: dict[str, float] = {}
+    for fund, (weight, lines) in funds.items():
+        if not math.isfinite(weight):
+            raise ValueError(f"{fund}: weights must be finite")
+        for key, fraction in lines:
+            if not math.isfinite(fraction):
+                raise ValueError(f"{fund}: line {key}'s fraction must be finite")
+            exposures[key] = exposures.get(key, 0.0) + weight * fraction
+            if key in direct:
+                through[key] = through.get(key, 0.0) + weight * fraction
+    gross = sum(abs(y) for y in exposures.values())
+    n_effective = (gross ** 2 / sum(y * y for y in exposures.values())) if gross > 0 else 0.0
+    return LookThrough(n_effective, exposures, through)

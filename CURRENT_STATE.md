@@ -1,7 +1,20 @@
 # CURRENT_STATE.md
 
 **Update this file whenever meaningful work lands.** Last updated:
-**2026-11-04**: ALLOCATION A1, part 1 (D65): the review is core-aware.
+**2026-11-04**: ALLOCATION A1, part 2 (D66): effective holdings look
+through the core. That completes A1.
+- The count reads the core fund's newest N-PORT report, so its hundreds
+  of names count. A stock you hold directly that's also inside the fund
+  is one name, with both exposures added.
+- Stocks are matched to the fund's lines by ISIN. When TWS is connected,
+  the review looks up the ISINs of the stocks you hold directly, once,
+  and stores them (schema v9, after a backup).
+- **To use it:** set `[sec] identity` (for the report), and run a review
+  with TWS connected once (for the ISINs). Until then the rule says what's
+  missing. The run notes say what was matched.
+- **Not checked live:** neither the SEC identity nor TWS was available.
+
+Also **2026-11-04**: ALLOCATION A1, part 1 (D65): the review is core-aware.
 - A `core` holding is shown, not graded, under max holding weight and max
   risk share ("exempt: the core").
 - Section 3 can set **sleeve totals** (a new table in the template):
@@ -9,8 +22,7 @@
 - A new Review card splits the book's β into the core's and the rest's,
   and gives the core weight that would bring it into your Beta band, with
   and without leverage. Shown, never applied.
-- **Not yet:** the look-through N_eff (part 2). The effective-holdings
-  floor still counts the core as one name.
+- The look-through N_eff followed in part 2 (D66).
 
 Also **2026-11-03**: a **Data page** (D64), in the sidebar after Markets, lists
 everything stored, with where it came from and how fresh it is: outside

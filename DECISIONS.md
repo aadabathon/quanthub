@@ -2332,3 +2332,78 @@ name. Part 2 replaces that with the look-through count.
 
 **Checked** with a screenshot of the Review page on the tests' made-up
 book.
+
+## D66 — ALLOCATION A1, part 2: effective holdings look through the core (2026-11-04)
+
+ALLOCATION decision 2 (D59) chose to look through the core fund rather
+than count only the rest. Without it, a core-heavy book scored an
+effective-holdings count of 1 to 2.3, though the core held hundreds of
+names. On 2026-11-04 the owner chose the bridge between a fund's lines and
+the stocks held directly: IBKR's contract lookup.
+
+**The count** (`models/allocation.py`, math in its docstring). It's still
+the inverse Herfindahl index, now over exposures to distinct names:
+- A core fund held at weight w_F with lines at fractions p_j of its net
+  assets contributes w_F·p_j to each line's name.
+- A stock held directly and also inside the fund is one name, its two
+  exposures added. Owning it twice makes the book more concentrated, not
+  more diverse.
+- Without funds it equals the risk report's count, so a book without a
+  core grades exactly as before.
+
+**What's looked through:** only the core's holdings, each from its newest
+N-PORT report (D62). A stream's ETF stays one name, because its lines are
+often futures and bills. Lines without a stated weight, and the part of
+net assets the lines don't add up to, aren't names. The book's own cash
+is left out the same way.
+
+**The bridge: ISINs from IBKR** (`services/security_ids.py`).
+- Only the stocks held directly are looked up: a few requests, not one
+  per fund line. `IBKRBroker.get_isin` reads `secIdList` from the
+  contract details, read-only. A symbol matching contracts with different
+  ISINs is refused, never guessed.
+- **Stored** in `security_ids` (schema v9, migrated after a backup), and
+  served offline. A stored ISIN is asked again only when it's a year old
+  and TWS is connected, because a ticker can pass to another company. A
+  failed refresh keeps the old one.
+- **Checked:** ISO 6166's form and check digit (`data/holdings.valid_isin`),
+  before an ISIN is stored or matched.
+- **The review never connects on the owner's behalf.** Without TWS, the
+  symbols without a stored ISIN stay separate names, and the run notes
+  name them: "with TWS connected, the next review looks them up."
+
+**Matching never guesses** (`services/review._line_key`). A line's name
+is its ISIN when it has a valid one. Without one, it takes the key of a
+stock held directly when its ticker is that stock's symbol. Otherwise
+it's its own ticker, CUSIP or name. A stock and a line merge only on the
+same ISIN, or on the exact ticker when the line has no ISIN.
+
+**When there's no report:** the effective-holdings rule has no data, and
+its reason says why. Usually that's `[sec] identity` unset, or the fund's
+holdings not yet fetched. Counting the core as one name would bring back
+the false breach this milestone removes.
+
+**The run notes** give:
+- the report used: its date, line count and coverage
+- the count looked through, beside the count with each fund as one name
+- each stock held directly that's also inside the core, with the weight
+  it adds through it
+- each unmatched symbol and why
+
+**Tests:**
+- the check digit on ISO's published examples, and refused forms
+- the broker read on a stand-in network: found, none, the same ISIN
+  twice, ambiguous, unknown
+- the service: stored, offline, IBKR off, invalid, refused, stale and
+  refreshed, a failed refresh
+- the count: the risk report's without funds, n for n equal lines, scale,
+  the merge, two funds overlapping, refusals
+- the v8 → v9 migration
+- the review end to end: looked through, merged, unmatched; and no
+  report
+
+**Checked live:** the v8 → v9 migration on a copy of the owner's store,
+with its backup.
+
+**Not checked live:** fetching the core's report needs `[sec] identity`,
+and the ISIN lookup needs TWS. Neither was available.
