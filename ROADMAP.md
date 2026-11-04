@@ -608,7 +608,8 @@ that implement it. Read-only, no new dependencies.
 The order after the 2026-11-03 decisions:
 1. **The data batch**, each provider behind a terms check: ~~Ken French~~
    (landed 2026-11-03, D60, with the series store), FRED (VIX comes
-   through it: Cboe's own terms refuse storing), a Shiller CSV, SEC N-PORT
+   through it: Cboe's own terms refuse storing), ~~a Shiller CSV~~ (landed
+   2026-11-03, D61), SEC N-PORT
    holdings, and daily option chain snapshots. The standing direction:
    accumulate as much free data as possible.
 2. **ALLOCATION A1 → A2:** core-aware limits with look-through N_eff, and

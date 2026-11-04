@@ -1,7 +1,15 @@
 # CURRENT_STATE.md
 
 **Update this file whenever meaningful work lands.** Last updated:
-**2026-11-03**: the data batch's first increment landed (D60).
+**2026-11-03**: the data batch's part 2 landed (D61): Shiller's monthly
+data. Save `ie_data.xls`'s Data sheet as CSV in Excel, then Ctrl+K:
+**Import Shiller CSV…**. It holds price, dividends, earnings, CPI, GS10 and
+CAPE from 1871 in the D60 series store. The provisional last month is
+dropped, with its footnotes kept. Checked on your local copy: CAPE
+recomputed from the imported series is within 0.2 points of Shiller's
+own. Tested on a made-up fixture: Shiller's data is never committed.
+
+Also **2026-11-03**: the data batch's first increment landed (D60).
 - **Terms checked** for every approved source. Cboe directly fails its
   terms (no storing), so VIX will come through FRED (`VIXCLS`) or IBKR.
 - **One store for outside series:** `ext_series` and `ext_values`, schema

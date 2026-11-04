@@ -8,8 +8,12 @@ fetches them, through the providers, and serves them back from the store.
   with ``force``. The library rebuilds the files monthly, so a week-old
   copy has missed at most one rebuild. Each dataset succeeds or fails on its
   own, and a failure keeps the stored copy, saying so in the report.
+* ``import_shiller`` reads the Shiller CSV you saved from ``ie_data.xls``
+  (``importers/shiller_csv.py``). Each import is a whole snapshot: Shiller
+  revises history (CPI, recent earnings), so it replaces the stored series,
+  and the file's SHA-256 says which import a number came from.
 * ``series`` and ``catalog`` read the store only, so the models work
-  offline once a series has been fetched.
+  offline once a series has been fetched or imported.
 
 Runs on the task-worker thread (network and database).
 """
@@ -21,8 +25,10 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from quant_hub.data.series import StoredSeries
+from quant_hub.importers.shiller_csv import SOURCE as SHILLER, ShillerImport, parse_shiller_csv
 from quant_hub.providers.ken_french import (
     DATASETS,
     SOURCE as FRENCH,
@@ -83,11 +89,23 @@ class ExternalDataService:
             log("Ken French %s", outcome)
         return outcomes
 
+    def import_shiller(self, path: str | Path) -> ShillerImport:
+        """Store the Shiller CSV at ``path`` (module docstring). Raises
+        ``ShillerError`` naming what's wrong, or ``OSError``."""
+        payload = Path(path).read_bytes()
+        parsed = parse_shiller_csv(payload)
+        self._store.save(parsed.series, self._now(), hashlib.sha256(payload).hexdigest())
+        _logger.info("Shiller: %d series, %s to %s; %s left out as provisional; earnings through %s",
+                     len(parsed.series), parsed.first[:7], parsed.last[:7], parsed.dropped[:7],
+                     parsed.earnings_through[:7] or "none")
+        return parsed
+
     def series(self, source: str, series: str) -> StoredSeries:
         """A stored series. Raises ``LookupError`` saying how to fetch it."""
         stored = self._store.series(source, series)
         if stored is None:
-            hint = " (Ctrl+K: Fetch Ken French factors)" if source == FRENCH else ""
+            hint = {FRENCH: " (Ctrl+K: Fetch Ken French factors)",
+                    SHILLER: " (Ctrl+K: Import Shiller CSV…)"}.get(source, "")
             raise LookupError(f"{source}/{series} hasn't been fetched yet{hint}")
         return stored
 

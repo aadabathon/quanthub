@@ -2051,3 +2051,53 @@ outcome goes to the log.
 - A page listing what's stored.
 - No model reads the factors yet. ALLOCATION A2's crash stress and
   LENS W2b's Fama–French regressions are the first readers.
+
+## D61 — The data batch, part 2: Shiller's monthly data, from your CSV (2026-11-03)
+
+TARGET T1, built as D59 decided: a CSV you save from Excel (decision 2a),
+used locally only (decision 3). The owner asked for it before FRED, which
+waits for a free API key.
+
+**The step:** download `ie_data.xls` from Shiller's site, open it in Excel,
+Save As CSV with the Data sheet showing, then Ctrl+K: **Import Shiller
+CSV…**. The import runs on the worker and logs what it kept.
+
+**`importers/shiller_csv.py` reads T1's spec:**
+- Columns by header label: `P`, `D`, `E`, `CPI` and `Rate GS10` are
+  required, each once, and `CAPE` is read when present. A missing or
+  repeated label is named.
+- Dates: Shiller's `1871.1` is October, and the month is
+  round(100·(x − ⌊x⌋)). Months must be consecutive; a gap or a repeat names
+  its line. Each month is dated the 1st, FRED's convention, so the two
+  will line up.
+- Blank and `NA` cells are left out, never filled.
+- The last month is provisional and dropped. The footnotes ("Oct price is
+  Oct 2nd close", "Sept/Oct CPI estimated") and "earnings through …" go in
+  each series' note.
+- Quoted thousands separators and a Windows-encoded file are read.
+
+**One change from T1's text:** T1 planned its own tables
+(`valuation_months`, `valuation_imports`). D60's series store now holds
+every outside series, so Shiller goes there instead:
+- six series under `shiller`: `sp.price`, `sp.dividend`, `sp.earnings`,
+  `cpi`, `gs10`, `cape`
+- monthly; P, D, E and CPI as index levels, GS10 in percent, CAPE as a
+  ratio, a unit added to `data/series.py`
+
+An import replaces the series whole, since Shiller revises CPI and recent
+earnings, and the file's SHA-256 records which import a number came from.
+
+**Checked** on the owner's local copy from 2026-10-24:
+- 1871-01 to 2026-09, with 2026-10 dropped as provisional, and earnings
+  through 2026-06.
+- CAPE recomputed from the imported P, E and CPI (real price over the
+  10-year average of real earnings) agrees with Shiller's own CAPE column
+  within 0.2 points at five dates from 1929 to 2025. The gap comes from
+  his CPI reference and earnings timing.
+- Imported into a store copy beside Ken French's factors: 17 series in
+  all.
+
+**Not yet:** REGIME_MODEL is the first reader (valuation from CAPE and the
+excess CAPE yield), along with TARGET's superseded T2 rule as one of its
+inputs. FRED, N-PORT, the chain snapshots and a page for stored data are
+next.

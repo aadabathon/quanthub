@@ -19,7 +19,7 @@ from collections.abc import Callable
 
 from PySide6.QtCore import QByteArray, QTimer
 from PySide6.QtGui import QKeySequence, QScreen, QShortcut
-from PySide6.QtWidgets import QHBoxLayout, QMainWindow, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QMainWindow, QVBoxLayout, QWidget
 
 from quant_hub.core import Core
 from quant_hub.gui.components import CardGrid
@@ -92,6 +92,7 @@ class MainWindow(QMainWindow):
             "Reset layout": self.reset_layout,
             "Reset this page's cards": self.reset_cards,
             "Fetch Ken French factors": self.fetch_french,
+            "Import Shiller CSV…": self.import_shiller,
         })
 
         self._pump_timer = QTimer(self)
@@ -138,6 +139,18 @@ class MainWindow(QMainWindow):
         self._core.tasks.submit(
             lambda: self._core.external_data.refresh_french(force=True),
             on_error=lambda exc: _logger.warning("Ken French fetch failed: %s", exc))
+
+    def import_shiller(self, path: str | None = None) -> None:
+        """Import the CSV saved from Shiller's ie_data.xls (D61), on the worker.
+        Asks for the file unless ``path`` is given; the service logs the result."""
+        if path is None:
+            path, _ = QFileDialog.getOpenFileName(
+                self, "Import Shiller's data (the Data sheet saved as CSV)", "",
+                "CSV files (*.csv)")
+        if path:
+            self._core.tasks.submit(
+                lambda: self._core.external_data.import_shiller(path),
+                on_error=lambda exc: _logger.warning("Shiller import failed: %s", exc))
 
     def reset_cards(self) -> None:
         """The active page's cards back to the page's own layout."""

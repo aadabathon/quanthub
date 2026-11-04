@@ -77,3 +77,21 @@ def test_a_series_never_fetched_says_how_to_get_it(setup):
     assert all(o.status == "failed" and "stays" not in o.message for o in service.refresh_french())
     with pytest.raises(LookupError, match="Fetch Ken French factors"):
         service.series("french", "ff3.mkt_rf")
+
+
+def test_a_shiller_import_is_stored_whole_and_a_reimport_replaces_it(setup, tmp_path):
+    from tests.test_shiller_csv import ROWS, sheet
+    service, _, clock = setup
+    path = tmp_path / "ie_data.csv"
+    path.write_bytes(sheet(ROWS))
+    imp = service.import_shiller(path)
+    assert imp.dropped == "1871-12-01"
+    first = service.series("shiller", "sp.price")
+    assert list(first.values) == [4.5, 4.6, 4.7] and first.fetched_at == T0
+    path.write_bytes(sheet(ROWS.replace("1871.09,4.50", "1871.09,4.55")))
+    clock["now"] = T0 + timedelta(days=30)
+    service.import_shiller(path)
+    again = service.series("shiller", "sp.price")
+    assert list(again.values) == [4.55, 4.6, 4.7] and again.sha256 != first.sha256
+    with pytest.raises(LookupError, match="Import Shiller CSV"):
+        service.series("shiller", "nope")

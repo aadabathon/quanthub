@@ -697,6 +697,15 @@ def test_ctrl_k_fetches_ken_french_on_the_worker(qt_app, monkeypatch):
     wait_for(app, lambda: calls == [True])
 
 
+def test_ctrl_k_imports_a_shiller_csv_on_the_worker(qt_app, monkeypatch):
+    app, window = qt_app
+    paths = []
+    monkeypatch.setattr(window._core.external_data, "import_shiller", paths.append)
+    assert "Import Shiller CSV…" in window._top.search._commands
+    window.import_shiller("C:/somewhere/ie_data.csv")       # the dialog's answer, given
+    wait_for(app, lambda: paths == ["C:/somewhere/ie_data.csv"])
+
+
 # ----------------------------------------------------------------- GARCH Lab
 
 def test_garch_synthetic_fit_shows_truth(qt_app):

@@ -109,6 +109,9 @@ the new design language (decision 1).
 
 ### T1. Shiller's data: import and store
 
+**Landed 2026-11-03 (D61),** in D60's series store rather than the two
+tables below; everything else as written.
+
 **The file.** `ie_data.xls` from shillerdata.com: the S&P Composite's
 monthly price, dividend and earnings, CPI, and the 10-year yield, from
 1871.

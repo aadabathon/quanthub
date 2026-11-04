@@ -19,7 +19,8 @@ and on to the models.
 Units name what a value is:
 * ``fraction`` for a return or a rate per period (0.01 is 1%)
 * ``percent`` where a source's convention is kept (a yield of 4.25)
-* ``index`` for a level (the VIX's 18.4)
+* ``index`` for a level (the VIX's 18.4, the S&P's 7722.72)
+* ``ratio`` for a dimensionless multiple (a CAPE of 40.7)
 """
 
 from __future__ import annotations
@@ -32,7 +33,7 @@ from datetime import datetime
 import pandas as pd
 
 FREQUENCIES = ("daily", "weekly", "monthly", "quarterly", "annual")
-UNITS = ("fraction", "percent", "index")
+UNITS = ("fraction", "percent", "index", "ratio")
 _ISO = re.compile(r"\d{4}-\d{2}-\d{2}")
 _ID = re.compile(r"[a-z0-9][a-z0-9_.\-]*")
 

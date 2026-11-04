@@ -252,7 +252,8 @@ quant_hub/
 │   │                          day, refetched on demand, mapped offline (D47)
 │   ├── external_data.py       outside series: Ken French's files refreshed
 │   │                          when a week old, each failure keeping its
-│   │                          stored copy; reads served offline (D60)
+│   │                          stored copy; Shiller CSV imports (D61);
+│   │                          reads served offline (D60)
 │   ├── file_import.py         CSV bars validated into the store under
 │   │                          "file" (all or nothing per file); FileSource
 │   │                          serves them; FileImportService for the GUI
@@ -268,6 +269,9 @@ quant_hub/
 ├── importers/regime_md.py     REGIME.md → RuleSet: rows by their label, blanks
 │                              off, "by k SE", every bad value names its line
 │                              (W7, D49)
+├── importers/shiller_csv.py   Shiller's ie_data Data sheet saved as CSV →
+│                              monthly series by header label; Oct = 1871.1,
+│                              provisional last month dropped (T1, D61)
 ├── providers/sec_edgar.py     SEC companyfacts through the stdlib: the client
 │                              (identity, gzip, 10/s, typed errors), facts as
 │                              filed, and the mapping to FinancialHistory (D47)
