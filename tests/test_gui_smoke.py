@@ -571,10 +571,12 @@ def test_research_library_imports_notes_and_links_to_experiments(qt_app, tmp_pat
     wait_for(app, lambda: page._run_result is not None)
     page._tab("Papers")
     library = page._library
-    wait_for(app, lambda: len(library._papers) == 5)
-    library._search.set_text("Fama")
+    canon = len(window._core.research.canon.papers)
+    wait_for(app, lambda: len(library._papers) == canon)
+    library._search.set_text("Common risk factors")
     assert len(library._shown) == 1
     library._select(0)
+    assert library._title.edit.isReadOnly()      # the canon owns its metadata
     library._notes.setPlainText("Replicate the factor construction")
     library._link()
     wait_for(app, lambda: not library._busy)
@@ -587,8 +589,39 @@ def test_research_library_imports_notes_and_links_to_experiments(qt_app, tmp_pat
     path.write_bytes(b"%PDF-1.4\n% fixture")
     library.import_paths([str(path)])
     wait_for(app, lambda: not library._busy)
-    wait_for(app, lambda: len(library._papers) == 6)
+    wait_for(app, lambda: len(library._papers) == canon + 1)
     assert any(p["title"] == "Research fixture" and p["pdf"] for p in library._papers)
+
+
+def test_research_timeline_selects_follows_links_finds_and_saves(qt_app):
+    from PySide6.QtWidgets import QLabel
+    app, window = qt_app
+    page = window.show_page("Research")
+    page._tab("Timeline")
+    timeline, chart = page._timeline, page._timeline._chart
+    canon = window._core.research.canon
+    wait_for(app, lambda: len(chart._nodes) == len(canon.papers))
+    assert any(label.isVisible() for label in chart._labels.values())
+
+    def inspector_text():
+        return " ".join(w.text() for w in timeline.findChildren(QLabel) if w.isVisibleTo(timeline))
+
+    chart._activate("bollerslev1986", double=False)            # a click on its chip or dot
+    assert chart.current() == "bollerslev1986"
+    # New widgets show on the next event-loop pass (QLayout queues it).
+    wait_for(app, lambda: "Generalized autoregressive" in inspector_text())
+    assert "models/garch.py" in inspector_text() and "Pick a paper" not in inspector_text()
+    assert chart._labels["engle1982"].isVisible()               # its links get their labels
+    timeline._go("engle1982")                                    # a link in the inspector
+    assert chart.current() == "engle1982"
+    wait_for(app, lambda: "Autoregressive Conditional" in inspector_text())
+    timeline._save("engle1982", {"status": "Read"})
+    wait_for(app, lambda: timeline._papers.get("engle1982", {}).get("status") == "Read")
+    assert chart._by_id["engle1982"].read and chart.current() == "engle1982"
+    timeline._search.set_text("GARCH")
+    assert "bollerslev1986" in chart._lit and "markowitz1952" not in chart._lit
+    timeline._search.set_text("")
+    assert chart._lit is None
 
 
 def test_startup_and_first_visits_do_not_show_temporary_windows(tmp_path, monkeypatch):

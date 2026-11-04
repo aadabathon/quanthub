@@ -92,7 +92,8 @@ def test_sweep_records_every_trial_and_explicit_selection_assumption(service):
 
 def test_paper_import_is_copied_deduplicated_editable_and_linkable(service, tmp_path):
     research, store, _ = service
-    assert len(research.papers()) == 5
+    canon = len(research.canon.papers)
+    assert len(research.papers()) == canon
     path = tmp_path / "my paper.pdf"
     path.write_bytes(b"%PDF-1.4\n%test fixture")
     paper = research.save_paper({"title": "My paper", "run_ids": ["some-run"]}, str(path))
@@ -100,7 +101,7 @@ def test_paper_import_is_copied_deduplicated_editable_and_linkable(service, tmp_
     path.unlink()
     assert saved_path.endswith(".pdf")
     research.save_paper({**paper, "notes": "Replication pending", "status": "Reading"})
-    assert len(research.papers()) == 6
+    assert len(research.papers()) == canon + 1
     reloaded = next(p for p in research.papers() if p["id"] == paper["id"])
     assert reloaded["notes"] == "Replication pending" and reloaded["run_ids"] == ["some-run"]
     with pytest.raises(ValueError, match="missing"):
@@ -173,3 +174,41 @@ def test_reimporting_the_same_pdf_keeps_its_metadata_and_notes(service, tmp_path
     second = research.save_paper({"title": "File title"}, str(path))
     assert first["id"] == second["id"] and second["notes"] == "Keep my notes"
     assert sum(p.get("pdf") == first["pdf"] for p in research.papers()) == 1
+
+
+def test_canon_papers_merge_your_fields_and_keep_the_canon_metadata(service, tmp_path):
+    research, store, _ = service
+    # A row from before the canon (the D42 seed) with stale metadata and your notes.
+    store.save_paper({"id": "sharpe1964", "title": "Old seed title", "year": "1964", "topic": "CAPM",
+                      "status": "Read", "notes": "Beta is a covariance", "pdf": "", "run_ids": ["r1"]})
+    research.save_paper({"title": "My own note on carry"})
+    papers = {p["id"]: p for p in research.papers()}
+    sharpe = papers["sharpe1964"]
+    assert sharpe["title"].startswith("Capital Asset Prices")       # the canon's
+    assert sharpe["status"] == "Read" and sharpe["notes"] == "Beta is a covariance"
+    assert sharpe["run_ids"] == ["r1"] and sharpe["canon"] and sharpe["strand"] == "asset-pricing"
+    assert sharpe["url"] == "https://doi.org/10.1111/j.1540-6261.1964.tb02865.x"
+    assert papers["bachelier1900"]["status"] == "To read" and papers["bachelier1900"]["canon"]
+    mine = next(p for p in papers.values() if p["title"] == "My own note on carry")
+    assert not mine.get("canon")
+    # Saving a merged canon paper stores your fields; display keys never reach the store.
+    research.save_paper({**papers["kelly1956"], "status": "Reading"})
+    stored = next(p for p in store.papers() if p["id"] == "kelly1956")
+    assert stored["status"] == "Reading" and not {"canon", "strand", "label", "pdf_available"} & set(stored)
+
+
+def test_a_broken_canon_leaves_your_papers_and_says_why(tmp_path, monkeypatch):
+    import quant_hub.services.research as research_module
+    from quant_hub.data.literature import CanonError
+
+    def broken():
+        raise CanonError(["x1990: links to missing paper 'y'"])
+    monkeypatch.setattr(research_module, "load_canon", broken)
+    db = tmp_path / "r.db"
+    prepare_store(db)
+    store = ResearchStore(db)
+    research = ResearchService(MarketService([SyntheticSource()]), store)
+    research.save_paper({"title": "Still here"})
+    assert [p["title"] for p in research.papers()] == ["Still here"]
+    assert "missing paper" in research.canon_error
+    store.close()

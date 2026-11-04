@@ -63,6 +63,9 @@ codebase themselves — the standing constraint is:
    math documented in the module docstring (model, discretization,
    assumptions, units), validated inputs, no unexplained constants, tests
    including statistical validation against closed forms where possible.
+   The papers a `models/` module implements are in the literature canon
+   (`quant_hub/data/canon/`, their `lives_in`), with their DOIs checked;
+   `tests/test_literature.py` fails otherwise (D58).
 5. **Do not implement roadmap items ahead of schedule.** Placeholders are
    intentional. Build what the current milestone asks and stop.
 

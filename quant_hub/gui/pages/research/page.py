@@ -14,6 +14,7 @@ from quant_hub.data.splits import SplitGap
 from quant_hub.gui.pages.base import PRICE_BASES, ScrollPage, basis_field, saved_grid, split_warning
 from quant_hub.gui.pages.research.history import SavedRuns
 from quant_hub.gui.pages.research.library import PaperLibrary
+from quant_hub.gui.pages.research.timeline import LiteratureTimeline
 from quant_hub.gui.theme import PALETTE, SIDE_PANEL_WIDTH, SPACE_L, SPACE_M
 from quant_hub.models.backtest import BacktestConfig
 from quant_hub.models.backtest_stats import rolling_sharpe
@@ -23,7 +24,7 @@ from quant_hub.services.research import Experiment, WORLD_SOURCE
 
 _HALF = (SIDE_PANEL_WIDTH - 2 * SPACE_L - SPACE_M) // 2
 _FULL = 2 * _HALF + SPACE_M
-_TABS = ("Experiments", "Saved runs", "Papers")
+_TABS = ("Experiments", "Saved runs", "Timeline", "Papers")
 _RULES = {
     "Momentum": ("0", "Buy when the trailing log return exceeds the threshold. Threshold 0.02 means about 2%."),
     "Mean reversion": ("1", "Buy below the rolling log-price mean by more than the threshold, in sample standard deviations."),
@@ -55,7 +56,9 @@ class ResearchPage(ScrollPage):
         self._history = SavedRuns(service, tasks, self._header.set_status, self.open_run)
         self._library = PaperLibrary(service, tasks, self._header.set_status,
                                      lambda: self._run_result.id if self._run_result else None, self.open_run)
+        self._timeline = LiteratureTimeline(service, tasks, self._header.set_status)
         self._stack.addWidget(self._history)
+        self._stack.addWidget(self._timeline)
         self._stack.addWidget(self._library)
         self._tabs.changed.connect(self._tab)
         self._restore(state_store.load("research"))
@@ -199,6 +202,8 @@ class ResearchPage(ScrollPage):
         self._stack.setCurrentIndex(_TABS.index(name))
         if name == "Saved runs":
             self._history.refresh()
+        elif name == "Timeline":
+            self._timeline.refresh()
         elif name == "Papers":
             self._library.refresh()
 

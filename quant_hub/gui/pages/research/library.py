@@ -31,7 +31,7 @@ class PaperLibrary(QWidget):
         self._table.row_activated.connect(self._select)
         catalog.body.addWidget(self._table, 1)
         catalog.add_action(button("Import PDFs…", icon_name="ph.upload-simple", on_click=self._import))
-        catalog.body.addWidget(label("Foundational entries link to their sources. Import your own PDFs to keep a local copy.", "muted", wrap=True))
+        catalog.body.addWidget(label("Canon papers (the Timeline tab) link to their sources. Import your own PDFs to keep a local copy.", "muted", wrap=True))
         outer.addWidget(catalog, 1)
         editor = Card("Reading desk", "Metadata, notes and links to your experiments")
         editor.setFixedWidth(SIDE_PANEL_WIDTH)
@@ -83,11 +83,15 @@ class PaperLibrary(QWidget):
         if not 0 <= row < len(self._shown):
             return
         self._selected = dict(self._shown[row])
+        # A canon paper's metadata belongs to the canon (Lit-1); yours is
+        # the status, notes, PDF and links below.
+        canon = bool(self._selected.get("canon"))
         for field, key in [(self._title, "title"), (self._authors, "authors"), (self._year, "year"),
                            (self._topic, "topic"), (self._url, "url")]:
             field.set_text(self._selected.get(key, ""))
             field.edit.setCursorPosition(0)
             field.edit.setToolTip(field.text())
+            field.edit.setReadOnly(canon)
         self._reading.select.set_items(["To read", "Reading", "Read", "Replicated"], self._selected.get("status", "To read"))
         self._notes.setPlainText(self._selected.get("notes", ""))
         linked = self._selected.get("run_ids", [])
@@ -97,6 +101,7 @@ class PaperLibrary(QWidget):
         self._selected = None
         for field in (self._title, self._authors, self._year, self._topic, self._url):
             field.set_text("")
+            field.edit.setReadOnly(False)
         self._notes.clear()
         self._links.setText("No linked experiments")
         self._reading.select.set_items(["To read", "Reading", "Read", "Replicated"], "To read")

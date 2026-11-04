@@ -273,6 +273,9 @@ QMenu::item {{ padding: 6px 18px; border-radius: 5px; }}
 QMenu::item:selected {{ background: {p.accent_soft}; }}
 
 /* ---- scrolling --------------------------------------------------------- */
+QScrollArea[role="cardScroll"] {{ background: transparent; border: none; }}
+QScrollArea[role="cardScroll"] > QWidget#qt_scrollarea_viewport,
+QWidget#cardScrollBody {{ background: transparent; }}
 QScrollBar:vertical {{ background: transparent; width: 10px; margin: 2px; }}
 QScrollBar::handle:vertical {{ background: {p.border_strong}; border-radius: 3px; min-height: 30px; }}
 QScrollBar::handle:vertical:hover {{ background: {p.muted}; }}

@@ -14,6 +14,13 @@ holdout. Both Sharpe SE and DSR use IID assumptions, as labelled in R1.
 Saved arrays replay the actual decisions without refitting or fetching.
 Source SHA-256 records the model implementation; changed code is reported
 on reopen. Bitwise replay across NumPy/platform versions is not promised.
+
+Papers merge two layers (Lit-1). The literature canon (``data/canon/``)
+owns each canon paper's metadata; the research store keeps what is yours,
+by the same id: reading status, notes, a local PDF and linked runs. Papers
+you add yourself live only in the store. A broken canon file doesn't stop
+the app: the catalog falls back to your own papers and ``canon_error``
+says what is wrong.
 """
 from __future__ import annotations
 
@@ -29,12 +36,14 @@ import numpy as np
 import pandas as pd
 
 from quant_hub import __version__
+from quant_hub.data.literature import Canon, CanonError, CanonPaper
 from quant_hub.data.types import PriceBasis
 from quant_hub.models.backtest import BacktestConfig, BacktestResult, backtest
 from quant_hub.models.backtest_stats import performance_summary, deflated_sharpe
 from quant_hub.models.research_worlds import WORLDS, research_world
 from quant_hub.models.strategies import StrategySpec, strategy_targets
 from quant_hub.services.market_service import MarketService
+from quant_hub.storage.canon_store import load_canon
 from quant_hub.storage.research_store import ResearchStore
 
 WORLD_SOURCE = "Controlled world"
@@ -114,8 +123,16 @@ def source_fingerprint() -> str:
 
 
 class ResearchService:
-    def __init__(self, market: MarketService, store: ResearchStore):
+    def __init__(self, market: MarketService, store: ResearchStore, canon: Canon | None = None):
         self._market, self._store = market, store
+        self.canon_error = ""
+        if canon is None:
+            try:
+                canon = load_canon()
+            except CanonError as exc:
+                canon, self.canon_error = Canon((), (), ()), str(exc)
+        self.canon = canon
+        self._strand_names = {s.id: s.name for s in canon.strands}
 
     def prices(self, experiment: Experiment) -> tuple[pd.DataFrame, dict]:
         if experiment.source == WORLD_SOURCE:
@@ -248,21 +265,28 @@ class ResearchService:
         self._store.save_notes(run_id, notes)
 
     def papers(self):
-        existing = self._store.papers()
-        ids = {p["id"] for p in existing}
-        for paper in _FOUNDATIONS:
-            if paper["id"] not in ids:
-                self.save_paper(paper)
-        papers = self._store.papers()
+        """Canon papers with your fields merged in, then your own papers."""
+        rows = {p["id"]: p for p in self._store.papers()}
+        papers = [self._merged(paper, rows.pop(paper.id, {})) for paper in self.canon.papers]
+        papers += rows.values()
         for paper in papers:
             paper["pdf_available"] = bool(paper.get("pdf") and self._store.library_path
                 and (self._store.library_path / Path(paper["pdf"]).name).is_file())
         return sorted(papers, key=lambda p: (p.get("year", ""), p["title"]))
 
+    def _merged(self, paper: CanonPaper, row: dict) -> dict:
+        return {"status": "To read", "notes": "", "pdf": "", "run_ids": [],
+                **{key: row[key] for key in _PERSONAL if key in row},
+                "id": paper.id, "title": paper.title, "authors": "; ".join(paper.authors),
+                "year": str(paper.year), "topic": self._strand_names.get(paper.strand, ""),
+                "url": paper.source_url, "canon": True, "strand": paper.strand,
+                "label": paper.label}
+
     def save_paper(self, metadata: dict, pdf_path: str | None = None):
         paper = {"id": uuid4().hex, "authors": "", "year": "", "topic": "",
                  "status": "To read", "notes": "", "url": "", "pdf": "", "run_ids": [], **metadata}
-        paper.pop("pdf_available", None)
+        for key in _DERIVED:
+            paper.pop(key, None)
         if not paper.get("title", "").strip():
             raise ValueError("paper title is required")
         if pdf_path:
@@ -294,19 +318,7 @@ class ResearchService:
         return str(path)
 
 
-_FOUNDATIONS = [
-    {"id": "bachelier1900", "title": "Théorie de la spéculation", "authors": "Louis Bachelier",
-     "year": "1900", "topic": "Stochastic prices", "url": "https://archive.numdam.org/articles/10.24033/asens.476/"},
-    {"id": "sharpe1964", "title": "Capital Asset Prices: A Theory of Market Equilibrium under Conditions of Risk",
-     "authors": "William F. Sharpe", "year": "1964", "topic": "CAPM",
-     "url": "https://doi.org/10.1111/j.1540-6261.1964.tb02865.x"},
-    {"id": "famafrench1993", "title": "Common risk factors in the returns on stocks and bonds",
-     "authors": "Eugene F. Fama; Kenneth R. French", "year": "1993", "topic": "Factors",
-     "url": "https://doi.org/10.1016/0304-405X(93)90023-5"},
-    {"id": "dupire1994", "title": "Pricing with a smile", "authors": "Bruno Dupire",
-     "year": "1994", "topic": "Local volatility",
-     "url": "https://www.risk.net/sites/default/files/import_unmanaged/risk.net/data/risk/pdf/technical/2007/risk20_0707_technical_volatility.pdf"},
-    {"id": "gatheraljacquier2012", "title": "Arbitrage-free SVI volatility surfaces",
-     "authors": "Jim Gatheral; Antoine Jacquier", "year": "2012 preprint", "topic": "SVI / arbitrage",
-     "url": "https://arxiv.org/abs/1204.0646"},
-]
+# Your fields on a canon paper; the canon owns the rest (module docstring).
+_PERSONAL = ("status", "notes", "pdf", "run_ids")
+# Added for display by ``papers()``, never stored.
+_DERIVED = ("pdf_available", "canon", "strand", "label")

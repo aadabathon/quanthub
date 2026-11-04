@@ -94,6 +94,10 @@ quant_hub/
 │   │                          with signed shading, MC convergence + band,
 │   │                          markers / point-only series), SmileGrid (small
 │   │                          multiples), Heatmap (sequential ramp + color bar)
+│   ├── timeline.py            TimelineChart: the literature on strand lanes
+│   │                          over a squeezed year axis, chips by level of
+│   │                          detail, links on selection; the one chart that
+│   │                          pans and zooms, along time only (Lit-2, D58)
 │   ├── surface3d.py           3D vol surface (D32): SurfaceMesh → Plotly figure
 │   │                          dict → local plotly.js in Qt WebEngine; draws
 │   │                          only when shown, warm-up on load, Plotly.react
@@ -110,7 +114,8 @@ quant_hub/
 │                              simulator.py, options_lab/ (page, underlying,
 │                              pricer, strategy, monte_carlo), volatility_lab.py,
 │                              kalman_lab.py, markov_lab.py, valuation.py,
-│                              review.py, research/ (page, history, library)
+│                              review.py, research/ (page, history, timeline,
+│                              library)
 ├── config.py                  AppConfig
 ├── events.py                  EventBus (thread-safe), LogEvent, log handler
 ├── broker/
@@ -134,6 +139,11 @@ quant_hub/
 │   │                          failure contract); FundamentalsSource (D46)
 │   ├── regime.py              Rule/Limit/Measure, Grade/Effect, RuleSet: the
 │   │                          owner's REGIME.md as data (W7, D49)
+│   ├── literature.py          the literature canon: CanonPaper/Link/Strand/
+│   │                          Era, the time rule, DAG and source checks,
+│   │                          short labels (Lit-1, D58)
+│   ├── canon/                 the canon itself, package data: timeline.json
+│   │                          (strands, eras) + one JSON file per strand
 │   ├── positions.py           Position/OptionContract/PositionSnapshot: what an
 │   │                          account holds, broker-agnostic (D39);
 │   │                          combine_snapshots: one export per account, one
@@ -265,6 +275,9 @@ quant_hub/
 ├── storage/position_store.py  imported position snapshots, kept (D39)
 ├── storage/research_store.py  immutable research payloads, mutable notes
 │                              and paper metadata; local PDF copies (D42)
+├── storage/canon_store.py     load_canon: reads and checks data/canon/; your
+│                              fields on canon papers stay in research_store,
+│                              merged by id in services/research.py (D58)
 ├── storage/bar_store.py       SQLite schema (instruments/bars/coverage),
 │                              upsert with counts, range queries, coverage
 ├── storage/chain_store.py     option-chain snapshots (option_chains /
@@ -458,7 +471,9 @@ Key properties (decisions D17–D21):
   subclass `ScrollPage` (scroll, never clip) and reflow on resize.
 - **Charts** are pyqtgraph widgets in `charts.py`: render-only, precomputed
   inputs, view-only ranges driven by page controls, and a snapped
-  crosshair + readout as the hover layer. Matplotlib is not used in pages
+  crosshair + readout as the hover layer. The one exception is
+  `timeline.py` (D58), which pans and zooms along time because 221 papers
+  don't fit one view. Matplotlib is not used in pages
   (a future research figure may embed it via the QtAgg backend).
 - **Status colors** (good/warning/critical) mean *state* — connection
   health, signed values, check results — and are never chart series
