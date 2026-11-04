@@ -75,6 +75,20 @@ dry run lists your holdings.
   shown as the target, not graded.
 - **Options** are listed under their underlying unless they form a sleeve
   of their own (e.g. a put hedge on the core).
+- **The core** is exempt from section 4's max holding weight and max risk
+  share: it carries market risk by design. Its weight and risk share are
+  still shown (A1).
+
+Sleeve totals (A1): a whole sleeve's intended share of equity, the sum of
+its holdings' weights. Use a name from the table above.
+
+| Sleeve | Intended total |
+|---|---|
+| ___ | ___ – ___ % of equity |
+
+- A total is a range, and either side may stay blank (`___ – 20` is at
+  most 20%). It's graded by the line below, like a holding's range.
+- With a total, the per-holding ranges inside that sleeve are optional.
 
 Sleeve size outside its intended range: ___ (fail / warn / note)
 
@@ -92,6 +106,10 @@ Sleeve size outside its intended range: ___ (fail / warn / note)
 | Cash range | ___ – ___ | % of equity | Cash and money-market lines (*today*) | ___ |
 | Minimum effective holdings | ___ | count | *Effective holdings* N_eff (*today*) | ___ |
 | Sizing cap | ___ | fraction f of estimated Kelly | Kelly f\* and its SE (*today*; per sleeve in W3) | ___ |
+
+With a core in section 3, the review splits the book's β into the core's
+and the rest's, and shows the core weight that would bring the book into
+the Beta band (A1). It's shown, never applied.
 
 When a day carries most of the variance of the mix or of a holding (the
 review flags it, the same days the Portfolio page flags,

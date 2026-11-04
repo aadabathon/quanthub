@@ -1,7 +1,18 @@
 # CURRENT_STATE.md
 
 **Update this file whenever meaningful work lands.** Last updated:
-**2026-11-03**: a **Data page** (D64), in the sidebar after Markets, lists
+**2026-11-04**: ALLOCATION A1, part 1 (D65): the review is core-aware.
+- A `core` holding is shown, not graded, under max holding weight and max
+  risk share ("exempt: the core").
+- Section 3 can set **sleeve totals** (a new table in the template):
+  `| core | 50 – 80 % of equity |`, graded by the sleeve-grade line.
+- A new Review card splits the book's β into the core's and the rest's,
+  and gives the core weight that would bring it into your Beta band, with
+  and without leverage. Shown, never applied.
+- **Not yet:** the look-through N_eff (part 2). The effective-holdings
+  floor still counts the core as one name.
+
+Also **2026-11-03**: a **Data page** (D64), in the sidebar after Markets, lists
 everything stored, with where it came from and how fresh it is: outside
 series, fund holdings, chain snapshots and price history. Selecting a
 series previews it with its citation; French's daily returns are plotted

@@ -2269,3 +2269,66 @@ panels do on narrow windows. From about 1440 px it sits beside the table.
 
 **Checked** on a copy of the store holding French's 11 series and
 Shiller's 6: screenshots at 1280 and 1440 wide, with Windows fonts.
+
+## D65 — ALLOCATION A1, part 1: a core-aware review (2026-11-04)
+
+ALLOCATION_PLAN's first finding: section 4 graded an index core like a
+single stock, so a book built on "a core beta stream" failed its own
+checklist. D59 put A1 first. This part makes the review core-aware. The
+look-through N_eff (decision 2) is part 2, and needs the ISIN bridge the
+owner chose: IBKR's contract lookup, for the stocks held directly.
+
+**The core is shown, not graded, under the single-name rules.** A
+holding whose section 3 sleeve is `core` gets a new outcome, `exempt`,
+under max holding weight and max risk share. Its value is measured and
+shown as before. Every other rule still reads it, and so does every
+book-level number: β, volatility, VaR, ES, drawdown, cash. The checklist
+shows "exempt: the core".
+
+**Sleeve totals.** Section 3 gains a second table, `| Sleeve | Intended
+total |`, told apart from the holdings by its first header.
+- A total names a sleeve the holdings table uses (`core`, `hedge`,
+  `other` or `stream: <name>`). An unknown one is an error naming its line
+  (D49).
+- It's a range, and either side may stay blank. A single number is
+  refused, because a total exists to be graded. So is `by k SE`, because
+  a weight is exact.
+- It's graded by section 3's sleeve-grade line, like a holding's range. A
+  total without that line is refused. A holding's range without it is
+  still silently ungraded, as before; that wasn't changed here.
+- The measure is the sum of the sleeve's holdings' |weight|, options by
+  delta: the per-holding size rule's own measure, summed.
+
+**The core and the rest** (`models/allocation.py`, math in its
+docstring). The book's β is Σ wᵢβᵢ exactly: OLS β is linear in the
+dependent series, and cash adds nothing. It splits into the rest's
+B_N = Σ_{i∉C} wᵢβᵢ and the core's w_C·β_C. Holding the rest fixed, a
+target β* needs a core of w_C* = (β* − B_N)/β_C.
+- The Review shows a card with the core, the rest and the book: each
+  part's weight, β and the β it supplies.
+- **Section 4's Beta band is the target.** No new parameter: the card
+  gives the core weights for each side of the band, as computed, and the
+  part of that range that needs no leverage (between 0 and 1 − w_N). It
+  says when the core's weight today is inside it.
+- **Shown, never applied.** No rule grades it. It's how a pick's β is
+  "shorted out" by holding less core, in an account that can't short.
+- The βs are the risk model's, cov/var over the lookback, so they're the
+  ones behind the Beta tile. The journal keeps the split.
+- It's Treynor and Black's (1973) market-plus-active split, so the canon
+  entry now lives in `models/allocation.py` (test_literature's coverage
+  rule).
+
+**Not changed:** the effective-holdings floor still counts the core as one
+name. Part 2 replaces that with the look-through count.
+
+**Tests:**
+- the β split, exact against a sample regression
+- the band's core weights landing the book on each side
+- the reachable range in five cases
+- what can't be netted
+- the parser's totals and each error's line
+- the review's exemption, totals and netting
+- the Review page's card
+
+**Checked** with a screenshot of the Review page on the tests' made-up
+book.

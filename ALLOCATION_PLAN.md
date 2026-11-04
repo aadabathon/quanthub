@@ -78,6 +78,11 @@ holds the earlier timing results and the multiple-testing check.
 
 ### A1. Core-aware limits, and sleeve totals
 
+**Status:** part 1 landed 2026-11-04 (D65): the core exemption, sleeve
+totals, and netting shown on Review. Part 2, the look-through N_eff,
+uses IBKR's contract lookup as the ISIN bridge (the owner's choice,
+2026-11-04).
+
 **Data ready (D62):** funds' N-PORT holdings are stored, with weights,
 CUSIP and ISIN. Still A1's to choose: the ISIN → ticker bridge for merging a
 fund's lines with stocks held directly (IBKR's ISIN lookup, OpenFIGI, or

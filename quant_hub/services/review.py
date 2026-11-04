@@ -30,7 +30,13 @@ One run is the plan's job chain, on the task-worker thread:
 7. **The checklist.** Every rule against its measure, over what it governs:
    the portfolio, each holding, each option, each stream, each pair of
    streams, each company. Section 1's persistence turns each stream's
-   breaches into a thesis verdict.
+   breaches into a thesis verdict. A1 makes it core-aware:
+   - A core holding is exempt from max holding weight and max risk share.
+     Its numbers are still shown: a core carries market risk by design.
+   - Section 3's sleeve totals are graded like a holding's intended size.
+   - The book's β is split into the core's and the rest's
+     (``models/allocation.py``), with the core weight that would bring it
+     into the Beta band. Shown, never applied.
 8. **The journal.** The run is stored whole. Notes and hand-placed trades
    are added after.
 
@@ -53,6 +59,7 @@ from quant_hub.data.positions import OPTION_MULTIPLIER, Holding, PositionSnapsho
 from quant_hub.data.regime import Grade, Measure, Rule, RuleSet
 from quant_hub.importers.positions_csv import read_positions_csv, read_positions_files
 from quant_hub.importers.regime_md import parse_regime
+from quant_hub.models.allocation import CoreNetting, core_netting
 from quant_hub.models.dcf import (
     ValuationError,
     calibration,
@@ -83,6 +90,8 @@ PORTFOLIO = "portfolio"
 NO_ERROR = "no standard error yet"
 THESIS_RULES = ("6.hurdle", "6.correlation", "6.stream-beta")
 """Section 1's tests: the growth hurdle, orthogonality and beta creep."""
+CORE_EXEMPT = ("4.max-weight", "4.max-risk-share")
+"""The single-name rules a core holding is shown under, not graded (A1)."""
 _PAIR = " × "
 
 
@@ -141,6 +150,8 @@ class Review:
     volatility: float | None
     drafts: tuple[TradeDraft, ...]
     notes: tuple[str, ...]
+    netting: CoreNetting | None = None  # the core's β and the rest's (A1)
+    netting_note: str = ""              # why there's none, when section 3 has a core
 
     def breaches(self, consequence=None) -> list[ItemCheck]:
         """Breached checks, optionally of one grade or effect."""
@@ -266,14 +277,15 @@ class ReviewService:
         checks = _checks(rules, measures, missing, implied, graded)
         streams = self._streams(rules, checks, run_at)
         drafts = _drafts(previous, snapshot) if previous is not None else ()
+        netting, netting_note = _netting(graded, rules)
         payload = _payload(rules, snapshot, files, checks, streams, influential, removed, calm,
-                           volatility, view)
+                           volatility, view, netting)
         review_id = self._store.save_review(run_at, version_id, snapshot.as_of.date().isoformat(),
                                             payload)
         return Review(run_at, review_id, version_id, rules, snapshot,
                       tuple(p.name for p in files), skipped, view, graded, influential, removed,
                       tuple(checks), tuple(streams), calm, volatility, tuple(drafts),
-                      tuple(notes))
+                      tuple(notes), netting, netting_note)
 
     # ------------------------------------------------------------ the journal
     def reviews(self, limit: int | None = None) -> list[ReviewRecord]:
@@ -613,9 +625,15 @@ def _checks(rules: RuleSet, measures: Mapping[str, list], missing: Mapping[str, 
             out.append(ItemCheck("—", Check(rule, None, Outcome.PASS,
                                             reason="nothing it governs is held")))
         else:
+            exempt = rules.core if rule.key in CORE_EXEMPT else frozenset()
             for item, measure, reason in entries:
-                out.append(ItemCheck(item, check(rule, measure) if measure is not None else
-                                     Check(rule, None, Outcome.MISSING, reason=reason)))
+                if measure is None:
+                    out.append(ItemCheck(item, Check(rule, None, Outcome.MISSING, reason=reason)))
+                elif item in exempt:
+                    out.append(ItemCheck(item, Check(rule, measure, Outcome.EXEMPT,
+                                                     reason="the core")))
+                else:
+                    out.append(ItemCheck(item, check(rule, measure)))
     weights = {row.symbol: abs(row.weight) for row in view.rows}
     if rules.sleeve_consequence is not None:
         for row in rules.sleeves:
@@ -625,7 +643,32 @@ def _checks(rules: RuleSet, measures: Mapping[str, list], missing: Mapping[str, 
                         row.intended, rules.sleeve_consequence, unit="% of equity")
             out.append(ItemCheck(row.symbol, check(rule, Measure.exact(weights.get(row.symbol,
                                                                                    0.0)))))
+        sleeve_of = {row.symbol: row.sleeve for row in rules.sleeves}
+        for total in rules.sleeve_totals:
+            rule = Rule(f"3.total.{total.sleeve}", f"{total.sleeve}: intended total",
+                        "sleeve weight", total.intended, rules.sleeve_consequence,
+                        unit="% of equity")
+            weight = sum(w for symbol, w in weights.items()
+                         if sleeve_of.get(symbol) == total.sleeve)
+            out.append(ItemCheck(total.sleeve, check(rule, Measure.exact(weight))))
     return out
+
+
+def _netting(view: PortfolioView, rules: RuleSet) -> tuple[CoreNetting | None, str]:
+    """A1: the book's β split into the core's and the rest's, and the core
+    weight that would bring it into the Beta band. None, with why, when it
+    can't be split; None and no reason when section 3 names no core."""
+    if not rules.core:
+        return None, ""
+    if any(row.beta is None for row in view.rows):
+        return None, "No benchmark history, so no β to split between the core and the rest."
+    beta_rule = rules.rule("4.beta")
+    band = (beta_rule.limit.lower, beta_rule.limit.upper) if beta_rule else None
+    try:
+        return core_netting({row.symbol: row.weight for row in view.rows},
+                            {row.symbol: row.beta for row in view.rows}, rules.core, band), ""
+    except ValueError as exc:
+        return None, f"The core can't net the rest: {exc}."
 
 
 def _drafts(previous: PositionSnapshot, current: PositionSnapshot) -> list[TradeDraft]:
@@ -657,7 +700,8 @@ def _payload(rules: RuleSet, snapshot: PositionSnapshot, files: Sequence[Path],
              checks: Sequence[ItemCheck], streams: Sequence[StreamVerdict],
              influential: Sequence[InfluentialDay], removed: Sequence[date],
              calm: CalmGate | None,
-             volatility: float | None, view: PortfolioView) -> dict:
+             volatility: float | None, view: PortfolioView,
+             netting: CoreNetting | None = None) -> dict:
     """What the journal keeps of a run: enough to show it again and to
     count section 1's runs, nothing the store would need to understand."""
     return {
@@ -682,4 +726,8 @@ def _payload(rules: RuleSet, snapshot: PositionSnapshot, files: Sequence[Path],
         "removed_days": [d.isoformat() for d in removed],
         "gates": {"calm": _finite(calm.probability) if calm else None,
                   "volatility": _finite(volatility)},
+        "netting": None if netting is None else {
+            "core": list(netting.core), "core_weight": _finite(netting.core_weight),
+            "core_beta": _finite(netting.core_beta), "rest_weight": _finite(netting.rest_weight),
+            "rest_beta": _finite(netting.rest_beta)},
     }

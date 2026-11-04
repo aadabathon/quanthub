@@ -614,7 +614,9 @@ The order after the 2026-11-03 decisions:
    accumulate as much free data as possible. ~~A Data page~~ lists what's
    stored (landed 2026-11-03, D64).
 2. **ALLOCATION A1 → A2:** core-aware limits with look-through N_eff, and
-   crash stress (measured, not graded).
+   crash stress (measured, not graded). A1 part 1 landed 2026-11-04
+   (D65): the core exemption, sleeve totals and β netting. Part 2 is the
+   look-through N_eff, through IBKR's ISIN lookup.
 3. **HEDGE U1:** the hedge math ([HEDGE_PLAN.md](HEDGE_PLAN.md)), then
    U2–U5.
 4. **ALLOCATION A3–A4:** the What-if page and snapshot hygiene.

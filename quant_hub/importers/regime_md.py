@@ -14,6 +14,9 @@ value"):
 - Rows are recognized by their first column (``_RULES``). An unknown label
   in a rule table is an error, not a skipped row, so a renamed row can't
   silently turn its rule off.
+- Section 3 holds two tables, told apart by their first header: the
+  holdings (``Symbol``) and the sleeve totals (``Sleeve``, A1). A total
+  names a sleeve the holdings table uses, and is a range.
 
 Every value is read or refused. A value that can't be read, or a filled-in
 value whose "On breach" is blank, raises ``RegimeFileError`` naming its
@@ -41,6 +44,7 @@ from quant_hub.data.regime import (
     Settings,
     SleeveKind,
     SleeveRow,
+    SleeveTotal,
     Universe,
 )
 
@@ -173,14 +177,17 @@ def parse_regime(text: str) -> RuleSet:
         raise RegimeFileError(1, "no 'Version: … · Written: … · Reason for this version: …' line")
     line, m = header
     version, written, reason = (_text(m.group(g)) for g in ("version", "written", "reason"))
+    holding_rows, total_rows = _sleeve_tables(sections.get(3, []))
+    sleeves = _sleeves(holding_rows)
+    sleeve_consequence = _sleeve_grade(sections.get(3, []))
     return RuleSet(
         version=version or "",
         written=_date(line, written) if written else None,
         reason=reason or "",
         thesis_runs=_thesis_runs(sections.get(1, [])),
         settings=_settings(sections.get(2, [])),
-        sleeves=_sleeves(sections.get(3, [])),
-        sleeve_consequence=_sleeve_grade(sections.get(3, [])),
+        sleeves=sleeves,
+        sleeve_consequence=sleeve_consequence,
         rules=_rule_rows([*sections.get(4, []), *sections.get(5, []), *sections.get(6, []),
                           *sections.get(7, []), *sections.get(8, [])]),
         market=_market(sections.get(7, [])),
@@ -189,15 +196,21 @@ def parse_regime(text: str) -> RuleSet:
                       for _, (when, steps, kept, *_) in _rows(sections.get(9, []), minimum=3)),
         change_policy=_change_policy(sections.get(10, [])),
         without_dominant_day=_dominant_day(sections.get(4, [])),
+        sleeve_totals=_sleeve_totals(total_rows, sleeves, sleeve_consequence),
     )
 
 
 # ------------------------------------------------------------------ tables
 
-def _rows(lines: list[tuple[int, str]], minimum: int = 2) -> list[tuple[int, list[str]]]:
-    """Each table's data rows as (line, cells), without header and rule rows.
-    Escaped pipes (``\\|``) stay inside their cell."""
-    rows, header_next = [], True
+Table = tuple[list[str], list[tuple[int, list[str]]]]
+
+
+def _tables(lines: list[tuple[int, str]]) -> list[Table]:
+    """Each table as (header cells, data rows), a data row being (line,
+    cells), without the rule row. Escaped pipes (``\\|``) stay inside
+    their cell."""
+    tables: list[Table] = []
+    header_next = True
     for number, line in lines:
         stripped = line.strip()
         if not stripped.startswith("|"):
@@ -208,10 +221,21 @@ def _rows(lines: list[tuple[int, str]], minimum: int = 2) -> list[tuple[int, lis
             continue
         if header_next:
             header_next = False
+            tables.append((cells, []))
             continue
+        tables[-1][1].append((number, cells))
+    return tables
+
+
+def _rows(lines: list[tuple[int, str]], minimum: int = 2) -> list[tuple[int, list[str]]]:
+    """Every table's data rows, each with at least ``minimum`` cells."""
+    return _sized([row for _, rows in _tables(lines) for row in rows], minimum)
+
+
+def _sized(rows: list[tuple[int, list[str]]], minimum: int) -> list[tuple[int, list[str]]]:
+    for number, cells in rows:
         if len(cells) < minimum:
             raise RegimeFileError(number, f"a table row needs {minimum} columns, not {len(cells)}")
-        rows.append((number, cells))
     return rows
 
 
@@ -311,9 +335,19 @@ def _settings(lines: list[tuple[int, str]]) -> Settings:
     return Settings(**values)
 
 
-def _sleeves(lines: list[tuple[int, str]]) -> tuple[SleeveRow, ...]:
+def _sleeve_tables(lines: list[tuple[int, str]]
+                   ) -> tuple[list[tuple[int, list[str]]], list[tuple[int, list[str]]]]:
+    """Section 3's holdings rows and its sleeve-total rows (module docstring)."""
+    holdings: list[tuple[int, list[str]]] = []
+    totals: list[tuple[int, list[str]]] = []
+    for header, rows in _tables(lines):
+        (totals if header and header[0].strip().lower() == "sleeve" else holdings).extend(rows)
+    return holdings, totals
+
+
+def _sleeves(rows: list[tuple[int, list[str]]]) -> tuple[SleeveRow, ...]:
     sleeves: list[SleeveRow] = []
-    for number, (symbol, sleeve, why, intended, *_) in _rows(lines, minimum=4):
+    for number, (symbol, sleeve, why, intended, *_) in _sized(rows, 4):
         ticker = _text(symbol)
         if ticker is None:
             continue
@@ -347,6 +381,41 @@ def _sleeve(line: int, cell: str) -> tuple[SleeveKind | None, str]:
     if kind is not SleeveKind.STREAM and name:
         raise RegimeFileError(line, f"only a stream takes a name, not {kind.value}")
     return kind, name if kind is SleeveKind.STREAM else kind.value
+
+
+def _sleeve_totals(rows: list[tuple[int, list[str]]], sleeves: tuple[SleeveRow, ...],
+                   consequence: Grade | None) -> tuple[SleeveTotal, ...]:
+    """A1's sleeve totals: each a range, on a sleeve the holdings use, graded
+    by section 3's sleeve-grade line."""
+    known = {row.sleeve for row in sleeves if row.sleeve}
+    totals: list[SleeveTotal] = []
+    seen: dict[str, int] = {}
+    for number, cells in _sized(rows, 2):
+        kind, name = _sleeve(number, cells[0])
+        if kind is None:
+            continue
+        label = f"stream: {name}" if kind is SleeveKind.STREAM else name
+        if label not in known:
+            raise RegimeFileError(number, f"no holding in the table above is in the sleeve "
+                                          f"{label!r}")
+        if label in seen:
+            raise RegimeFileError(number, f"{label!r} already has a total on line {seen[label]}")
+        if _EVIDENCE.search(cells[1]):
+            raise RegimeFileError(number, "a sleeve's weight is exact, so its total takes no "
+                                          "'by k SE'")
+        values, _ = _tokens(number, cells[1])
+        if len(values) != 2:
+            raise RegimeFileError(number, f"a sleeve total is a range, 'low – high' (either may "
+                                          f"be ___): {cells[1]!r}")
+        lower, upper = (_scaled(v, PERCENT) for v in values)
+        if lower is None and upper is None:
+            continue
+        if consequence is None:
+            raise RegimeFileError(number, f"{label}: a total needs the grade on the line 'Sleeve "
+                                          "size outside its intended range'")
+        seen[label] = number
+        totals.append(SleeveTotal(label, _limit(number, lower, upper)))
+    return tuple(totals)
 
 
 def _sleeve_grade(lines: list[tuple[int, str]]) -> Grade | None:

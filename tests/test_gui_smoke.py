@@ -1894,10 +1894,16 @@ def test_review_runs_the_checklist_and_keeps_the_journal(qt_app, tmp_path):
     page._run()
     wait_for(app, lambda: page._last is not None, timeout_s=90)
     assert page._header._status.full_text().startswith(f"Review #{page._last.review_id}")
-    assert int(page._tiles["fail"].value_text()) >= 1                  # AAA over the 25% cap
+    assert int(page._tiles["fail"].value_text()) >= 1                  # BBB over the 15% cap; AAA is the core
     assert page._checklist.rowCount() > 10
     first = [page._checklist.item(0, c).text() for c in range(page._checklist.columnCount())]
     assert first[3].startswith("fail")                                 # breaches first
+    results = [page._checklist.item(r, 3).text() for r in range(page._checklist.rowCount())]
+    assert "exempt: the core" in results                               # AAA's weight, shown
+    # A1: the core (AAA) and the rest, with the core weight for the Beta band.
+    assert page._netting_card.isVisibleTo(page) and page._netting.rowCount() == 3
+    assert page._netting.item(0, 0).text() == "Core: AAA"
+    assert "For β between 0.50 and 1.50" in page._netting_text.text()
     # CCC's +500% day decides the mix and CCC's own series: a row for each (D53).
     assert page._streams.rowCount() == 2 and page._influence.rowCount() == 2
     assert [page._influence.item(r, 1).text() for r in range(2)] == ["the mix", "CCC"]
@@ -1923,7 +1929,7 @@ def test_review_names_an_unreadable_rules_line(qt_app, tmp_path):
     from test_regime_md import row
     app, window = qt_app
     window._core.config.regime_path.write_text(
-        RULES.replace(row("weight", "25", "fail"), row("weight", "25", "maybe")), encoding="utf-8")
+        RULES.replace(row("weight", "15", "fail"), row("weight", "15", "maybe")), encoding="utf-8")
     page = window.show_page("Review")
     wait_for(app, lambda: page._error_note.isVisibleTo(page), timeout_s=30)
     assert "REGIME.md line" in page._error_note._text.text()

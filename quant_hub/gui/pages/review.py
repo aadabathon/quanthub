@@ -145,7 +145,37 @@ def _result(c: Check) -> tuple[str, str]:
         return ("pass" + (f": {c.reason}" if c.reason else "")), PALETTE.good
     if c.outcome is Outcome.AMBIGUOUS:
         return f"ambiguous: {c.reason}", PALETTE.warning
+    if c.outcome is Outcome.EXEMPT:
+        return f"exempt: {c.reason}", PALETTE.text_secondary
     return f"no data: {c.reason}", PALETTE.muted
+
+
+def _netting_text(n) -> str:
+    """The core weights that would bring the book into the Beta band, as
+    computed and without leverage (``models/allocation.py``)."""
+    now = f"The core is {n.core_weight:.1%} of equity now."
+    if n.band is None:
+        return f"Section 4's Beta band is blank, so there's no target to net toward. {now}"
+    (low, high), (w_low, w_high) = n.band, n.core_for_band
+    if low is not None and high is not None:
+        target = f"For β between {low:.2f} and {high:.2f}"
+        weights = f"{w_low:.1%} to {w_high:.1%}"
+    elif low is not None:
+        target, weights = f"For β of at least {low:.2f}", f"at least {w_low:.1%}"
+    else:
+        target, weights = f"For β of at most {high:.2f}", f"at most {w_high:.1%}"
+    reachable = n.reachable()
+    if reachable is None:
+        reach = (f"No core weight gets there: the rest alone supplies β {n.rest_beta:.2f}."
+                 if w_high is not None and w_high < 0 else
+                 f"Without leverage it can't get there: the rest leaves {n.room:.1%}.")
+        inside = ""
+    else:
+        reach = f"Without leverage: {reachable[0]:.1%} to {reachable[1]:.1%}."
+        inside = (" That's inside it." if reachable[0] - 1e-12 <= n.core_weight
+                  <= reachable[1] + 1e-12 else "")
+    return (f"{target}, with the rest held as it is, the core would be {weights} of equity. "
+            f"{reach} {now}{inside}")
 
 
 def _severity(c: Check) -> int:
@@ -172,6 +202,7 @@ class ReviewPage(ScrollPage):
         for column, (name, tile) in enumerate(self._tiles.items()):
             grid.add(f"{name} tile", tile, 2 * column, 0, 2)
         grid.add_column([("checklist", self._build_checklist(), None),
+                         ("netting", self._build_netting(), None),
                          ("streams", self._build_streams(), None),
                          ("market", self._build_market(), None),
                          ("influence", self._build_influence(), None),
@@ -195,6 +226,18 @@ class ReviewPage(ScrollPage):
         self._checklist.fix_column(3, _RESULT_WIDTH)
         self._checklist_card.body.addWidget(self._checklist)
         return self._checklist_card
+
+    def _build_netting(self) -> Card:
+        self._netting_card = Card("The core and the rest", "The book's β, split between "
+                                  "them; shown, never applied (A1)")
+        self._netting = DataTable([("Part", "left"), ("Weight", "right"), ("β", "right"),
+                                   ("β it supplies", "right")], row_height=_ROW)
+        self._netting.balance_columns()
+        self._netting_card.body.addWidget(self._netting)
+        self._netting_text = label("", "muted", wrap=True)
+        self._netting_card.body.addWidget(self._netting_text)
+        self._netting_card.setVisible(False)
+        return self._netting_card
 
     def _build_streams(self) -> Card:
         self._streams_card = Card("Thesis by stream", "Section 1: the growth hurdle, "
@@ -369,6 +412,7 @@ class ReviewPage(ScrollPage):
         self._tiles["warn"].set_value(str(len(warns)))
         self._tiles["gates"].set_value(str(len(gates)), "critical" if gates else "good")
         self._render_checklist(review)
+        self._render_netting(review)
         self._render_streams(review)
         self._render_market(review)
         self._render_influence(review)
@@ -390,6 +434,24 @@ class ReviewPage(ScrollPage):
                  for c in rows if not c.check.rule.key.startswith("7.")]
         self._checklist.set_rows(table)
         self._checklist.setFixedHeight(_HEADER + max(len(table), 1) * _ROW)
+
+    def _render_netting(self, review: Review) -> None:
+        n = review.netting
+        self._netting_card.setVisible(n is not None or bool(review.netting_note))
+        if n is None:
+            self._netting.set_rows([])
+            self._netting.setVisible(False)
+            self._netting_text.setText(review.netting_note)
+            return
+        rest = f"{n.rest_beta / n.rest_weight:.2f}" if abs(n.rest_weight) > 1e-12 else "—"
+        rows = [[f"Core: {', '.join(n.core)}", f"{n.core_weight:.1%}", f"{n.core_beta:.2f}",
+                 f"{n.core_weight * n.core_beta:.2f}"],
+                ["The rest", f"{n.rest_weight:.1%}", rest, f"{n.rest_beta:.2f}"],
+                ["The book", f"{n.core_weight + n.rest_weight:.1%}", "", f"{n.beta:.2f}"]]
+        self._netting.set_rows(rows)
+        self._netting.setVisible(True)
+        self._netting.setFixedHeight(_HEADER + len(rows) * _ROW)
+        self._netting_text.setText(_netting_text(n))
 
     def _render_streams(self, review: Review) -> None:
         rows = [[v.sleeve, ", ".join(v.breaches) or ("none", PALETTE.muted), str(v.run),
@@ -508,5 +570,6 @@ class ReviewPage(ScrollPage):
         for table in (self._checklist, self._streams, self._market, self._influence,
                       self._drafts, self._trades, self._history):
             table.setFixedHeight(_HEADER + _ROW)
+        self._netting_card.setVisible(False)
         self._influence_card.set_subtitle("Run a review to see it")
         self._header.set_status("Run a review: it reads your rules and the newest export.")

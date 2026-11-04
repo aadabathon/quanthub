@@ -101,7 +101,7 @@
     "doi": "10.1086/295508",
     "question": "How should a manager with some stock-picking views combine them with the market?",
     "changed": "Hold the market plus an active portfolio weighted by alpha over residual variance; the appraisal ratio measures the gain.",
-    "lives_in": [],
+    "lives_in": ["quant_hub/models/allocation.py"],
     "links": [{"to": "sharpe1964", "kind": "builds_on"}, {"to": "markowitz1952", "kind": "builds_on"}],
     "verified": {"via": "crossref", "checked": "2026-11-02", "matched": ["title", "first_author", "year"]}
   },

@@ -181,6 +181,8 @@ quant_hub/
 │   │                          the HMM and GARCH gates, implied growth (W7,
 │   │                          D49); the days that decide the numbers are
 │   │                          portfolio.py's (D53)
+│   ├── allocation.py          the core and the rest: the book's β split,
+│   │                          the core weight for the Beta band (A1, D65)
 │   ├── dcf.py                 unlevered-FCF DCF (the owner's, ported):
 │   │                          projection, terminal conventions, valuation
 │   │                          date, sensitivity, multiples, margin of safety,

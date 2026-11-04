@@ -72,7 +72,7 @@ RULES = fill({
     "Sleeve size outside its intended range: ___ (fail / warn / note)":
         "Sleeve size outside its intended range: warn (fail / warn / note)",
     "numbers: ___ (as measured": "numbers: without that day (as measured",
-    ROW["weight"]: row("weight", "25", "fail"),
+    ROW["weight"]: row("weight", "15", "fail"),
     ROW["beta"]: row("beta", "0.5 – 1.5 by 1.645 SE"),
     ROW["cash"]: row("cash", "10 – 40", "note"),
     ROW["hurdle"]: row("hurdle", "by 1 SE"),
@@ -123,8 +123,11 @@ def test_a_review_reads_the_newest_export_and_checks_every_rule(world):
         "7.calm", "7.volatility", "7.indicator.1", "8.margin", "3.size.AAA"}
     weights = {c.item: c.check for c in by_key(review, "4.max-weight")}
     assert set(weights) == {"AAA", "BBB", "CCC"}
-    assert weights["AAA"].outcome is Outcome.BREACH and weights["AAA"].consequence is Grade.FAIL
+    assert weights["BBB"].outcome is Outcome.BREACH and weights["BBB"].consequence is Grade.FAIL
     assert weights["CCC"].outcome is Outcome.PASS
+    # AAA is the core: over the cap, shown, not graded (A1).
+    assert weights["AAA"].outcome is Outcome.EXEMPT and weights["AAA"].consequence is None
+    assert weights["AAA"].measure.estimate == pytest.approx(0.4)
     (cash,) = by_key(review, "4.cash")
     assert cash.check.outcome is Outcome.PASS and cash.check.measure.estimate == pytest.approx(0.3)
     (size,) = by_key(review, "3.size.AAA")
@@ -218,7 +221,7 @@ def test_every_stop_names_what_to_fix(world, tmp_path):
                       encoding="utf-8")
     with pytest.raises(ReviewError, match="section 2: 'Cash rate' is blank"):
         service.run({})
-    regime.write_text(RULES.replace(row("weight", "25", "fail"), row("weight", "25", "maybe")),
+    regime.write_text(RULES.replace(row("weight", "15", "fail"), row("weight", "15", "maybe")),
                       encoding="utf-8")
     with pytest.raises(RegimeFileError, match="REGIME.md line"):
         service.run({})
@@ -238,3 +241,34 @@ def test_every_stop_names_what_to_fix(world, tmp_path):
                           now=lambda: NOW)
     with pytest.raises(ReviewError, match="no positions: set \\[positions\\] folder"):
         unset.run({})
+
+
+def test_sleeve_totals_are_graded_and_the_core_nets_the_rest(world):
+    service, store, regime, _, _ = world
+    regime.write_text(RULES.replace(ROW["total"], "| core | 30 – 50 % of equity |\n"
+                                                  "| stream: alpha | ___ – 10 % of equity |"),
+                      encoding="utf-8")
+    review = service.run({"credit calm": True})
+    totals = {c.item: c.check for c in review.checks if c.check.rule.key.startswith("3.total.")}
+    assert totals["core"].outcome is Outcome.PASS
+    assert totals["core"].measure.estimate == pytest.approx(0.4)
+    alpha = totals["stream: alpha"]                     # BBB alone, 20% of equity
+    assert alpha.outcome is Outcome.BREACH and alpha.consequence is Grade.WARN
+    assert alpha.measure.estimate == pytest.approx(0.2) and alpha.bound == pytest.approx(0.1)
+    n = review.netting
+    assert n.core == ("AAA",) and n.core_weight == pytest.approx(0.4)
+    assert n.beta == pytest.approx(review.graded.report.beta)      # the split is exact
+    low, high = n.core_for_band                                    # the Beta band, 0.5 – 1.5
+    assert n.rest_beta + low * n.core_beta == pytest.approx(0.5)
+    assert n.rest_beta + high * n.core_beta == pytest.approx(1.5)
+    assert store.review(review.review_id).payload["netting"]["core"] == ["AAA"]
+
+
+def test_no_core_means_no_netting(world):
+    service, _, regime, _, _ = world
+    regime.write_text(RULES.replace("| AAA | core | the beta |", "| AAA | other | the beta |"),
+                      encoding="utf-8")
+    review = service.run({"credit calm": True})
+    assert review.netting is None and review.netting_note == ""
+    weights = {c.item: c.check for c in by_key(review, "4.max-weight")}
+    assert weights["AAA"].outcome is Outcome.BREACH            # not a core: graded as a name
