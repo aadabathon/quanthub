@@ -2269,3 +2269,219 @@ panels do on narrow windows. From about 1440 px it sits beside the table.
 
 **Checked** on a copy of the store holding French's 11 series and
 Shiller's 6: screenshots at 1280 and 1440 wide, with Windows fonts.
+
+## D65 — ALLOCATION A1, part 1: a core-aware review (2026-11-04)
+
+ALLOCATION_PLAN's first finding: section 4 graded an index core like a
+single stock, so a book built on "a core beta stream" failed its own
+checklist. D59 put A1 first. This part makes the review core-aware. The
+look-through N_eff (decision 2) is part 2, and needs the ISIN bridge the
+owner chose: IBKR's contract lookup, for the stocks held directly.
+
+**The core is shown, not graded, under the single-name rules.** A
+holding whose section 3 sleeve is `core` gets a new outcome, `exempt`,
+under max holding weight and max risk share. Its value is measured and
+shown as before. Every other rule still reads it, and so does every
+book-level number: β, volatility, VaR, ES, drawdown, cash. The checklist
+shows "exempt: the core".
+
+**Sleeve totals.** Section 3 gains a second table, `| Sleeve | Intended
+total |`, told apart from the holdings by its first header.
+- A total names a sleeve the holdings table uses (`core`, `hedge`,
+  `other` or `stream: <name>`). An unknown one is an error naming its line
+  (D49).
+- It's a range, and either side may stay blank. A single number is
+  refused, because a total exists to be graded. So is `by k SE`, because
+  a weight is exact.
+- It's graded by section 3's sleeve-grade line, like a holding's range. A
+  total without that line is refused. A holding's range without it is
+  still silently ungraded, as before; that wasn't changed here.
+- The measure is the sum of the sleeve's holdings' |weight|, options by
+  delta: the per-holding size rule's own measure, summed.
+
+**The core and the rest** (`models/allocation.py`, math in its
+docstring). The book's β is Σ wᵢβᵢ exactly: OLS β is linear in the
+dependent series, and cash adds nothing. It splits into the rest's
+B_N = Σ_{i∉C} wᵢβᵢ and the core's w_C·β_C. Holding the rest fixed, a
+target β* needs a core of w_C* = (β* − B_N)/β_C.
+- The Review shows a card with the core, the rest and the book: each
+  part's weight, β and the β it supplies.
+- **Section 4's Beta band is the target.** No new parameter: the card
+  gives the core weights for each side of the band, as computed, and the
+  part of that range that needs no leverage (between 0 and 1 − w_N). It
+  says when the core's weight today is inside it.
+- **Shown, never applied.** No rule grades it. It's how a pick's β is
+  "shorted out" by holding less core, in an account that can't short.
+- The βs are the risk model's, cov/var over the lookback, so they're the
+  ones behind the Beta tile. The journal keeps the split.
+- It's Treynor and Black's (1973) market-plus-active split, so the canon
+  entry now lives in `models/allocation.py` (test_literature's coverage
+  rule).
+
+**Not changed:** the effective-holdings floor still counts the core as one
+name. Part 2 replaces that with the look-through count.
+
+**Tests:**
+- the β split, exact against a sample regression
+- the band's core weights landing the book on each side
+- the reachable range in five cases
+- what can't be netted
+- the parser's totals and each error's line
+- the review's exemption, totals and netting
+- the Review page's card
+
+**Checked** with a screenshot of the Review page on the tests' made-up
+book.
+
+## D66 — ALLOCATION A1, part 2: effective holdings look through the core (2026-11-04)
+
+ALLOCATION decision 2 (D59) chose to look through the core fund rather
+than count only the rest. Without it, a core-heavy book scored an
+effective-holdings count of 1 to 2.3, though the core held hundreds of
+names. On 2026-11-04 the owner chose the bridge between a fund's lines and
+the stocks held directly: IBKR's contract lookup.
+
+**The count** (`models/allocation.py`, math in its docstring). It's still
+the inverse Herfindahl index, now over exposures to distinct names:
+- A core fund held at weight w_F with lines at fractions p_j of its net
+  assets contributes w_F·p_j to each line's name.
+- A stock held directly and also inside the fund is one name, its two
+  exposures added. Owning it twice makes the book more concentrated, not
+  more diverse.
+- Without funds it equals the risk report's count, so a book without a
+  core grades exactly as before.
+
+**What's looked through:** only the core's holdings, each from its newest
+N-PORT report (D62). A stream's ETF stays one name, because its lines are
+often futures and bills. Lines without a stated weight, and the part of
+net assets the lines don't add up to, aren't names. The book's own cash
+is left out the same way.
+
+**The bridge: ISINs from IBKR** (`services/security_ids.py`).
+- Only the stocks held directly are looked up: a few requests, not one
+  per fund line. `IBKRBroker.get_isin` reads `secIdList` from the
+  contract details, read-only. A symbol matching contracts with different
+  ISINs is refused, never guessed.
+- **Stored** in `security_ids` (schema v9, migrated after a backup), and
+  served offline. A stored ISIN is asked again only when it's a year old
+  and TWS is connected, because a ticker can pass to another company. A
+  failed refresh keeps the old one.
+- **Checked:** ISO 6166's form and check digit (`data/holdings.valid_isin`),
+  before an ISIN is stored or matched.
+- **The review never connects on the owner's behalf.** Without TWS, the
+  symbols without a stored ISIN stay separate names, and the run notes
+  name them: "with TWS connected, the next review looks them up."
+
+**Matching never guesses** (`services/review._line_key`). A line's name
+is its ISIN when it has a valid one. Without one, it takes the key of a
+stock held directly when its ticker is that stock's symbol. Otherwise
+it's its own ticker, CUSIP or name. A stock and a line merge only on the
+same ISIN, or on the exact ticker when the line has no ISIN.
+
+**When there's no report:** the effective-holdings rule has no data, and
+its reason says why. Usually that's `[sec] identity` unset, or the fund's
+holdings not yet fetched. Counting the core as one name would bring back
+the false breach this milestone removes.
+
+**The run notes** give:
+- the report used: its date, line count and coverage
+- the count looked through, beside the count with each fund as one name
+- each stock held directly that's also inside the core, with the weight
+  it adds through it
+- each unmatched symbol and why
+
+**Tests:**
+- the check digit on ISO's published examples, and refused forms
+- the broker read on a stand-in network: found, none, the same ISIN
+  twice, ambiguous, unknown
+- the service: stored, offline, IBKR off, invalid, refused, stale and
+  refreshed, a failed refresh
+- the count: the risk report's without funds, n for n equal lines, scale,
+  the merge, two funds overlapping, refusals
+- the v8 → v9 migration
+- the review end to end: looked through, merged, unmatched; and no
+  report
+
+**Checked live:** the v8 → v9 migration on a copy of the owner's store,
+with its backup.
+
+**Not checked live:** fetching the core's report needs `[sec] identity`,
+and the ISIN lookup needs TWS. Neither was available.
+
+## D67 — ALLOCATION A2: crash stress, measured (2026-11-04)
+
+ALLOCATION_PLAN's third finding was that the drawdown check never sees a
+crash. It reads the worst fall of today's mix over the lookback, which can
+be two calm years. D59 settled the rest:
+- **Data (decision 3):** the longest history, which is Ken French's
+  market from 1926.
+- **Grading (decision 4):** measured only, shown with its dates and its
+  error band, never graded. So there's no section 4 row: the plan's
+  proposed "Crash stress" row isn't added.
+
+**The replay** (`models/stress.py`, math in its docstring). A book with
+β b to the market holds b in the market and 1 − b in T-bills, borrowing
+at the bill rate above 1, and is rebalanced daily:
+
+    Vₜ = Π (1 + r_s + b·x_s)
+
+Here x_s is French's `Mkt-RF` and r_s his `RF`. The measure is V's
+largest peak-to-trough fall, with its peak, its trough and the day V
+regained the peak. The five worst falls are listed, each a separate spell
+under water.
+- A day whose factor is zero or less wipes the book out. V stays at zero
+  from then. At β 6, that day is 19 October 1987.
+- **The fall grows with |β|.** In logs, each spell's change is concave in
+  b. The worst fall is set by the minimum over spells, which is concave
+  too, zero at b = 0 and never positive (with bills ≥ 0). So it can't
+  rise as b moves away from zero. That's why the error band's two ends
+  bound the fall.
+
+**The β** is W2's regression of the book on the benchmark, the one the
+Beta row grades, with its Newey–West error. The band is β̂ ± 1.96 SE, a
+95% band. Without regressions, it's the risk model's β with no band.
+
+**On the Review page**, a "Crash stress" card:
+- the worst fall at β̂, its dates, and the band's falls
+- the drawdown over the century, with your drawdown tolerance drawn
+  across it
+- the five worst falls, with when each was regained
+- a note: **a floor, not an estimate.** The replay holds β fixed and
+  carries no stock-specific risk, and correlations rise in crashes
+  (Longin and Solnik, 2001), so a book of stocks loses more.
+
+The journal keeps the β, the worst fall, its dates, the band and the
+data's span.
+
+**What it treats as one:** French's market is CRSP's value-weighted
+index, and β is measured against the benchmark (SPY by default), which
+tracks it closely.
+
+**Not from a paper:** `models/stress.py` is daily accounting, like
+`backtest.py`, so test_literature lists it among the exemptions. Roy
+(1952) and Longin–Solnik (2001) are cited for context only.
+
+**Without French's series** stored, the card says how to fetch them:
+Ctrl+K, **Fetch Ken French factors**. The review reads the stored copy
+only and never fetches.
+
+**Checked on the stored French series at β 1:**
+- 1929–32: −84.1%, regained in 1945
+- 2007–09: −54.6%
+- 2000–02: −49.2%
+- 1973–74: −48.2%
+Those are the market's own total-return falls.
+
+**Tests:**
+- β = 1 is the market's own total-return path
+- β = 0 never falls
+- the fall grows with |β| on both sides
+- planted slides found worst first, with exact dates and recoveries
+- a spell not yet regained
+- the band's ends, a wipe-out, and refusals
+- the review: β and SE from the regression, the band, the journal, and
+  no French series
+- the Review card, with made-up series and without any
+
+**Checked** with a screenshot of the Review page: the tests' made-up book,
+with your stored French series.

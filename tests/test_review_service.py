@@ -72,7 +72,7 @@ RULES = fill({
     "Sleeve size outside its intended range: ___ (fail / warn / note)":
         "Sleeve size outside its intended range: warn (fail / warn / note)",
     "numbers: ___ (as measured": "numbers: without that day (as measured",
-    ROW["weight"]: row("weight", "25", "fail"),
+    ROW["weight"]: row("weight", "15", "fail"),
     ROW["beta"]: row("beta", "0.5 – 1.5 by 1.645 SE"),
     ROW["cash"]: row("cash", "10 – 40", "note"),
     ROW["hurdle"]: row("hurdle", "by 1 SE"),
@@ -123,8 +123,11 @@ def test_a_review_reads_the_newest_export_and_checks_every_rule(world):
         "7.calm", "7.volatility", "7.indicator.1", "8.margin", "3.size.AAA"}
     weights = {c.item: c.check for c in by_key(review, "4.max-weight")}
     assert set(weights) == {"AAA", "BBB", "CCC"}
-    assert weights["AAA"].outcome is Outcome.BREACH and weights["AAA"].consequence is Grade.FAIL
+    assert weights["BBB"].outcome is Outcome.BREACH and weights["BBB"].consequence is Grade.FAIL
     assert weights["CCC"].outcome is Outcome.PASS
+    # AAA is the core: over the cap, shown, not graded (A1).
+    assert weights["AAA"].outcome is Outcome.EXEMPT and weights["AAA"].consequence is None
+    assert weights["AAA"].measure.estimate == pytest.approx(0.4)
     (cash,) = by_key(review, "4.cash")
     assert cash.check.outcome is Outcome.PASS and cash.check.measure.estimate == pytest.approx(0.3)
     (size,) = by_key(review, "3.size.AAA")
@@ -218,7 +221,7 @@ def test_every_stop_names_what_to_fix(world, tmp_path):
                       encoding="utf-8")
     with pytest.raises(ReviewError, match="section 2: 'Cash rate' is blank"):
         service.run({})
-    regime.write_text(RULES.replace(row("weight", "25", "fail"), row("weight", "25", "maybe")),
+    regime.write_text(RULES.replace(row("weight", "15", "fail"), row("weight", "15", "maybe")),
                       encoding="utf-8")
     with pytest.raises(RegimeFileError, match="REGIME.md line"):
         service.run({})
@@ -238,3 +241,142 @@ def test_every_stop_names_what_to_fix(world, tmp_path):
                           now=lambda: NOW)
     with pytest.raises(ReviewError, match="no positions: set \\[positions\\] folder"):
         unset.run({})
+
+
+def test_sleeve_totals_are_graded_and_the_core_nets_the_rest(world):
+    service, store, regime, _, _ = world
+    regime.write_text(RULES.replace(ROW["total"], "| core | 30 – 50 % of equity |\n"
+                                                  "| stream: alpha | ___ – 10 % of equity |"),
+                      encoding="utf-8")
+    review = service.run({"credit calm": True})
+    totals = {c.item: c.check for c in review.checks if c.check.rule.key.startswith("3.total.")}
+    assert totals["core"].outcome is Outcome.PASS
+    assert totals["core"].measure.estimate == pytest.approx(0.4)
+    alpha = totals["stream: alpha"]                     # BBB alone, 20% of equity
+    assert alpha.outcome is Outcome.BREACH and alpha.consequence is Grade.WARN
+    assert alpha.measure.estimate == pytest.approx(0.2) and alpha.bound == pytest.approx(0.1)
+    n = review.netting
+    assert n.core == ("AAA",) and n.core_weight == pytest.approx(0.4)
+    assert n.beta == pytest.approx(review.graded.report.beta)      # the split is exact
+    low, high = n.core_for_band                                    # the Beta band, 0.5 – 1.5
+    assert n.rest_beta + low * n.core_beta == pytest.approx(0.5)
+    assert n.rest_beta + high * n.core_beta == pytest.approx(1.5)
+    assert store.review(review.review_id).payload["netting"]["core"] == ["AAA"]
+
+
+def test_no_core_means_no_netting(world):
+    service, _, regime, _, _ = world
+    regime.write_text(RULES.replace("| AAA | core | the beta |", "| AAA | other | the beta |"),
+                      encoding="utf-8")
+    review = service.run({"credit calm": True})
+    assert review.netting is None and review.netting_note == ""
+    weights = {c.item: c.check for c in by_key(review, "4.max-weight")}
+    assert weights["AAA"].outcome is Outcome.BREACH            # not a core: graded as a name
+
+
+def core_report(bbb_isin: str):
+    """A made-up N-PORT report for the core AAA: 100 lines at 1% each. One
+    is BBB, by ISIN; the rest carry only a CUSIP. CCC isn't in it."""
+    from quant_hub.data.holdings import FundHoldings, Holding
+    lines = [Holding("Bee Bee Bee Inc", isin=bbb_isin, pct=0.01)]
+    lines += [Holding(f"Other {i}", cusip=f"00000{i:04d}", pct=0.01) for i in range(99)]
+    return FundHoldings("AAA", 1, "", "AAA Index Trust", "2026-09-30", "a-1", "2026-10-20",
+                        1e9, tuple(lines))
+
+
+class StubIsins:
+    def __init__(self, isins, missing):
+        self.result = (isins, missing)
+
+    def isins(self, symbols):
+        return self.result
+
+
+def look_through_world(world, report=None):
+    from quant_hub.services.fund_holdings import FundHoldingsService
+    from quant_hub.storage.holdings_store import HoldingsStore
+    service, _, regime, _, _ = world
+    holdings = HoldingsStore(":memory:")
+    if report is not None:
+        holdings.save(report, NOW, "h")
+    service._funds = FundHoldingsService(holdings, "", now=lambda: NOW)
+    regime.write_text(RULES.replace(ROW["neff"], row("neff", "5")), encoding="utf-8")
+    return service
+
+
+def test_effective_holdings_look_through_the_core_and_merge_a_stock_held_twice(world):
+    from quant_hub.data.holdings import isin_check_digit
+    bbb = "US00000BBB0" + str(isin_check_digit("US00000BBB0"))
+    service = look_through_world(world, core_report(bbb))
+    service._ids = StubIsins({"BBB": bbb}, {"CCC": "IBKR lists no ISIN for it"})
+    review = service.run({"credit calm": True})
+    (neff,) = by_key(review, "4.effective-holdings")
+    # AAA 40% over 100 lines at 1%; BBB 20% plus 0.4% through AAA; CCC 10% alone.
+    exposures = [0.2 + 0.4 * 0.01, 0.1] + [0.4 * 0.01] * 99
+    gross = sum(exposures)
+    assert neff.check.measure.estimate == pytest.approx(gross ** 2 / sum(y * y for y in exposures))
+    assert neff.check.outcome is Outcome.PASS               # about 9, over the floor of 5
+    notes = " ".join(review.notes)
+    assert "AAA's N-PORT report as of 2026-09-30 (100 lines, 100% of its net assets)" in notes
+    assert "counting each fund as one name: 2.3" in notes
+    assert "Held directly and inside the core: BBB (+0.4% of equity through it)" in notes
+    assert "No ISIN for CCC (IBKR lists no ISIN for it)" in notes
+
+
+def test_without_the_cores_report_effective_holdings_say_how_to_get_it(world):
+    service = look_through_world(world)
+    review = service.run({"credit calm": True})
+    (neff,) = by_key(review, "4.effective-holdings")
+    assert neff.check.outcome is Outcome.MISSING
+    assert neff.check.reason.startswith("AAA's N-PORT holdings aren't stored")
+    assert "[sec] identity" in neff.check.reason
+
+
+def french_store(days=3_000):
+    """Made-up daily market and bill series under French's names, with a
+    planted slide, in an in-memory series store."""
+    from quant_hub.data.series import FetchedSeries, SeriesMeta
+    from quant_hub.storage.series_store import SeriesStore
+    dates = pd.bdate_range("1990-01-02", periods=days)
+    rng = np.random.default_rng(5)
+    excess = rng.normal(0.0003, 0.01, days)
+    excess[1000:1100] -= 0.006
+    store = SeriesStore(":memory:")
+
+    def series(name, values):
+        meta = SeriesMeta("french", name, name, "fraction", "daily", "made up")
+        return FetchedSeries(meta, tuple(d.strftime("%Y-%m-%d") for d in dates),
+                             tuple(float(v) for v in values))
+    store.save([series("ff3.mkt_rf", excess), series("ff3.rf", np.full(days, 0.0001))],
+               NOW, "h")
+    return store
+
+
+def test_the_books_beta_is_replayed_through_the_stored_crashes(world):
+    from quant_hub.models.stress import worst_fall
+    from quant_hub.services.external_data import ExternalDataService
+    from quant_hub.services.portfolio import PORTFOLIO_ROW
+    service, store, *_ = world
+    french = french_store()
+    service._external = ExternalDataService(french)
+    review = service.run({"credit calm": True})
+    crash = review.crash
+    beta, error = review.graded.regressions.beta(PORTFOLIO_ROW)
+    assert (crash.beta, crash.error) == (pytest.approx(beta), pytest.approx(error))
+    market = french.series("french", "ff3.mkt_rf").values
+    bills = french.series("french", "ff3.rf").values
+    assert crash.worst.depth == pytest.approx(worst_fall(market, bills, beta))
+    (_, low), (_, high) = crash.band
+    assert low <= crash.worst.depth <= high
+    saved = store.review(review.review_id).payload["crash"]
+    assert saved["worst"] == pytest.approx(crash.worst.depth) and saved["data"][0] == "1990-01-02"
+
+
+def test_without_frenchs_market_the_crash_stress_says_how_to_get_it(world):
+    from quant_hub.services.external_data import ExternalDataService
+    from quant_hub.storage.series_store import SeriesStore
+    service, *_ = world
+    service._external = ExternalDataService(SeriesStore(":memory:"))
+    review = service.run({"credit calm": True})
+    assert review.crash is None
+    assert "Fetch Ken French factors" in review.crash_note

@@ -151,6 +151,15 @@ class SleeveRow:
 
 
 @dataclass(frozen=True)
+class SleeveTotal:
+    """Section 3's sleeve totals (A1): a whole sleeve's intended share of
+    equity, the sum of its holdings' weights."""
+
+    sleeve: str                         # as ``SleeveRow.sleeve`` labels it
+    intended: Limit
+
+
+@dataclass(frozen=True)
 class Settings:
     """Section 2. None where the owner left a value blank."""
 
@@ -199,6 +208,7 @@ class RuleSet:
     routine: tuple[tuple[str, str, str], ...] = ()   # (when, steps, journal)
     change_policy: str = ""
     without_dominant_day: bool = False  # grade return-based numbers without a flagged day
+    sleeve_totals: tuple[SleeveTotal, ...] = ()
 
     def __post_init__(self) -> None:
         keys = [rule.key for rule in self.rules]
@@ -207,6 +217,17 @@ class RuleSet:
         symbols = [row.symbol for row in self.sleeves]
         if len(set(symbols)) != len(symbols):
             raise ValueError("each holding belongs to one sleeve")
+        totals = [total.sleeve for total in self.sleeve_totals]
+        if len(set(totals)) != len(totals):
+            raise ValueError("each sleeve has one intended total")
+        unknown = set(totals) - {row.sleeve for row in self.sleeves}
+        if unknown:
+            raise ValueError(f"no holding is in the sleeve {sorted(unknown)[0]!r}")
+
+    @property
+    def core(self) -> frozenset[str]:
+        """The symbols section 3 puts in the core."""
+        return frozenset(row.symbol for row in self.sleeves if row.kind is SleeveKind.CORE)
 
     def rule(self, key: str) -> Rule | None:
         return next((rule for rule in self.rules if rule.key == key), None)

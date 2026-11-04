@@ -6,13 +6,15 @@
   series, name, accession, filing date and net assets, when it was fetched,
   and the SHA-256 of the filing's XML.
 * ``fund_holdings``: that report's lines, in filing order.
+* ``security_ids``: a held symbol's ISIN, from IBKR's contract details,
+  so the look-through count can match it to a fund's lines (A1, D66).
 
 Every report date is kept, so a fund's holdings history accumulates (D59:
 accumulate free data). Fetching a report date again (an amended filing)
 replaces that date's lines whole.
 
-Schema v8 (``storage/schema.py``) adds the three tables to older files,
-after the backup. Every public method holds the connection lock, as the
+Schema v8 (``storage/schema.py``) adds the first three tables to older
+files, after the backup, and v9 adds ``security_ids``. Every public method holds the connection lock, as the
 other stores do.
 """
 
@@ -44,6 +46,12 @@ V8_TABLES = (
     "payoff TEXT NOT NULL, PRIMARY KEY (fund, report_date, line)) WITHOUT ROWID",
 )
 
+# Frozen v9 definition, also used by the 8 -> 9 schema migration.
+V9_TABLES = (
+    "CREATE TABLE IF NOT EXISTS security_ids (symbol TEXT PRIMARY KEY, isin TEXT NOT NULL, "
+    "source TEXT NOT NULL, fetched_at TEXT NOT NULL) WITHOUT ROWID",
+)
+
 
 @dataclass(frozen=True)
 class FundRow:
@@ -68,7 +76,7 @@ class HoldingsStore:
         try:
             self._conn = sqlite3.connect(str(db_path), check_same_thread=False)
             with self._conn:
-                for statement in V8_TABLES:
+                for statement in (*V8_TABLES, *V9_TABLES):
                     self._conn.execute(statement)
         except sqlite3.Error as exc:
             raise StorageError(f"could not open the holdings store: {exc}") from exc
@@ -95,6 +103,21 @@ class HoldingsStore:
     def fund_tickers_fetched_at(self) -> datetime | None:
         rows = self._read("SELECT MIN(fetched_at) FROM fund_tickers")
         return datetime.strptime(rows[0][0], _TIME_FORMAT) if rows and rows[0][0] else None
+
+    # ------------------------------------------------------- security ids
+    def save_security_id(self, symbol: str, isin: str, source: str,
+                         fetched_at: datetime) -> None:
+        """A symbol's ISIN as ``source`` gave it, replacing an older one."""
+        self._write(lambda: self._conn.execute(
+            "INSERT OR REPLACE INTO security_ids VALUES (?,?,?,?)",
+            (symbol.upper(), isin.upper(), source, fetched_at.strftime(_TIME_FORMAT))),
+            f"the ISIN of {symbol}")
+
+    def security_id(self, symbol: str) -> tuple[str, datetime] | None:
+        """A symbol's stored ISIN and when it was fetched, if any."""
+        rows = self._read("SELECT isin, fetched_at FROM security_ids WHERE symbol=?",
+                          (symbol.upper(),))
+        return (rows[0][0], datetime.strptime(rows[0][1], _TIME_FORMAT)) if rows else None
 
     # ----------------------------------------------------------- holdings
     def save(self, report: FundHoldings, fetched_at: datetime, sha256: str) -> int:

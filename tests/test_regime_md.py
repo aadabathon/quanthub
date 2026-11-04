@@ -45,6 +45,7 @@ ROW = {   # template rows, by label, as the template writes them
     "implied": "| Implied growth vs history | ≤ ___ × trailing revenue CAGR | Reverse DCF, every root shown (W6) | ___ |",
     "missing": "| Missing filing fields allowed | ___ | The loud-failure list: missing fields named, never filled in (W5) | ___ |",
     "sleeve": "| ___ | ___ | ___ | ___ % of equity |",
+    "total": "| ___ | ___ – ___ % of equity |",
     "lookback": "| Lookback for risk numbers | ___ calendar days | Portfolio page *Lookback*; 730 by default, at least 120 |",
 }
 
@@ -103,6 +104,7 @@ def test_the_committed_template_reads_with_every_rule_off():
     rs = read_regime(TEMPLATE_PATH)
     assert (rs.version, rs.written, rs.reason, rs.thesis_runs) == ("", None, "", None)
     assert rs.rules == () and rs.sleeves == () and rs.sleeve_consequence is None
+    assert rs.sleeve_totals == () and rs.core == frozenset()
     assert rs.settings.benchmark is None and rs.settings.cash_rate is None
     assert rs.market.regimes is None and rs.universe.tickers == ()
     assert [when for when, _, _ in rs.routine] == [
@@ -132,6 +134,46 @@ def test_sleeves_ranges_targets_and_their_grade(filled):
     assert rows["DDD"].kind is None and rows["DDD"].sleeve is None     # listed, not yet assigned
     assert filled.sleeve_consequence is Grade.WARN
     assert filled.sleeve_of("BBB") == "stream: carry" and filled.sleeve_of("ZZZ") is None
+
+
+TOTALS = {
+    ROW["sleeve"]: "| AAA | core | the beta | ___ % of equity |\n"
+                   "| BBB | stream: carry | rates | ___ % of equity |\n"
+                   "| CCC | stream: carry | more rates | ___ % of equity |",
+    "Sleeve size outside its intended range: ___ (fail / warn / note)":
+        "Sleeve size outside its intended range: warn (fail / warn / note)",
+}
+
+
+def test_sleeve_totals_are_ranges_on_the_sleeves_above():
+    rs = parse_regime(fill({**TOTALS, ROW["total"]: "| core | 50 – 80 % of equity |\n"
+                                                    "| stream: carry | ___ – 20 % of equity |\n"
+                                                    "| ___ | ___ – ___ % of equity |"}))
+    assert [(t.sleeve, t.intended) for t in rs.sleeve_totals] == [
+        ("core", Limit(0.50, 0.80)), ("stream: carry", Limit(None, 0.20))]
+    assert rs.core == frozenset({"AAA"})
+
+
+@pytest.mark.parametrize("total, message", [
+    ("| hedge | 5 – 10 % of equity |", "no holding in the table above is in the sleeve 'hedge'"),
+    ("| stream: other | 5 – 10 % |", "'stream: other'"),
+    ("| core | 50 – 80 % |\n| core | 40 – 90 % |", "already has a total on line"),
+    ("| core | 60 % of equity |", "a sleeve total is a range"),
+    ("| core | 50 – 80 by 1 SE |", "takes no 'by k SE'"),
+    ("| core | 80 – 50 % |", "is above the upper"),
+    ("| income | 5 – 10 % |", "isn't core, hedge, other or stream"),
+])
+def test_a_sleeve_total_that_cant_be_read_names_its_line(total, message):
+    text = fill({**TOTALS, ROW["total"]: total})
+    with pytest.raises(RegimeFileError, match=message) as error:
+        parse_regime(text)
+    assert error.value.line == line_of(text, total.split("\n")[-1])
+
+
+def test_a_sleeve_total_needs_the_sleeve_grade():
+    text = fill({ROW["sleeve"]: TOTALS[ROW["sleeve"]], ROW["total"]: "| core | 50 – 80 % |"})
+    with pytest.raises(RegimeFileError, match="a total needs the grade"):
+        parse_regime(text)
 
 
 def test_limits_scales_and_evidence(filled):

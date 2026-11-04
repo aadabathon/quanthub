@@ -1,7 +1,40 @@
 # CURRENT_STATE.md
 
 **Update this file whenever meaningful work lands.** Last updated:
-**2026-11-03**: a **Data page** (D64), in the sidebar after Markets, lists
+**2026-11-04**: ALLOCATION A2 (D67): crash stress on the Review page.
+- The book's β, with its 95% band, is replayed through Ken French's daily
+  market from 1926: held at β, the rest in T-bills, rebalanced daily.
+- The card shows the worst fall with its dates, the band's falls, the
+  century's drawdown against your tolerance, and the five worst falls.
+- It's measured, never graded, and labelled a floor: a book of stocks
+  loses more than its β replay.
+- It needs French's series (Ctrl+K: **Fetch Ken French factors**), which
+  are already in your store.
+
+Also **2026-11-04**: ALLOCATION A1, part 2 (D66): effective holdings look
+through the core. That completes A1.
+- The count reads the core fund's newest N-PORT report, so its hundreds
+  of names count. A stock you hold directly that's also inside the fund
+  is one name, with both exposures added.
+- Stocks are matched to the fund's lines by ISIN. When TWS is connected,
+  the review looks up the ISINs of the stocks you hold directly, once,
+  and stores them (schema v9, after a backup).
+- **To use it:** set `[sec] identity` (for the report), and run a review
+  with TWS connected once (for the ISINs). Until then the rule says what's
+  missing. The run notes say what was matched.
+- **Not checked live:** neither the SEC identity nor TWS was available.
+
+Also **2026-11-04**: ALLOCATION A1, part 1 (D65): the review is core-aware.
+- A `core` holding is shown, not graded, under max holding weight and max
+  risk share ("exempt: the core").
+- Section 3 can set **sleeve totals** (a new table in the template):
+  `| core | 50 – 80 % of equity |`, graded by the sleeve-grade line.
+- A new Review card splits the book's β into the core's and the rest's,
+  and gives the core weight that would bring it into your Beta band, with
+  and without leverage. Shown, never applied.
+- The look-through N_eff followed in part 2 (D66).
+
+Also **2026-11-03**: a **Data page** (D64), in the sidebar after Markets, lists
 everything stored, with where it came from and how fresh it is: outside
 series, fund holdings, chain snapshots and price history. Selecting a
 series previews it with its citation; French's daily returns are plotted

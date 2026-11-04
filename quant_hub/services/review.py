@@ -30,7 +30,20 @@ One run is the plan's job chain, on the task-worker thread:
 7. **The checklist.** Every rule against its measure, over what it governs:
    the portfolio, each holding, each option, each stream, each pair of
    streams, each company. Section 1's persistence turns each stream's
-   breaches into a thesis verdict.
+   breaches into a thesis verdict. A1 makes it core-aware:
+   - A core holding is exempt from max holding weight and max risk share.
+     Its numbers are still shown: a core carries market risk by design.
+   - Section 3's sleeve totals are graded like a holding's intended size.
+   - The book's β is split into the core's and the rest's
+     (``models/allocation.py``), with the core weight that would bring it
+     into the Beta band. Shown, never applied.
+   - Effective holdings look through the core (part 2, D66): each core
+     fund's newest N-PORT report, its lines matched to the stocks held
+     directly by ISIN (``services/security_ids.py``). Without a stored
+     report the rule has no data, and says how to get one.
+   - **Crash stress** (A2, D67): the book's β, with its Newey–West
+     error band, replayed through Ken French's daily market from 1926
+     (``models/stress.py``). Measured, never graded.
 8. **The journal.** The run is stored whole. Notes and hand-placed trades
    are added after.
 
@@ -49,10 +62,12 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from quant_hub.data.holdings import FundHoldings, valid_isin
 from quant_hub.data.positions import OPTION_MULTIPLIER, Holding, PositionSnapshot
 from quant_hub.data.regime import Grade, Measure, Rule, RuleSet
 from quant_hub.importers.positions_csv import read_positions_csv, read_positions_files
 from quant_hub.importers.regime_md import parse_regime
+from quant_hub.models.allocation import CoreNetting, core_netting, look_through
 from quant_hub.models.dcf import (
     ValuationError,
     calibration,
@@ -73,16 +88,27 @@ from quant_hub.models.regime import (
     volatility_forecast,
 )
 from quant_hub.models.regression import NEWEY_WEST, regress_returns, residual_correlation
+from quant_hub.models.stress import CrashStress, crash_stress
+from quant_hub.providers.sec_edgar import SecError
+from quant_hub.providers.sec_nport import NportError
+from quant_hub.services.fund_holdings import FundHoldingsService
+from quant_hub.services.external_data import ExternalDataService
 from quant_hub.services.portfolio import PORTFOLIO_ROW, PortfolioService, PortfolioView
+from quant_hub.services.security_ids import SecurityIdService
 from quant_hub.services.valuation import ValuationService, refusal
+from quant_hub.storage.bar_store import StorageError
 from quant_hub.storage.regime_store import RegimeStore, ReviewRecord, TradeRecord
 
 DEFAULT_BENCHMARK = "SPY"       # REGIME.md section 2: "SPY by default"
 DEFAULT_LOOKBACK = 730          # section 2: "730 by default"
 PORTFOLIO = "portfolio"
 NO_ERROR = "no standard error yet"
+CRASH_MARKET = ("french", "ff3.mkt_rf")      # the market's daily excess return, from 1926
+CRASH_BILLS = ("french", "ff3.rf")           # the T-bill's daily return
 THESIS_RULES = ("6.hurdle", "6.correlation", "6.stream-beta")
 """Section 1's tests: the growth hurdle, orthogonality and beta creep."""
+CORE_EXEMPT = ("4.max-weight", "4.max-risk-share")
+"""The single-name rules a core holding is shown under, not graded (A1)."""
 _PAIR = " × "
 
 
@@ -141,6 +167,10 @@ class Review:
     volatility: float | None
     drafts: tuple[TradeDraft, ...]
     notes: tuple[str, ...]
+    netting: CoreNetting | None = None  # the core's β and the rest's (A1)
+    netting_note: str = ""              # why there's none, when section 3 has a core
+    crash: CrashStress | None = None    # the book's β through every stored crash (A2)
+    crash_note: str = ""                # why there's none
 
     def breaches(self, consequence=None) -> list[ItemCheck]:
         """Breached checks, optionally of one grade or effect."""
@@ -151,9 +181,14 @@ class Review:
 class ReviewService:
     def __init__(self, portfolio: PortfolioService, valuation: ValuationService,
                  store: RegimeStore, regime_path: Path, positions_folder: Path | None = None,
-                 now=datetime.now) -> None:
+                 now=datetime.now, fund_holdings: FundHoldingsService | None = None,
+                 security_ids: SecurityIdService | None = None,
+                 external_data: ExternalDataService | None = None) -> None:
         self._portfolio = portfolio
         self._valuation = valuation
+        self._funds = fund_holdings
+        self._ids = security_ids
+        self._external = external_data
         self._store = store
         self._regime_path = Path(regime_path)
         self._folder = Path(positions_folder) if positions_folder else None
@@ -242,6 +277,14 @@ class ReviewService:
 
         wanted = {rule.measure for rule in rules.rules}
         measures, missing = _book_measures(graded, snapshot, wanted)
+        if "effective holdings" in wanted and rules.core & {row.symbol for row in graded.rows}:
+            effective, reason, look_notes = self._look_through(graded, rules)
+            measures.pop("effective holdings", None)
+            if effective is None:
+                missing["effective holdings"] = reason
+            else:
+                measures["effective holdings"] = [(PORTFOLIO, effective, "")]
+            notes.extend(look_notes)
         sleeves = _sleeve_measures(graded, rules, benchmark, rate, wanted)
         measures.update(sleeves[0])
         missing.update(sleeves[1])
@@ -266,14 +309,16 @@ class ReviewService:
         checks = _checks(rules, measures, missing, implied, graded)
         streams = self._streams(rules, checks, run_at)
         drafts = _drafts(previous, snapshot) if previous is not None else ()
+        netting, netting_note = _netting(graded, rules)
+        crash, crash_note = self._crash(graded)
         payload = _payload(rules, snapshot, files, checks, streams, influential, removed, calm,
-                           volatility, view)
+                           volatility, view, netting, crash)
         review_id = self._store.save_review(run_at, version_id, snapshot.as_of.date().isoformat(),
                                             payload)
         return Review(run_at, review_id, version_id, rules, snapshot,
                       tuple(p.name for p in files), skipped, view, graded, influential, removed,
                       tuple(checks), tuple(streams), calm, volatility, tuple(drafts),
-                      tuple(notes))
+                      tuple(notes), netting, netting_note, crash, crash_note)
 
     # ------------------------------------------------------------ the journal
     def reviews(self, limit: int | None = None) -> list[ReviewRecord]:
@@ -371,6 +416,75 @@ class ReviewService:
                                if cagr is not None else "no trailing revenue CAGR in the filings")
         return measures, implied
 
+    def _crash(self, view: PortfolioView) -> tuple[CrashStress | None, str]:
+        """A2: the book's β (W2's, with its Newey–West error; the risk
+        model's without one) through Ken French's daily market. None, with
+        how to get it, when the series isn't stored."""
+        if self._external is None:
+            return None, "The review has no outside series to replay."
+        try:
+            market = self._external.series(*CRASH_MARKET).values
+            bills = self._external.series(*CRASH_BILLS).values
+        except LookupError as exc:
+            return None, f"Crash stress needs Ken French's daily market: {exc}."
+        if view.regressions is not None:
+            beta, error = view.regressions.beta(PORTFOLIO_ROW)
+        elif view.report.beta is not None:
+            beta, error = view.report.beta, None
+        else:
+            return None, "No β to replay: the book has no benchmark history."
+        try:
+            return crash_stress(market, bills, beta, error), ""
+        except ValueError as exc:
+            return None, f"The crash replay failed: {exc}."
+
+    def _look_through(self, view: PortfolioView, rules: RuleSet
+                      ) -> tuple[Measure | None, str, list[str]]:
+        """Effective holdings with the core looked through (part 2, D66):
+        the measure, or None and why, and the run's notes on it."""
+        held = {row.symbol: row.weight for row in view.rows}
+        core = sorted(rules.core & set(held))
+        if self._funds is None:
+            return None, "the review has no fund holdings to look through", []
+        reports: dict[str, FundHoldings] = {}
+        for fund in core:
+            try:
+                reports[fund] = self._funds.holdings(fund)
+            except (SecError, NportError, LookupError, StorageError) as exc:
+                return None, (f"{fund}'s N-PORT holdings aren't stored, so the core can't be "
+                              f"looked through: {exc}"), []
+        direct = sorted(s for s in held if s not in rules.core)
+        if self._ids is not None:
+            isins, unmatched = self._ids.isins(direct)
+        else:
+            isins, unmatched = {}, {s: "no ISIN lookup" for s in direct}
+        key_of = {s: isins.get(s) or f"ticker:{s}" for s in direct}
+        weights: dict[str, float] = {}
+        for s in direct:
+            weights[key_of[s]] = weights.get(key_of[s], 0.0) + held[s]
+        funds = {fund: (held[fund], [(_line_key(h, key_of), h.pct) for h in report.holdings
+                                     if h.pct is not None])
+                 for fund, report in reports.items()}
+        result = look_through(weights, funds)
+        notes = [f"Effective holdings look through {fund}'s N-PORT report as of "
+                 f"{report.report_date} ({len(report.holdings)} lines, "
+                 f"{report.weight_covered:.0%} of its net assets)." for fund, report in reports.items()]
+        notes.append(f"Looked through: {result.n_effective:.1f}; counting each fund as one name: "
+                     f"{view.report.n_effective:.1f}.")
+        inside = [f"{s} (+{result.through_funds[key_of[s]]:.1%} of equity through it)"
+                  for s in direct if key_of[s] in result.through_funds]
+        if inside:
+            notes.append(f"Held directly and inside the core: {', '.join(inside)}.")
+        by_reason: dict[str, list[str]] = {}
+        for symbol, reason in unmatched.items():
+            by_reason.setdefault(reason, []).append(symbol)
+        for reason, symbols in sorted(by_reason.items()):
+            notes.append(f"No ISIN for {', '.join(symbols)} ({reason}), so "
+                         f"{'it' if len(symbols) == 1 else 'they'} can't be matched to the "
+                         "core's lines; with TWS connected, the next review looks "
+                         f"{'it' if len(symbols) == 1 else 'them'} up.")
+        return Measure.exact(result.n_effective, note=f"looked through {', '.join(core)}"), "", notes
+
     def _streams(self, rules: RuleSet, checks: Sequence[ItemCheck],
                  run_at: datetime) -> list[StreamVerdict]:
         """Section 1: each stream's breaches today, and the run they extend."""
@@ -397,6 +511,20 @@ class ReviewService:
 
 
 # ---------------------------------------------------------------- measures
+
+def _line_key(line, key_of: Mapping[str, str]) -> str:
+    """A fund line's name for the look-through: its ISIN when it has a valid
+    one; else a held symbol's key when its ticker is that symbol; else its
+    ticker, CUSIP or name. Never matched by guesswork (``models/allocation``)."""
+    if line.isin and valid_isin(line.isin.upper()):
+        return line.isin.upper()
+    ticker = line.ticker.strip().upper()
+    if ticker:
+        return key_of.get(ticker, f"ticker:{ticker}")
+    if line.cusip.strip():
+        return f"cusip:{line.cusip.strip().upper()}"
+    return f"name:{line.name.strip()}"
+
 
 def _blank(row: str):
     raise ReviewError(f"REGIME.md section 2: '{row}' is blank, and the review needs it")
@@ -613,9 +741,15 @@ def _checks(rules: RuleSet, measures: Mapping[str, list], missing: Mapping[str, 
             out.append(ItemCheck("—", Check(rule, None, Outcome.PASS,
                                             reason="nothing it governs is held")))
         else:
+            exempt = rules.core if rule.key in CORE_EXEMPT else frozenset()
             for item, measure, reason in entries:
-                out.append(ItemCheck(item, check(rule, measure) if measure is not None else
-                                     Check(rule, None, Outcome.MISSING, reason=reason)))
+                if measure is None:
+                    out.append(ItemCheck(item, Check(rule, None, Outcome.MISSING, reason=reason)))
+                elif item in exempt:
+                    out.append(ItemCheck(item, Check(rule, measure, Outcome.EXEMPT,
+                                                     reason="the core")))
+                else:
+                    out.append(ItemCheck(item, check(rule, measure)))
     weights = {row.symbol: abs(row.weight) for row in view.rows}
     if rules.sleeve_consequence is not None:
         for row in rules.sleeves:
@@ -625,7 +759,32 @@ def _checks(rules: RuleSet, measures: Mapping[str, list], missing: Mapping[str, 
                         row.intended, rules.sleeve_consequence, unit="% of equity")
             out.append(ItemCheck(row.symbol, check(rule, Measure.exact(weights.get(row.symbol,
                                                                                    0.0)))))
+        sleeve_of = {row.symbol: row.sleeve for row in rules.sleeves}
+        for total in rules.sleeve_totals:
+            rule = Rule(f"3.total.{total.sleeve}", f"{total.sleeve}: intended total",
+                        "sleeve weight", total.intended, rules.sleeve_consequence,
+                        unit="% of equity")
+            weight = sum(w for symbol, w in weights.items()
+                         if sleeve_of.get(symbol) == total.sleeve)
+            out.append(ItemCheck(total.sleeve, check(rule, Measure.exact(weight))))
     return out
+
+
+def _netting(view: PortfolioView, rules: RuleSet) -> tuple[CoreNetting | None, str]:
+    """A1: the book's β split into the core's and the rest's, and the core
+    weight that would bring it into the Beta band. None, with why, when it
+    can't be split; None and no reason when section 3 names no core."""
+    if not rules.core:
+        return None, ""
+    if any(row.beta is None for row in view.rows):
+        return None, "No benchmark history, so no β to split between the core and the rest."
+    beta_rule = rules.rule("4.beta")
+    band = (beta_rule.limit.lower, beta_rule.limit.upper) if beta_rule else None
+    try:
+        return core_netting({row.symbol: row.weight for row in view.rows},
+                            {row.symbol: row.beta for row in view.rows}, rules.core, band), ""
+    except ValueError as exc:
+        return None, f"The core can't net the rest: {exc}."
 
 
 def _drafts(previous: PositionSnapshot, current: PositionSnapshot) -> list[TradeDraft]:
@@ -657,7 +816,8 @@ def _payload(rules: RuleSet, snapshot: PositionSnapshot, files: Sequence[Path],
              checks: Sequence[ItemCheck], streams: Sequence[StreamVerdict],
              influential: Sequence[InfluentialDay], removed: Sequence[date],
              calm: CalmGate | None,
-             volatility: float | None, view: PortfolioView) -> dict:
+             volatility: float | None, view: PortfolioView,
+             netting: CoreNetting | None = None, crash: CrashStress | None = None) -> dict:
     """What the journal keeps of a run: enough to show it again and to
     count section 1's runs, nothing the store would need to understand."""
     return {
@@ -682,4 +842,14 @@ def _payload(rules: RuleSet, snapshot: PositionSnapshot, files: Sequence[Path],
         "removed_days": [d.isoformat() for d in removed],
         "gates": {"calm": _finite(calm.probability) if calm else None,
                   "volatility": _finite(volatility)},
+        "netting": None if netting is None else {
+            "core": list(netting.core), "core_weight": _finite(netting.core_weight),
+            "core_beta": _finite(netting.core_beta), "rest_weight": _finite(netting.rest_weight),
+            "rest_beta": _finite(netting.rest_beta)},
+        "crash": None if crash is None else {
+            "beta": _finite(crash.beta), "error": _finite(crash.error) if crash.error else None,
+            "worst": _finite(crash.worst.depth), "peak": crash.worst.peak.isoformat(),
+            "trough": crash.worst.trough.isoformat(),
+            "band": [_finite(d) for _, d in crash.band] if crash.band else None,
+            "data": [crash.first.isoformat(), crash.last.isoformat()]},
     }

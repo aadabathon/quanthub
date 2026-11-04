@@ -216,6 +216,7 @@ class Outcome(Enum):
     BREACH = "breach"
     AMBIGUOUS = "ambiguous"    # several values fit (a reverse DCF's roots)
     MISSING = "no data"
+    EXEMPT = "exempt"          # measured and shown, not graded (a core holding, A1)
 
 
 @dataclass(frozen=True)
