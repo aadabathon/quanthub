@@ -533,17 +533,17 @@ Order and overlap:
    rule 1.~~ Approved 2026-10-25 (D52).
 2. ~~**Timing (b),** yesterday's close to today's close.~~ Approved.
 3. ~~**A dedicated account,** paper then live.~~ Approved.
-4. **Upgrade `ibapi`** to 10.x from IBKR's download. It's needed for
+4. **Settled 2026-11-03 (D59):** in progress: you're installing 10.x along with the paper login. The question was: **Upgrade `ibapi`** to 10.x from IBKR's download. It's needed for
    orders, and E1 re-verifies the read-only paths. Confirmed at E1's
    start.
 5. **The first limits.** E0 proposes the band, collar, minimum ticket,
    order count and loss stop (above). The money limits are yours: capital,
    per-order notional, and daily gross notional.
-6. **Paper length** in sessions: at least 20 for the plumbing. Live costs
+6. **Settled 2026-11-03 (D59):** 40 sessions on paper before anything live. The question was: **Paper length** in sessions: at least 20 for the plumbing. Live costs
    are measured live.
-7. **Where this sits against LENS_PLAN:** E0 and E1 alongside V1, or
+7. **Settled 2026-11-03 (D59):** overtaken. E0 and E1 landed alongside the other work (D52, D54). The question was: **Where this sits against LENS_PLAN:** E0 and E1 alongside V1, or
    after it.
-8. **Your IBKR logins.** E1 needs a paper login linked to your account. Is
+8. **Settled 2026-11-03 (D59):** being set up (2026-11-03). The question was: **Your IBKR logins.** E1 needs a paper login linked to your account. Is
    it set up?
 
 ## Doc changes on approval

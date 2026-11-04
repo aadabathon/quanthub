@@ -423,14 +423,14 @@ awaiting your approval.
 1. ~~**The license:** MIT, Apache-2.0, GPL-3.0, or keep all rights
    reserved and change the write-up's wording.~~ Decided: MIT
    (2026-10-25).
-2. **X1's default exercise style for SPY** in the Options Lab, and whether
+2. **Settled 2026-11-03 (D59):** American by default for SPY in the Options Lab, and the Volatility Lab de-Americanizes before fitting smiles. The question was: **X1's default exercise style for SPY** in the Options Lab, and whether
    the Volatility Lab de-Americanizes by default.
-3. **Is X4 (Heston) in scope**, or is the track done at X3?
-4. **Where construction lives:** a card on Portfolio, or its own page.
-5. **Track M's series list**, and whether M3's time-varying Markov
+3. **Settled 2026-11-03 (D59):** in, as its own plan after VARIANCE_PLAN lands. VARIANCE I1's Merton chain becomes its first characteristic-function check. The question was: **Is X4 (Heston) in scope**, or is the track done at X3?
+4. **Settled 2026-11-03 (D59):** on ALLOCATION's What-if page. Each P2 method becomes a book builder, compared in the same table as crash stress and growth. The question was: **Where construction lives:** a card on Portfolio, or its own page.
+5. **Settled 2026-11-03 (D59):** all four groups from FRED: rates and curve, credit and stress, growth and inflation, the dollar and commodities. Whether M3's time-varying Markov extension is in is still open. The question was: **Track M's series list**, and whether M3's time-varying Markov
    extension is in.
-6. **Which brokers S1 targets,** and whether you can supply the exports.
-7. **Track H:**
+6. **Settled 2026-11-03 (D59):** IBKR and Fidelity only. Another broker is added when you hold an account there and can supply an export. The question was: **Which brokers S1 targets,** and whether you can supply the exports.
+7. **Settled 2026-11-03 (D59):** lift it for Track H at low scope: H0 and H1 only (health, Black–Scholes, GBM). Stdlib, read-only, no broker and nothing private, bound to localhost or your LAN, and never public for now. AGENTS.md's ban on Flask/FastAPI, cloud and Docker stays. H0's D-entry is written when H0 starts. The server doesn't collect data, because it never connects to IBKR. The question was: **Track H:**
    - whether to lift the ban at all
    - the stdlib-server recommendation
    - the endpoint list

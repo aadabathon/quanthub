@@ -303,10 +303,10 @@ A dock (D55) with cards on the grid (D56):
 
 ## Decisions for you
 
-1. **Approve the plan,** and its order against VARIANCE I1–I3,
+1. **Settled 2026-11-03 (D59):** approved as the next track, after ALLOCATION A1–A2. Merging PR #21 is still yours. The question was: **Approve the plan,** and its order against VARIANCE I1–I3,
    ALLOCATION A2–A3, REGIME_MODEL Q1 and EXECUTION E2. U1 needs no new
    data, so it can start alone.
-2. **The candidates in v1:**
+2. **Settled 2026-11-03 (D59):** the proposed v1 list (you had no preference). The question was: **The candidates in v1:**
    - puts at 5, 10 and 20% out of the money, over 1, 3 and 12 months
    - put spreads and zero-cost collars
    - index trend
@@ -315,19 +315,19 @@ A dock (D55) with cards on the grid (D56):
    - your trend fund
 
    VIX calls wait for data.
-3. **The VIX source:** VARIANCE I3's CBOE provider, IBKR index bars, or
+3. **Settled 2026-11-03 (D59):** CBOE's VIX history, through VARIANCE I3's provider (approved). The question was: **The VIX source:** VARIANCE I3's CBOE provider, IBKR index bars, or
    both.
-4. **The index history:** IBKR as deep as it goes (checked first), or a
+4. **Settled 2026-11-03 (D59):** IBKR's index as deep as it goes for the option candidates, and Ken French's series for the linear ones. The question was: **The index history:** IBKR as deep as it goes (checked first), or a
    longer series without strikes for the linear candidates only.
-5. **The smile through history:** today's shape held fixed (proposed),
+5. **Settled 2026-11-03 (D59):** today's shape held fixed, with the flat smile beside it (proposed; you had no preference). The question was: **The smile through history:** today's shape held fixed (proposed),
    with the flat smile beside it, or the flat smile only.
-6. **Option costs:** today's half-spreads from your chain applied
+6. **Settled 2026-11-03 (D59):** today's half-spreads (proposed; you had no preference). The question was: **Option costs:** today's half-spreads from your chain applied
    throughout (proposed), or a fixed share of the premium.
-7. **The yardstick's order:** Δ log growth first, with your drawdown
+7. **Settled 2026-11-03 (D59):** Δ log growth first, with your drawdown limit as the line (proposed; you had no preference). The question was: **The yardstick's order:** Δ log growth first, with your drawdown
    limit as the line to beat (proposed, matching your CAGR thesis), or
    Sharpe or Calmar.
-8. **What's hedged:** the whole book's β, or the core only.
-9. **Where it lives:** its own Hedge Lab dock (proposed), or a tab beside
+8. **Settled 2026-11-03 (D59):** the whole book's β (proposed; you had no preference). The question was: **What's hedged:** the whole book's β, or the core only.
+9. **Settled 2026-11-03 (D59):** its own Hedge Lab dock (proposed; you had no preference). The question was: **Where it lives:** its own Hedge Lab dock (proposed), or a tab beside
    A3's What-if.
 
 ## Doc changes on approval

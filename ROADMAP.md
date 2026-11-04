@@ -603,6 +603,32 @@ that implement it. Read-only, no new dependencies.
 - **Lit-6. Reading paths:** a paper's ancestors in order, and
   replication status.
 
+## What's next (set 2026-11-03, D59)
+
+The order after the 2026-11-03 decisions:
+1. **The data batch**, each provider behind a terms check: Ken French,
+   FRED, CBOE VIX, a Shiller CSV, SEC N-PORT holdings, and daily option
+   chain snapshots. The standing direction: accumulate as much free data
+   as possible.
+2. **ALLOCATION A1 → A2:** core-aware limits with look-through N_eff, and
+   crash stress (measured, not graded).
+3. **HEDGE U1:** the hedge math ([HEDGE_PLAN.md](HEDGE_PLAN.md)), then
+   U2–U5.
+4. **ALLOCATION A3–A4:** the What-if page and snapshot hygiene.
+5. **Then:** VARIANCE, then REGIME_MODEL, which supersedes TARGET's T2
+   and T3. BUDGET folds into A3.
+
+Also approved, to be placed in this order later:
+- HORIZON H0–H1, a low-scope stdlib server
+- HORIZON X4 (Heston, FFT pricing), after VARIANCE
+- LITERATURE Lit-3 → Lit-6
+- P2's construction methods as What-if builders
+
+SLEEVE_PLAN is rewritten around orthogonal growth before any S milestone.
+
+In parallel, on the owner's side: the paper login and ibapi 10.x for E1's
+live check. E2 follows it, then 40 paper sessions.
+
 ## Intended stack flow (architecture already accommodates this)
 
 ```

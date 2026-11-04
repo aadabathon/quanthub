@@ -304,13 +304,13 @@ They follow the same rules as D34 and D43:
 
 ## Decisions for you
 
-1. **The visual direction.** Is the spike the look you want, or what would
+1. **Settled 2026-11-03 (D59):** later, after the hedge track, so one design pass styles the What-if and Hedge Lab pages too. The question was: **The visual direction.** Is the spike the look you want, or what would
    you change (density, color, tone of the words)?
-2. **The order.** V0 → V1 → W2 → L → W2b → O, then W3 and the DCF track.
+2. **Settled 2026-11-03 (D59):** overtaken. W2–W7 landed (D44–D49), and D59 sets the order now. The question was: **The order.** V0 → V1 → W2 → L → W2b → O, then W3 and the DCF track.
    Or put W2 (CAPM) before V1, since its derivation is ready.
-3. **Review the W2 derivation** (`models/regression.py`), now as the CAPM
+3. **Settled 2026-11-03 (D59):** overtaken. W2 landed after review (D44). The question was: **Review the W2 derivation** (`models/regression.py`), now as the CAPM
    workshop. It adds GRS and the Kalman β to the original scope.
-4. **Ken French's library as the second online provider,** and FRED as
+4. **Settled 2026-11-03 (D59):** yes to both, each after its terms check. Your direction: accumulate as much free data as possible. The question was: **Ken French's library as the second online provider,** and FRED as
    the third, each subject to a terms check.
 5. ~~**V0's offline-first change to the cache** (a D18 amendment), and the
    flag threshold k.~~ Approved and landed (D50), with k = 10.

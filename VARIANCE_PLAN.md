@@ -344,27 +344,27 @@ reads D57's `split_gaps` (PR #18).
 
 ## Decisions for you
 
-1. **Order.** I1–I2 are small and offline. Where do they go against
+1. **Settled 2026-11-03 (D59):** after the hedge track. I3's CBOE provider comes earlier, in the data batch, because HEDGE U2 needs it. The question was: **Order.** I1–I2 are small and offline. Where do they go against
    REGIME Q1, ALLOCATION A1–A4, BUDGET B1–B3 and EXECUTION E2?
-2. **The variance request:**
+2. **Settled 2026-11-03 (D59):** wide: −6 to +3 ATM sd, about 41 strikes, with fetch time measured first. The question was: **The variance request:**
    - a band of −6 to +3 ATM sd with about 41 strikes (fetch time measured
      first)
    - or today's band, with about 14% of the variance extrapolated at a
      typical skew, more in stress
-3. **The underlying:**
+3. **Settled 2026-11-03 (D59):** SPX, with SPY bars for realized. It's the VIX's own underlying, so today's ρ lines up with 30 years of VIX. The question was: **The underlying:**
    - SPX (European, cash-settled, the VIX's own), with SPY bars for
      realized
    - or SPY for both
-4. **How snapshots accumulate:**
+4. **Settled 2026-11-03 (D59):** daily. The first time the app runs with TWS connected each trading day, it snapshots a watchlist you set, on the TaskRunner. The question was: **How snapshots accumulate:**
    - a button
    - the first Volatility Lab visit of each trading day
    - or a headless job while TWS runs
-5. **VIX history from CBOE:** a new provider with a terms check, or your
+5. **Settled 2026-11-03 (D59):** yes, a CBOE provider after its terms check. The question was: **VIX history from CBOE:** a new provider with a terms check, or your
    own snapshots only.
-6. **Trading days:**
+6. **Settled 2026-11-03 (D59):** a small NYSE holiday rule set in `data/`, tested. The question was: **Trading days:**
    - a small NYSE holiday rule set in `data/`, tested
    - or weekdays only (up to a day per month, about 0.4 vol points)
-7. **Tenors on the card:** 30 days only, or every target expiry too.
+7. **Settled 2026-11-03 (D59):** every expiry, with 30 days as the headline. The question was: **Tenors on the card:** 30 days only, or every target expiry too.
 
 ## Doc changes on approval
 
