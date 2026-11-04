@@ -220,22 +220,22 @@ A W7 change, through `importers/regime_md.py`, `data/regime.py` and
 
 ## Decisions for you
 
-1. **The order:** A1 → A2 → A3 → A4, against TARGET_PLAN, BUDGET_PLAN,
+1. **Settled 2026-11-03 (D59):** A1 → A2 first, then HEDGE_PLAN's U1. A3 and A4 follow. The question was: **The order:** A1 → A2 → A3 → A4, against TARGET_PLAN, BUDGET_PLAN,
    LENS_PLAN V1 and EXECUTION_PLAN E2. A1 is small, and is what lets a
    core pass your own checklist.
-2. **N_eff with a core:** count only the non-core holdings (proposed), or
+2. **Settled 2026-11-03 (D59):** look through the fund. Its holdings come from SEC N-PORT filings through the existing SEC provider (D47), so A1 gains a holdings reader. The question was: **N_eff with a core:** count only the non-core holdings (proposed), or
    look through the fund. Looking through needs its constituents, which
    is a new data source.
-3. **Crash-stress data:** IBKR's SPY depth, W2b's French series, or the
+3. **Settled 2026-11-03 (D59):** the longest. Ken French's market series (approved as a provider) for the β replay, and IBKR's index where prices are needed. The question was: **Crash-stress data:** IBKR's SPY depth, W2b's French series, or the
    longest of the two.
-4. **Crash-stress evidence:** grade at β̂, or at β̂ + k·SE like the other
+4. **Settled 2026-11-03 (D59):** measure only. Crash stress is shown with its dates and error band on Review and the What-if page, and never graded. So A2 adds no section 4 row. The question was: **Crash-stress evidence:** grade at β̂, or at β̂ + k·SE like the other
    estimated rules.
-5. **What-if vectors:** kept as named sets in view state (proposed), or
+5. **Settled 2026-11-03 (D59):** saved as named sets in the local store. The question was: **What-if vectors:** kept as named sets in view state (proposed), or
    never stored.
-6. **Max Sharpe on the page:** shown with an in-sample warning
+6. **Settled 2026-11-03 (D59):** shown, with the in-sample warning. The question was: **Max Sharpe on the page:** shown with an in-sample warning
    (proposed), because seeing it pick last year's winner is the lesson;
    or left out.
-7. **Snapshots:** delete with a backup, or hide.
+7. **Settled 2026-11-03 (D59):** delete, after a backup, and only by your action. The question was: **Snapshots:** delete with a backup, or hide.
 
 ## Doc changes on approval
 

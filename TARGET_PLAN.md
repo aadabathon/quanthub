@@ -295,30 +295,30 @@ research run supporting it" can name one. Today's Research can't host it:
 
 ## Decisions for you
 
-1. **The milestones and their place.** Are T1 → T2 → T3 approved? Do they
+1. **Settled 2026-11-03 (D59):** T1 is approved, as the Shiller CSV in the data batch. T2 and T3 are superseded by REGIME_MODEL_PLAN: T2's rule becomes one input Q3 tests, and T3's card becomes Q5's. T4's evidence folds into Q3. The question was: **The milestones and their place.** Are T1 → T2 → T3 approved? Do they
    go before LENS_PLAN's V1, or does T3 wait for V1's design language? Is
    T4 in, after W2b, or out?
-2. **Reading the file:**
+2. **Settled 2026-11-03 (D59):** (a) a manual CSV. The question was: **Reading the file:**
    - **(a) A manual CSV,** recommended. No dependency, a monthly step, and
      the rounding measured above.
    - **(b) `xlrd`** (pure Python, BSD). The app fetches and reads the
      `.xls` itself, exactly. It's a new dependency, and the app's second
      online provider after the SEC.
-3. **Shiller's terms.** Neither the page nor the workbook states a license.
+3. **Settled 2026-11-03 (D59):** yes: local only, never committed, a made-up fixture in tests, and cited in the app. The question was: **Shiller's terms.** Neither the page nor the workbook states a license.
    The workbook's Disclaimer sheet covers accuracy and investment advice
    only. The plan treats the data as local-only: never committed, tests on
    a synthetic fixture, cited in the app. Is that acceptable?
-4. **The vol estimator.**
+4. **Settled 2026-11-03 (D59):** moot. T2 is superseded (decision 1); REGIME_MODEL Q1 chooses the vol input. The question was: **The vol estimator.**
    - **21-day realized vol** is what the backtest tested.
    - **W7's GARCH h-day forecast** is already computed, smoother and
      forward-looking, but untested in this rule.
-5. **Where the parameters live:** a *Beta target* table in section 7, plus
+5. **Settled 2026-11-03 (D59):** moot, with T2 superseded. The question was: **Where the parameters live:** a *Beta target* table in section 7, plus
    a row in section 4. Or a new section; that would renumber sections 8–10
    and every key that names them, so the plan avoids it.
-6. **Staleness:** the target goes silent when the newest month is more
+6. **Settled 2026-11-03 (D59):** moot, with T2 superseded. The question was: **Staleness:** the target goes silent when the newest month is more
    than 3 months behind. Should that be a different number, or your own
    REGIME.md setting?
-7. **Disagreeing rules:** when the target's bounds go below your Beta band,
+7. **Settled 2026-11-03 (D59):** moot, with T2 superseded. The question was: **Disagreeing rules:** when the target's bounds go below your Beta band,
    should the review only note it (proposed), or should one rule take
    precedence?
 

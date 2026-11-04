@@ -446,7 +446,7 @@ E0 and E1 are done (D52, D54). E1's live check is still yours.
 
 ## Decisions for you
 
-1. **Approve the reframe,** the amendment of D52 (scope, engines,
+1. **Settled 2026-11-03 (D59):** rewrite the plan around your objective before any milestone is approved. A core β, plus sleeves orthogonal to it instead of more equity, judged only by survival, lower volatility and higher CAGR: W3's growth hurdle and the crash table, not theme-picking. Any instrument is allowed. The first candidate is cross-asset trend, and S1 comes after E2. Decisions 2–8 wait for the rewrite. The question was: **Approve the reframe,** the amendment of D52 (scope, engines,
    approval), and S1–S7 in place of E4–E6.
 2. **K,** and K = min(setting, net liquidation) so that losses shrink it.
 3. **The proposed limits:**

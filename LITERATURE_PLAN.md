@@ -33,8 +33,7 @@ Still open: Lit-3 to Lit-6, and decisions 1, 5, 6 and 8.
 
 ## Why this exists
 
-Your direction of 2026-10-25: every open-ended, teaching project you run
-(Quant Hub, ML Cookbook, more later) gets a literature vault. It's a
+Your direction of 2026-10-25: Quant Hub gets a literature vault, a
 timeline of the field in its papers. For quant finance, it starts with
 Bachelier's *Théorie de la spéculation* (1900) and runs up to what the
 journals publish now.
@@ -75,8 +74,7 @@ instead.
 **1. Tied to code: the start date falls out.** Each strand starts from a
 module and is traced back to its root. The timeline is all those
 lineages combined, so nobody has to pick a start date. Quant Hub's
-earliest root is Bachelier, 1900. ML Cookbook's is least squares,
-1805/1809.
+earliest root is Bachelier, 1900.
 
 **2. Two tiers: a canon and an inbox.**
 - The canon is curated and small, at most a couple of hundred papers.
@@ -208,8 +206,8 @@ strand. The typed links are written at Lit-1.
 
 ## LLMs, without invented citations
 
-You'll want an LLM's help, mostly for ML Cookbook, where the lineages
-are wider. LLMs invent plausible citations. A real DOI attached to the
+You'll want an LLM's help to widen the canon. LLMs invent plausible
+citations. A real DOI attached to the
 wrong title is the worst case, because it looks verified. So an LLM
 only ever **proposes**:
 
@@ -226,9 +224,8 @@ only ever **proposes**:
 3. **Queue.** Papers that pass go to the inbox with their provenance.
 4. **Approve.** You promote a paper to the canon, or dismiss it.
 
-The proposal file is plain JSON, so any LLM can produce one: Claude in a
-session, or a local model through ML Cookbook's Ollama recipe. The app
-never has to call a model.
+The proposal file is plain JSON, so any LLM can produce one, Claude in a
+session included. The app never has to call a model.
 
 ## Milestones
 
@@ -352,32 +349,6 @@ papers comes out sorted correctly, with reasons.
 
 **Done when:** paths and statuses are tested on a small planted graph.
 
-## Carrying it to ML Cookbook and later projects
-
-- **Share the format from Lit-0.** That's what makes a vault portable.
-- **Share code only when a third project arrives.** Quant Hub builds it
-  first, because the catalog exists and the start date is clear. ML
-  Cookbook copies it after Lit-2. A shared package gets extracted only
-  once three copies show what's actually common to them. Extracting it
-  earlier means designing for differences you can't see yet.
-- **ML Cookbook's lineages start from its recipes.** It follows the same
-  rule as here, with one difference: the LLM path (Lit-4) carries more
-  of the work, because the field is wider. Sketch:
-  - linear regression: Legendre 1805 / Gauss 1809 → Hoerl–Kennard 1970 →
-    Tibshirani 1996
-  - logistic regression: Cox 1958
-  - trees: Breiman et al. 1984 → Quinlan 1986 → Breiman 2001
-  - SVM: Cortes–Vapnik 1995
-  - neural nets: McCulloch–Pitts 1943 → Rosenblatt 1958 →
-    Rumelhart–Hinton–Williams 1986
-  - PCA and clustering: Pearson 1901 → Hotelling 1933; Lloyd 1957/1982
-    → MacQueen 1967
-  - tests: Pearson 1900 (χ²) → Fisher 1922 (its degrees of freedom) →
-    Benjamini–Hochberg 1995
-  - LLMs: Vaswani et al. 2017 → Radford et al. 2019 (GPT-2)
-- ML Cookbook's own stack and layering rules decide where its code
-  lives. This plan doesn't touch that repository.
-
 ## Fit with the hard rules
 
 - **Read-only and no new dependencies.** It uses JSON, sqlite3, urllib,
@@ -402,25 +373,25 @@ turn hollow nodes filled as they land. That's the vault doing its job.
 
 ## Decisions for you
 
-1. **Approve the track,** Lit-0 → Lit-6, with each milestone approved
+1. **Settled 2026-11-03 (D59):** approved: Lit-3 → Lit-6, each milestone gated as usual. The question was: **Approve the track,** Lit-0 → Lit-6, with each milestone approved
    separately as usual.
-2. **Where the canon lives.** I recommend JSON files committed as
+2. **Settled 2026-11-03 (D59):** settled by D58: JSON committed as package data, in `quant_hub/data/canon/`. The question was: **Where the canon lives.** I recommend JSON files committed as
    package data, which are reviewable, portable and readable by an LLM.
    The alternative is everything in SQLite, consistent with D42, but
    then the canon can't be shared or reviewed as diffs.
-3. **The first spine.** The table above has about 45 papers. Add,
+3. **Settled 2026-11-03 (D59):** settled by D58: 221 papers, with the bar of changing practice, being implemented in your code, or being the standard critique of one that is. The question was: **The first spine.** The table above has about 45 papers. Add,
    cut or re-strand before Lit-1. What earns a place in the canon? I
    propose: it changed practice, or your code implements it, or it's
    the standard critique of something that does.
-4. **The strands.** The eight lanes above, or your own split.
-5. **How LLMs take part.** I recommend proposal files only, so any model
+4. **Settled 2026-11-03 (D59):** settled by D58: twelve lanes. The question was: **The strands.** The eight lanes above, or your own split.
+5. **Settled 2026-11-03 (D59):** proposal files only. The app never calls a model. The question was: **How LLMs take part.** I recommend proposal files only, so any model
    works and the app calls none. The alternative is the app calling a
-   local Ollama server over stdlib HTTP, as ML Cookbook does.
-6. **Online providers.** Crossref, arXiv and OpenAlex, each subject to a
+   local Ollama server over stdlib HTTP.
+6. **Settled 2026-11-03 (D59):** Crossref, arXiv and OpenAlex, each after its terms check. The question was: **Online providers.** Crossref, arXiv and OpenAlex, each subject to a
    terms check (D34) at Lit-3. Or start with Crossref alone.
-7. **Where this sits against the other plans:** Lit-0 and Lit-1
+7. **Settled 2026-11-03 (D59):** settled by D58: Lit-1 and Lit-2 landed. D59 places the rest after the hedge track. The question was: **Where this sits against the other plans:** Lit-0 and Lit-1
    alongside the current track, or after it.
-8. **ML Cookbook:** copy the format after Lit-2 (recommended), or start
+8. **Settled 2026-11-03 (D59):** out of scope. ML Cookbook is a separate project, and nothing in this repo plans for it. The question was: **ML Cookbook:** copy the format after Lit-2 (recommended), or start
    there in parallel.
 
 ## Doc changes on approval

@@ -1890,3 +1890,87 @@ and Papers: `gui/timeline.py` (the chart) and
 and the inbox), Lit-5 (the feed of new papers), Lit-6 (reading paths and
 replication status). The canon is quant-only; ML Cookbook gets the format
 after this lands.
+
+## D59 — The hedge-and-crash track next; free data accumulates (2026-11-03)
+
+On 2026-11-03 the owner worked through the open plans' decisions in eight
+batches, each with a recommended answer. 58 were settled, each marked in
+its plan's decision list. That includes a few that earlier work had
+already overtaken, and four that became moot once the regime model
+superseded TARGET's T2.
+
+**The owner's objective, in their words:** "I WANT A CORE BETA PROFILE ON
+MY PORT AND INSTEAD OF LOADING UP ON MORE EQUITY I HAVE DIVERSIFIED
+ORTHOGONALLY SLEEVES TO MY PORTFOLIO. … only survival, only minimizing
+volatility and maximizing cagr". In the math that's W3's growth hurdle:
+a sleeve earns its place when its excess return beats its covariance with
+the book. HEDGE ranks candidates by Δ log growth for this reason.
+
+**The order** (ROADMAP's "What's next"):
+1. The data batch.
+2. ALLOCATION A1 → A2.
+3. HEDGE U1, then U2–U5.
+4. ALLOCATION A3–A4.
+5. VARIANCE, then REGIME_MODEL.
+
+**Data: accumulate as much free data as possible.** The owner: "data is
+power." Each provider gets its own terms check (D34), is stdlib only,
+stores what it fetches with provenance, and works offline (V0):
+- **Ken French's library**
+- **FRED:** rates and curve, credit and stress, growth and inflation, the
+  dollar and commodities
+- **CBOE's VIX history**
+- **Shiller's data:** a manual CSV, local only
+- **SEC N-PORT fund holdings,** through the existing SEC provider (D47)
+- **Crossref, arXiv and OpenAlex,** for the literature
+
+Option chains snapshot daily, the first time the app runs with TWS
+connected. The requests are wide (−6 to +3 ATM sd), on SPX with SPY bars
+for realized vol, and trading days follow NYSE holiday rules.
+
+**Measured, not graded.** A2's crash stress is shown with its dates and
+error band, and never becomes a REGIME.md rule. That follows "I am the
+trader": models inform, the owner decides.
+
+**Plans reshaped:**
+- **TARGET:** T1 stays, as the data batch's Shiller import. T2 and T3 are
+  superseded by REGIME_MODEL.
+- **BUDGET:** folds into ALLOCATION A3, as one What-if book builder.
+- **HORIZON P2:** construction also lives on the What-if page.
+- **HORIZON X4** (Heston, FFT pricing) is in, as its own plan after
+  VARIANCE.
+- **SLEEVE_PLAN** is to be rewritten around the owner's objective
+  (orthogonal growth, any instrument, cross-asset trend first) before any
+  S milestone is approved.
+- **Literature:** Lit-3 to Lit-6 are approved, with LLMs writing proposal
+  files only. ML Cookbook is out of scope: it's a separate project, so
+  its section was removed from LITERATURE_PLAN.
+
+**Track H, at low scope.** The owner wants the web server started, in a
+small way. Approved: H0 and H1 only (health, Black–Scholes, GBM). It's
+stdlib, read-only, with no broker and nothing private, bound to localhost
+or the LAN, and never public for now. AGENTS.md's ban on Flask/FastAPI,
+cloud and Docker stays. H0 writes its own decision entry when it starts.
+The server doesn't collect data, because it never connects to IBKR.
+
+**Smaller settlements:**
+- look-through N_eff
+- What-if books saved as named sets
+- max Sharpe shown with its warning
+- snapshots deletable after a backup
+- HEDGE's remaining defaults (the owner had no preference)
+- American SPY pricing, with de-Americanized smiles
+- the variance card shows every expiry
+- IBKR and Fidelity only
+- the design pass waits until after the hedge track
+- 40 paper sessions before anything live
+
+**Still open, on purpose:**
+- EXECUTION's money limits: the owner's numbers, set at E2 in the
+  settings file, never committed.
+- REGIME_MODEL's horizons, D and p, f, the inclusion bar, the card's place
+  and δ: at Q1's start.
+- BUDGET's builder details: at A3.
+- SLEEVE's decisions 2–8: after the rewrite.
+- Whether M3's time-varying Markov extension is in.
+- E1's live check waits on the owner's paper login and ibapi 10.x.

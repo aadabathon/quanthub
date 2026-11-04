@@ -298,9 +298,9 @@ TARGET T1,** Shiller's data in the store.
 
 ## Decisions for you
 
-1. **The milestones and their place.** Q1 → Q5 after TARGET T1. Against
+1. **Settled 2026-11-03 (D59):** after the hedge track (ALLOCATION A1–A2, HEDGE U1). Approving Q1–Q5 themselves is still open. The question was: **The milestones and their place.** Q1 → Q5 after TARGET T1. Against
    ALLOCATION A1–A4, BUDGET B1–B3, LENS V1 and EXECUTION E2.
-2. **The century's history:** W2b's Ken French provider first, or a manual
+2. **Settled 2026-11-03 (D59):** Ken French's provider first (approved). The question was: **The century's history:** W2b's Ken French provider first, or a manual
    file import now.
 3. **The horizons:** for example, 21 days for σ̂ and 12 months for μ̂ and the
    tail.
@@ -311,10 +311,10 @@ TARGET T1,** Shiller's data in the store.
 6. **The inclusion bar:** the family-wise p, and whether an input with no
    post-publication evidence can stay.
 7. **Where the card lives:** Review or LENS O.
-8. **TARGET T2:** superseded (proposed) or built first as the simple
+8. **Settled 2026-11-03 (D59):** superseded. T2's rule is one input among the others, and must clear Q3's bar like any input. The question was: **TARGET T2:** superseded (proposed) or built first as the simple
    version.
 9. **The no-trade band δ** around each target.
-10. **FRED as a provider,** for credit spreads and daily yields, or leave
+10. **Settled 2026-11-03 (D59):** FRED is approved as a provider. Which series earn a place is still Q3's test. The question was: **FRED as a provider,** for credit spreads and daily yields, or leave
     both out until the monthly evidence asks for them.
 
 ## Doc changes on approval

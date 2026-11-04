@@ -1,7 +1,14 @@
 # CURRENT_STATE.md
 
 **Update this file whenever meaningful work lands.** Last updated:
-**2026-11-02**: the literature canon and its timeline landed (D58,
+**2026-11-03**: 58 open decisions settled (D59). Next: ALLOCATION A1 → A2,
+then HEDGE U1. Data direction: accumulate as much free data as possible.
+Ken French, FRED, CBOE VIX, a Shiller CSV and SEC N-PORT holdings are
+approved, each behind a terms check, and option chains snapshot daily on
+first open. Crash stress is measured, not graded. E1's live check waits on
+your paper login, and 40 paper sessions come before anything live.
+
+Also **2026-11-02**: the literature canon and its timeline landed (D58,
 LITERATURE_PLAN Lit-1 and Lit-2).
 - Research has a **Timeline** tab: 221 papers on 12 strand lanes, from
   Bernoulli (1738) and Bachelier (1900) to 2024, with 320 typed links.

@@ -224,7 +224,7 @@ the store.
 
 ## Decisions for you
 
-1. **The milestones and their place:** B1 → B2 → B3, against TARGET_PLAN
+1. **Settled 2026-11-03 (D59):** folded into ALLOCATION A3. The Treynor–Black sizes become one What-if builder beside minimum variance and equal risk. There's no Review card and no REGIME.md rows. Decisions 2–7 are revisited at A3, where they apply to that builder. The question was: **The milestones and their place:** B1 → B2 → B3, against TARGET_PLAN
    T1–T3, LENS_PLAN V1 and EXECUTION_PLAN E2.
 2. **Where the budget's total β, b, comes from:**
    - (a) its own REGIME.md row, proposed
