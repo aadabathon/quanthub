@@ -2858,3 +2858,64 @@ core, grading, and the data's α̂ beside your belief.
 - the builders and references from the context
 - missing history named
 - named sets saved and deleted
+
+## D73 — ALLOCATION A3, part 2: the What-if page (2026-11-04)
+
+The page on D72's job (`gui/pages/whatif.py`). It's in the sidebar after
+Portfolio. Nothing on it trades, and no vector is ever stored as a
+snapshot.
+
+**The side panel builds vectors:**
+- **Typed:** a name and one holding a line, added to the comparison. A
+  bad line is refused, naming it.
+- **Built:**
+  - today
+  - today's picks to a total (%)
+  - an index and cash, on the benchmark (%)
+  - today's picks netted into the core at a target β
+  - the four references
+
+  Only the chosen builder's parameter field is shown.
+- **Saved sets:** save the typed vector by name, or load or delete one
+  (decision 5).
+- **A note** gives the analysis every vector gets: today's history
+  source, benchmark, lookback and cash rate.
+
+**The main column compares them:**
+- **The vectors:** each one's holdings and cash. Select one to remove it.
+- **The comparison:** the measures down, one column per vector:
+  - β ± SE, vol, VaR 95 and ES 99 (a day)
+  - the lookback's drawdown, and A2's crash stress with its band
+  - effective holdings, looked through the core where it can be
+  - the top risk share, growth, and the fails and warns
+
+  With many vectors the table scrolls sideways.
+- **Risk shares:** each name's share of each vector's vol.
+- **Notes:**
+  - max Sharpe's in-sample warning, whenever it's compared (decision 6)
+  - the analysis settings
+  - each vector that couldn't run, and why
+  - why a measure is blank (French's series not fetched, the core's
+    N-PORT not stored), said once rather than in every column
+
+**The context** loads when the page opens. Without REGIME.md's section 2
+or positions, the page says what's missing, and Compare says to load
+today's book first.
+
+**`ReviewService.grade`** now also says why N_eff couldn't look through
+the core (`Graded.effective_note`), for those notes.
+
+**Tests:**
+- the page on the review tests' made-up book:
+  - the context, and today's vector
+  - every builder, a typed vector, removal, a refused line
+  - the four references
+  - the comparison's shape, the max Sharpe warning, and the blank-measure
+    note
+  - risk shares
+  - a set saved, loaded and deleted
+- the page without a regime, saying what it needs
+- page geometry at 1280 px
+
+**Checked** with screenshots on that made-up book: seven vectors (today,
+an index mix, a netted mix, and the four references) compared.

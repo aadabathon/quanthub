@@ -160,10 +160,13 @@ with an error band, never a graded rule.
 
 ### A3. A What-if page
 
-**Status:** part 1 landed 2026-11-04 (D72): vectors, builders, the four
-references (equal weight added beside the plan's three), and the job that
-analyses and grades each vector. Part 2 is the page. The Treynor–Black
-builder waits for BUDGET's decisions 2–7.
+**Status:** landed 2026-11-04.
+- **Part 1** (D72): vectors, builders, the four references (equal weight
+  added beside the plan's three), and the job that analyses and grades
+  each vector.
+- **Part 2** (D73): the What-if page.
+
+The Treynor–Black builder waits for BUDGET's decisions 2–7.
 
 **A dock** (D55), with cards on the 12-column grid (D56).
 - **Vectors.** Type or paste them (symbol → % of equity; the rest is

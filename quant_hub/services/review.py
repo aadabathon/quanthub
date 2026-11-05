@@ -190,6 +190,7 @@ class Graded:
     crash: CrashStress | None
     crash_note: str
     notes: tuple[str, ...]
+    effective_note: str = ""                # why N_eff couldn't look through the core
 
     def count(self, grade: Grade) -> int:
         return sum(c.check.outcome is Outcome.BREACH and c.check.consequence is grade
@@ -365,13 +366,13 @@ class ReviewService:
         wanted = {rule.measure for rule in book_rules.rules}
         measures, missing = _book_measures(view, snapshot, wanted | {"effective holdings"})
         notes: list[str] = []
-        effective = view.report.n_effective
+        effective, effective_note = view.report.n_effective, ""
         if rules.core & {row.symbol for row in view.rows}:
             looked, reason, notes = self._look_through(view, rules)
             measures.pop("effective holdings", None)
             if looked is None:
                 missing["effective holdings"] = reason
-                effective = None
+                effective, effective_note = None, reason
             else:
                 measures["effective holdings"] = [(PORTFOLIO, looked, "")]
                 effective = looked.estimate
@@ -380,7 +381,7 @@ class ReviewService:
         netting, netting_note = _netting(view, rules)
         crash, crash_note = self._crash(view)
         return Graded(tuple(checks), effective, netting, netting_note, crash, crash_note,
-                      tuple(notes))
+                      tuple(notes), effective_note)
 
     def latest_beta(self) -> float | None:
         """The book's β from the newest review that measured one (A2's)."""

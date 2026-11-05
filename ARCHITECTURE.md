@@ -115,6 +115,7 @@ quant_hub/
 │                              pricer, strategy, monte_carlo), volatility_lab.py,
 │                              kalman_lab.py, markov_lab.py, valuation.py,
 │                              review.py, data.py (D64), hedge_lab.py (D71),
+│                              whatif.py (D73),
 │                              research/ (page,
 │                              history, timeline, library)
 ├── config.py                  AppConfig
@@ -402,6 +403,9 @@ Review     = the front door (after Dashboard): the owner's REGIME.md checked
 Data       = everything stored, its source and freshness: outside series
              with a preview and citation, fund holdings, chain snapshots,
              price history; its buttons run the Ctrl+K commands (D64)
+What-if    = weight vectors (typed, built, or the four references) through
+             Portfolio's analysis and sections 3–4, side by side, with
+             risk shares; saved sets; nothing trades (A3, D72–D73)
 Hedge Lab  = every hedge on the book (β proxy since 1926, or today's mix):
              the frontier, growth and drawdown, the crash table, the
              selected hedge's card with today's price (HEDGE U1–U4, D71)

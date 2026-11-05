@@ -1,8 +1,21 @@
 # CURRENT_STATE.md
 
 **Update this file whenever meaningful work lands.** Last updated:
-**2026-11-04**: ALLOCATION A3, part 1 (D72): what-if vectors and their
-job, with no page until part 2.
+**2026-11-04**: ALLOCATION A3, part 2 (D73): the **What-if** page, in the
+sidebar after Portfolio.
+- **Build vectors:** type them, or use a builder: today, today's picks to
+  a total, an index and cash, picks netted into the core at a target β,
+  or the four references.
+- **Compare them** in one table: β ± SE, vol, VaR, ES, drawdown, crash
+  stress, effective holdings, top risk share, growth, fails and warns.
+  Plus risk shares per vector.
+- **Max Sharpe** is shown with its in-sample warning.
+- **Saved sets** are kept in your local store.
+- **Blank measures** say why: French's series not fetched, or the core's
+  N-PORT not stored.
+
+Also **2026-11-04**: ALLOCATION A3, part 1 (D72): what-if vectors and their
+job.
 - **Vectors:** typed weights, the rest cash, never stored as a snapshot.
 - **Builders:** today; today's picks scaled to a total; an index and
   cash; today's picks netted into the core at a target β.
