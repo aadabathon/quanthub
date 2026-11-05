@@ -1,8 +1,21 @@
 # CURRENT_STATE.md
 
 **Update this file whenever meaningful work lands.** Last updated:
-**2026-11-05**: VARIANCE I1 (D75): model-free implied variance, in
-`models/implied_variance.py`. No page shows it yet; the card is I4.
+**2026-11-05**: VARIANCE I2 (D76): the variance risk premium, in
+`models/variance_premium.py` and `services/vol_context.load_variance_premium`.
+No page shows it yet; the card is I4.
+- **Today's premium** against GARCH, per expiry and at 30 days, and
+  against trailing realized.
+- **The history:** each stored day's 30-day implied variance against the
+  realized variance that followed, with the mean ± Newey–West error. It
+  also places today's premium in the history.
+- **Windows count NYSE trading days.** A window over a split-sized gap,
+  or missing a bar, is named and left out.
+- **The mean's error undercovers** on a short history: 85% at one year.
+- **Not checked live:** needs stored SPX chains and TWS.
+
+Also **2026-11-05**: VARIANCE I1 (D75): model-free implied variance, in
+`models/implied_variance.py`.
 - **From a fitted smile:** each expiry's √K_var, split into the quoted
   range and the extrapolated wings, with the extrapolated share.
 - **From the quotes alone:** the VIX-style sum at mid, bid and ask. The

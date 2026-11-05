@@ -268,6 +268,11 @@ strikes gives 16.4%, the band's own integral, not 16.5%.
 
 ### I2. The realized side and the premium
 `models/variance_premium.py`, wired through `services/vol_context.py`
+
+**Status:** landed 2026-11-05 (D76). The trailing window is the 30
+calendar days before the snapshot, which is about 21 trading days. The
+stored history is valued by the quote sums, not a fit. The mean's
+Newey–West interval undercovers on a short history: 85% at one year.
 - Realized total variance over a window, GARCH's expected total, the
   trailing 21-day realized.
 - **The three premiums**, in variance, shown in vol points.

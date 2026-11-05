@@ -327,9 +327,37 @@
     "doi": "10.1093/rfs/hhn038",
     "question": "How much do investors pay to hedge variance?",
     "changed": "Synthetic variance swaps show realized variance sits well below implied: a large, negative variance risk premium.",
-    "lives_in": [],
+    "lives_in": ["quant_hub/models/variance_premium.py"],
     "links": [{"to": "brittenjonesneuberger2000", "kind": "builds_on"}, {"to": "covalshumway2001", "kind": "builds_on"}],
     "verified": {"via": "crossref", "checked": "2026-11-02", "matched": ["title", "first_author", "year"]}
+  },
+  {
+    "id": "bollerslevtauchenzhou2009",
+    "title": "Expected Stock Returns and Variance Risk Premia",
+    "authors": ["Tim Bollerslev", "George Tauchen", "Hao Zhou"],
+    "year": 2009,
+    "venue": "The Review of Financial Studies",
+    "doi": "10.1093/rfs/hhp008",
+    "question": "Does the gap between implied and realized variance predict stock returns?",
+    "changed": "The variance risk premium, implied variance less trailing realized, predicted quarterly index returns better than the usual valuation ratios, in sample.",
+    "assumed": "The VIX squared against high-frequency realized variance over the past month.",
+    "lives_in": ["quant_hub/models/variance_premium.py"],
+    "links": [{"to": "brittenjonesneuberger2000", "kind": "builds_on"}],
+    "verified": {"via": "crossref", "checked": "2026-11-05", "matched": ["title", "first_author", "year"]}
+  },
+  {
+    "id": "driessenmaenhoutvilkov2009",
+    "title": "The Price of Correlation Risk: Evidence from Equity Options",
+    "authors": ["Joost Driessen", "Pascal J. Maenhout", "Grigory Vilkov"],
+    "year": 2009,
+    "venue": "The Journal of Finance",
+    "doi": "10.1111/j.1540-6261.2009.01467.x",
+    "question": "Why are index options expensive when single-stock options aren't?",
+    "changed": "Index options carry a large variance premium and single-stock options little; the gap is the price of correlation risk.",
+    "assumed": "S&P 100 index and component options; model-free implied variances.",
+    "lives_in": ["quant_hub/models/variance_premium.py"],
+    "links": [{"to": "brittenjonesneuberger2000", "kind": "builds_on"}],
+    "verified": {"via": "crossref", "checked": "2026-11-05", "matched": ["title", "first_author", "year"]}
   },
   {
     "id": "fukasawa2012",

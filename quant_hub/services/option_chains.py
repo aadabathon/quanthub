@@ -71,6 +71,10 @@ class ChainService:
         """Stored snapshots, newest first (the Data page); offline."""
         return self._store.snapshots(symbol)
 
+    def load(self, snapshot_id: int) -> OptionChain:
+        """One stored snapshot (VARIANCE I2's history); offline."""
+        return self._store.load(snapshot_id)
+
 
 def load_market_surface(chains: ChainService, symbol: str) -> tuple[MarketSurface, int]:
     """The newest saved chain for ``symbol`` as a market surface (C4): implied

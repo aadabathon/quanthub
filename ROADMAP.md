@@ -633,8 +633,12 @@ The order after the 2026-11-03 decisions:
 5. **Then:** VARIANCE, then REGIME_MODEL, which supersedes TARGET's T2
    and T3. BUDGET folds into A3. ~~VARIANCE I1~~ landed 2026-11-05
    (D75): model-free implied variance from the fit and from the quotes,
-   with its band, constant-maturity tenors and forward variances. I2,
-   the realized side and the premium, is next.
+   with its band, constant-maturity tenors and forward variances.
+   ~~VARIANCE I2~~ landed 2026-11-05 (D76): realized variance over exact
+   trading-day windows, GARCH's expectation, the three premiums, the
+   ex-post series with its mean ± Newey–West error, and today's
+   percentile. I4, the card, is next; I3's remaining piece (a variance
+   chain request) can go with it.
 
 Also approved, to be placed in this order later:
 - HORIZON H0–H1, a low-scope stdlib server

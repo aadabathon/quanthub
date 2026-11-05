@@ -158,6 +158,9 @@ which adds over time: if the forward variance is constant between the two
 expiries, the interpolation recovers :math:`w(\tau)` exactly. It never
 extrapolates in :math:`T`. The quoted and wing parts, and the quote sums
 with their band, interpolate the same way (all weights are positive).
+``quote_tenor`` does it for the quote sums alone, with no fit: the VIX's
+own number, and fast enough to run on every stored snapshot (I2's
+history).
 
 **Forward variance between expiries:**
 :math:`(w_2 - w_1)/(T_2 - T_1)`. It must be non-negative: the calendar
@@ -531,17 +534,27 @@ class VarianceTermStructure:
         return constant_maturity(self.expiries, days)
 
 
-def constant_maturity(expiries: Sequence[ExpiryVariance], days: float) -> TenorVariance | None:
-    """Interpolate total variance linearly in :math:`T` (section 6)."""
+def _bracket(dtes: Sequence[float], days: float) -> tuple[int, int, float] | None:
+    """The expiries bracketing ``days`` (indices into ``dtes``) and λ (section 6),
+    or ``None`` outside them."""
     if not (math.isfinite(days) and days > 0):
         raise ValueError("the tenor must be a positive number of days")
-    ordered = sorted(expiries, key=lambda e: e.dte)
-    pairs = [(e, e) for e in ordered if e.dte == days]
-    pairs += [(a, b) for a, b in pairwise(ordered) if a.dte < days < b.dte]
-    if not pairs:
+    order = sorted(range(len(dtes)), key=lambda i: dtes[i])
+    for i in order:
+        if dtes[i] == days:
+            return i, i, 1.0
+    for a, b in pairwise(order):
+        if dtes[a] < days < dtes[b]:
+            return a, b, (dtes[b] - days) / (dtes[b] - dtes[a])
+    return None
+
+
+def constant_maturity(expiries: Sequence[ExpiryVariance], days: float) -> TenorVariance | None:
+    """Interpolate total variance linearly in :math:`T` (section 6)."""
+    found = _bracket([e.dte for e in expiries], days)
+    if found is None:
         return None
-    front, back = pairs[0]
-    lam = 1.0 if back is front else (back.dte - days) / (back.dte - front.dte)
+    front, back, lam = expiries[found[0]], expiries[found[1]], found[2]
 
     def mix(a: float, b: float) -> float:
         return lam * a + (1.0 - lam) * b
@@ -558,6 +571,41 @@ def constant_maturity(expiries: Sequence[ExpiryVariance], days: float) -> TenorV
         quote_mid=mix(sums[0].mid, sums[1].mid) if quoted else None,
         quote_bid=mix(sums[0].bid, sums[1].bid) if quoted else None,
         quote_ask=mix(sums[0].ask, sums[1].ask) if quoted else None)
+
+
+@dataclass(frozen=True)
+class QuoteTenor:
+    """The quote sums alone at a constant maturity: the VIX's own number, with
+    no fit. Totals at bid, mid and ask (section 6)."""
+
+    days: float
+    between: tuple[float, float]
+    bid: float
+    mid: float
+    ask: float
+
+    @property
+    def years(self) -> float:
+        return self.days / DAYS_PER_YEAR
+
+    @property
+    def vol(self) -> float:
+        return math.sqrt(max(self.mid, 0.0) / self.years)
+
+
+def quote_tenor(chain: OptionChain, days: float = HEADLINE_DAYS) -> QuoteTenor | None:
+    """Every expiry's quote sum, interpolated to ``days`` in total variance, or
+    ``None`` when no two expiries with a sum bracket it. Fast enough to run on
+    every stored snapshot: no smile is fitted."""
+    sums = [s for s in (quote_sum(chain, dte) for dte in chain.expiries) if s is not None]
+    found = _bracket([s.dte for s in sums], days)
+    if found is None:
+        return None
+    front, back, lam = sums[found[0]], sums[found[1]], found[2]
+    return QuoteTenor(days=days, between=(front.dte, back.dte),
+                      bid=lam * front.bid + (1 - lam) * back.bid,
+                      mid=lam * front.mid + (1 - lam) * back.mid,
+                      ask=lam * front.ask + (1 - lam) * back.ask)
 
 
 def forward_variances(expiries: Sequence[ExpiryVariance]) -> tuple[ForwardVariance, ...]:

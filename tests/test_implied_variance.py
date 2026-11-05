@@ -21,6 +21,7 @@ from quant_hub.models.implied_variance import (
     implied_variance,
     normal_average,
     quote_sum,
+    quote_tenor,
     smile_bounds,
     smile_variance,
     span_total,
@@ -339,6 +340,22 @@ def test_quote_sums_interpolate_only_when_both_expiries_have_one():
     tenor = constant_maturity(expiries, 30)
     assert tenor.quote_mid is None and tenor.quote_vol is None
     assert tenor.smile.total == pytest.approx(0.002 + (0.006 - 0.002) * 10 / 30)
+
+
+def test_the_quote_sums_alone_at_a_constant_maturity():
+    chain = synthetic_chain(SURFACE, SyntheticChainSpec(seed=2, k_range_sd=(-6, 3),
+                                                        strikes_per_expiry=41))
+    sums = {d: quote_sum(chain, d) for d in chain.expiries}
+    at_30 = quote_tenor(chain, 30)
+    assert at_30.between == (30.0, 30.0) and at_30.mid == sums[30.0].mid
+    at_45 = quote_tenor(chain, 45)
+    assert at_45.between == (30.0, 60.0)
+    assert at_45.mid == pytest.approx(0.5 * sums[30.0].mid + 0.5 * sums[60.0].mid)
+    assert at_45.bid < at_45.mid < at_45.ask
+    assert at_45.vol == pytest.approx(math.sqrt(at_45.mid / (45 / 365)))
+    assert quote_tenor(chain, 400) is None and quote_tenor(chain, 3) is None
+    fitted = implied_variance(fit_surface(chain)).tenor(30)
+    assert at_30.mid == pytest.approx(fitted.smile.total, rel=0.04)   # the wide band holds ~97%
 
 
 def test_a_falling_total_variance_fails_the_calendar_check():
