@@ -270,6 +270,9 @@ quant_hub/
 │   │                          new filings kept beside old, offline (D62)
 │   ├── security_ids.py        held symbols' ISINs: stored, else IBKR's when
 │   │                          connected; the look-through's bridge (D66)
+│   ├── hedge.py               the hedge lab's job: the β proxy and today's mix,
+│   │                          today's shape (ρ, smile, spread), every candidate
+│   │                          at every size, today's prices; offline (D70)
 │   ├── external_data.py       outside series: Ken French's files refreshed
 │   │                          when a week old, each failure keeping its
 │   │                          stored copy; Shiller CSV imports (D61);

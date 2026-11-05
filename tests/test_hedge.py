@@ -324,3 +324,27 @@ def test_whole_contracts_round_the_ideal_count():
 def test_a_program_that_cant_be_run_is_refused(kwargs, message):
     with pytest.raises(ValueError, match=message):
         H.OptionProgram(**kwargs)
+
+
+def test_a_grid_smile_interpolates_and_holds_flat_beyond():
+    ks, days = np.array([-0.2, 0.0, 0.2]), np.array([30.0, 90.0])
+    grid = np.array([[1.4, 1.0, 0.9], [1.2, 1.0, 0.95]])
+    smile = H.grid_smile(ks, days, grid)
+    at = lambda k, d: float(smile(np.array([k]), np.array([d / 365.0]))[0])  # noqa: E731
+    assert at(0.0, 30) == pytest.approx(1.0) and at(-0.1, 30) == pytest.approx(1.2)
+    assert at(-0.2, 60) == pytest.approx(1.3)                 # halfway between tenors
+    assert at(-0.5, 10) == pytest.approx(1.4) and at(0.5, 400) == pytest.approx(0.95)
+    with pytest.raises(ValueError):
+        H.grid_smile(ks, days, grid[:, :2])
+
+
+def test_a_rolled_puts_cost_a_year_is_its_premium_times_rolls():
+    program = H.OptionProgram(0.9, 91)
+    cost = H.roll_cost(program, np.array([0.04]), 0.013, np.array([0.21]))[0]
+    premium = float(price_array(1.0, 0.9, 91, 0.04, 0.21, "put", 0.013))
+    assert cost == pytest.approx(premium * 365 / 91)          # 2.9% a year, the plan's table
+    spread = H.roll_cost(H.OptionProgram(0.9, 91, short_put=0.8), np.array([0.04]), 0.013,
+                         np.array([0.21]))[0]
+    assert 0 < spread < cost
+    with pytest.raises(ValueError, match="collar"):
+        H.roll_cost(H.OptionProgram(0.9, 91, collar=True), np.array([0.04]), 0.0, np.array([0.2]))

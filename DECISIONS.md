@@ -2646,3 +2646,84 @@ dividend, a close stand-in for the price index's options.
 - both Ctrl+K commands on the worker
 - the sync command absent with IBKR off
 - the Data page's FRED note
+
+## D70 — HEDGE U3: the hedge lab's service (2026-11-04)
+
+`services/hedge.py` feeds U1's math with stored data and runs every
+candidate on the book. It's offline only: nothing is fetched behind the
+owner's back (V0). Whatever is missing is named, with how to get it. U4's
+page will call it on the TaskRunner.
+
+**Two books** (HEDGE §1):
+- **The β proxy** (`proxy_book`): R_B = r + b·(R_m − r) on French's
+  market and bills since 1926. It holds every crash, and it's a floor.
+- **Today's mix** (`mix_book`): Portfolio's replay, P&L over today's
+  equity with options repriced in full, plus the cash line's interest at
+  the cash rate. It's exact, but it covers only the lookback. With h = 0
+  a hedge leaves it unchanged, and the tests hold the replay to 1e-15.
+- **β** is W2's regression β for the portfolio row, or the risk model's
+  without regressions.
+
+**A change to decision 4, for you to overrule.** Decision 4 chose IBKR's
+index for the option candidates, because French's series seemed to have
+no price levels to strike against. Its total-return level is one.
+- A put on it with no dividend has the economics of a put on the price
+  index with its dividend, to a fraction of a percent of moneyness a
+  quarter.
+- It covers the whole VIX window from 1990, at least as deep as IBKR's
+  can be.
+
+So the option programs run on it, and IBKR's SPX history (U2) becomes the
+cross-check. Today's mix uses its benchmark's own returns the same way.
+
+**Today's shape** (§3): from the newest stored SPX chain, else SPY's,
+fitted as the Volatility Lab fits it.
+- **σ_ATM,30**, and ρ = σ_ATM,30 / today's VIX (FRED). VIX itself is the
+  market's 30-day variance strike, standing in for VARIANCE I1's, which
+  isn't built.
+- **The smile** s(k, T) = σ(k, T)/σ_ATM,30, on a grid of log-moneyness
+  (−0.8 to 0.4) and tenors (7 days to 18 months), interpolated linearly
+  and held flat beyond, as the surface holds its vol
+  (`models/hedge.grid_smile`).
+- **The half-spread** (decision 6): the median (ask − bid)/(ask + bid)
+  over the chain's out-of-the-money puts.
+- **Without a chain:** flat, ρ = 1, no costs, and it says so. VIX sits
+  above the ATM vol, so ρ = 1 overstates every put a little.
+- **The flat smile** runs beside it on request (decision 5).
+
+**The candidates** are decision 2's list (`v1_candidates`):
+- puts 5, 10 and 20% out of the money, over 1, 3 and 12 months
+- put spreads: 95/85 over a month, 90/80 over three
+- the zero-cost collar on the 10% put over three months
+- the two trend rules
+- vol targeting at the book's own long-run vol
+- cash
+- any stored stream the caller names, read from stored bars (adjusted
+  where stored). No holding is named in the code; U4's page asks.
+
+Each runs at h = 25, 50 and 100%, on its own window. Options need VIX, so
+they start in 1990, and a stream starts with its own history. Each result
+says its window.
+
+**Today's prices** (§6, `today`): a put's or a put spread's cost a year
+at today's surface (`models/hedge.roll_cost`), and its percentile among
+the same program's VIX-based costs over the window. A collar's net is
+zero by construction, so it isn't priced.
+
+**Checked on a copy of your store:** the β proxy at 0.9, the rule
+candidates since 1926 (U1's numbers again). The option candidates say
+FRED's VIX isn't stored yet, and the shape says there's no stored index
+chain.
+
+**Tests:**
+- the proxy book and VIX's alignment
+- missing data named for French, a stream and the chain
+- options on VIX's window, and the rest on the book's
+- today's mix equal to Portfolio's replay plus interest, with h = 0
+  changing nothing
+- the shape against a known SSVI surface: ATM vol, skew, ρ and
+  half-spread
+- a stream from stored bars, on its own window
+- decision 2's list
+- today's cost against its formula, and its percentile
+- the grid smile and the roll cost against the plan's 2.9% a year

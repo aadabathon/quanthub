@@ -241,6 +241,10 @@ connected; its log gives the depth.
 
 ### U3. The service
 
+**Status:** landed 2026-11-04 (D70). One change to decision 4, for you
+to overrule: the option programs run on French's total-return level, so
+IBKR's SPX history is a cross-check rather than the underlying.
+
 - `services/hedge.py` builds both books: b from W2, today's mix from
   Portfolio.
 - It runs the candidates on the TaskRunner.

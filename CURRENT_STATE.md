@@ -1,7 +1,24 @@
 # CURRENT_STATE.md
 
 **Update this file whenever meaningful work lands.** Last updated:
-**2026-11-04**: HEDGE U2 (D69): the data the hedges need.
+**2026-11-04**: HEDGE U3 (D70): `services/hedge.py`, the hedge lab's job,
+with no page until U4.
+- **Two books:** the β proxy on French's market since 1926, and today's
+  mix as Portfolio replays it.
+- **The candidates:** decision 2's list, each at three sizes, on its own
+  window. Options start with VIX in 1990, and streams with their own
+  history.
+- **Today's shape:** from your newest stored SPX or SPY chain: ρ, the
+  smile and the half-spread. Without one, flat with ρ = 1, said so.
+- **Today's prices:** each put's cost a year now, and its percentile
+  against history.
+- **One change to decision 4, for you to overrule:** the option programs
+  run on French's total-return level, so IBKR's SPX history is a
+  cross-check.
+- **Offline only:** missing data is named with how to get it, never
+  fetched.
+
+Also **2026-11-04**: HEDGE U2 (D69): the data the hedges need.
 - **FRED:** the VIX (from 1990) and the 3-month bill rates, stored as
   published. Ctrl+K **Fetch FRED series**, or the Data page's **Fetch
   FRED** button.

@@ -320,6 +320,57 @@ def flat_smile(k: np.ndarray, years: np.ndarray) -> np.ndarray:
     return np.ones(np.broadcast(np.asarray(k), np.asarray(years)).shape)
 
 
+def grid_smile(ks: np.ndarray, days: np.ndarray, multipliers: np.ndarray) -> Smile:
+    """s(k, T) from a grid: ``multipliers[i, j]`` at tenor ``days[i]`` and
+    log-moneyness ``ks[j]``, linear in k and then in T, and held flat
+    beyond the grid's edges (as ``MarketSurface`` holds the vol flat)."""
+    ks, days = np.asarray(ks, dtype=float), np.asarray(days, dtype=float)
+    grid = np.asarray(multipliers, dtype=float)
+    if grid.shape != (len(days), len(ks)) or len(ks) < 2 or len(days) < 1:
+        raise ValueError("the grid is one row per tenor and one column per log-moneyness")
+    if (np.diff(ks) <= 0).any() or (np.diff(days) <= 0).any():
+        raise ValueError("the grid's log-moneyness and tenors must rise")
+    if not (np.isfinite(grid).all() and (grid > 0).all()):
+        raise ValueError("a smile's multipliers must be positive")
+
+    def smile(k: np.ndarray, years: np.ndarray) -> np.ndarray:
+        k, t = np.broadcast_arrays(np.asarray(k, dtype=float),
+                                   np.asarray(years, dtype=float) * DAYS_PER_YEAR)
+        rows = np.array([np.interp(k.ravel(), ks, row) for row in grid])   # (tenors, n)
+        if len(days) == 1:
+            return rows[0].reshape(k.shape)
+        flat_t = np.clip(t.ravel(), days[0], days[-1])
+        upper = np.clip(np.searchsorted(days, flat_t, side="left"), 1, len(days) - 1)
+        lower = upper - 1
+        weight = (flat_t - days[lower]) / (days[upper] - days[lower])
+        n = np.arange(len(flat_t))
+        out = (1 - weight) * rows[lower, n] + weight * rows[upper, n]
+        return out.reshape(k.shape)
+    return smile
+
+
+def roll_cost(program: OptionProgram, rate: np.ndarray, dividend: float, atm: np.ndarray,
+              smile: Smile = flat_smile) -> np.ndarray:
+    """The net premium of opening ``program`` on each day, per unit of spot,
+    times 365 / tenor: its cost a year when rolled at expiry, before
+    spreads (HEDGE_PLAN §6). ``atm`` is each day's σ_ATM (VIX · ρ). A
+    collar's is zero by construction, so it isn't priced here."""
+    if program.collar:
+        raise ValueError("a collar's net premium is zero by construction")
+    rate, atm = np.asarray(rate, dtype=float), np.asarray(atm, dtype=float)
+    years = program.tenor / DAYS_PER_YEAR
+    forward = np.exp((rate - dividend) * years)
+
+    def put(m: float) -> np.ndarray:
+        sigma = atm * np.asarray(smile(np.log(m / forward), np.full_like(atm, years)), dtype=float)
+        return np.array([float(price_array(1.0, m, program.tenor, r, s, "put", dividend))
+                         for r, s in zip(rate, sigma)])
+    net = put(program.moneyness)
+    if program.short_put is not None:
+        net = net - put(program.short_put)
+    return net * DAYS_PER_YEAR / program.tenor
+
+
 @dataclass(frozen=True)
 class OptionProgram:
     """A rolled option hedge (module docstring)."""
