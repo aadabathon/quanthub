@@ -1,9 +1,26 @@
 # CURRENT_STATE.md
 
 **Update this file whenever meaningful work lands.** Last updated:
-**2026-11-05**: VARIANCE I2 (D76): the variance risk premium, in
+**2026-11-05**: VARIANCE I4 (D77): the Volatility Lab shows the variance
+premium.
+- **The Term structure view** draws √K_var per expiry beside ATM IV. A
+  point is hollow when it's mostly wings, and the quote sum's bid–ask band
+  sits under it.
+- **The Variance premium card,** for the fit on the page:
+  - 30-day tiles
+  - a row per expiry: sessions, √K_var, ATM IV, wings, GARCH and
+    realized, and the premium against each
+- **The Premium history card:** each stored day's 30-day quote sum against
+  the realized vol after and before it. It shows the mean ex-post premium
+  with its z, today's percentile and the window counts.
+- **One GARCH fit, as of the chain,** draws the overlay and fills the
+  cards. It's priced from Compare with history's inputs, and each new fit
+  is repriced.
+- **Not checked live:** needs stored SPX chains and TWS. I3's variance
+  chain request is still to do.
+
+Also **2026-11-05**: VARIANCE I2 (D76): the variance risk premium, in
 `models/variance_premium.py` and `services/vol_context.load_variance_premium`.
-No page shows it yet; the card is I4.
 - **Today's premium** against GARCH, per expiry and at 30 days, and
   against trailing realized.
 - **The history:** each stored day's 30-day implied variance against the

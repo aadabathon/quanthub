@@ -3176,3 +3176,135 @@ snapshot's day.
 
 **Not checked live:** SPX's chains against SPY's bars need stored SPX
 snapshots and TWS.
+
+## D77 — VARIANCE I4: the variance premium on the Volatility Lab (2026-11-05)
+
+VARIANCE_PLAN's last milestone, the card. I3's variance chain request is
+still to do. The page is `gui/pages/volatility_lab.py`; the service is
+`load_variance_premium` in `services/vol_context.py`.
+
+**The Term structure view gains √K_var per expiry.**
+- **Where it comes from:** the fit on the page. The fit job now also
+  computes `implied_variance(fit)`, which takes 26 ms on the default chain.
+- **How it's drawn:** beside ATM IV. A point is hollow when over half of
+  its K_var comes from the extrapolated wings.
+- **The band:** the quote sum's bid–ask band, from the quotes alone, as
+  the VIX sums them. The gap between the line and the band is what the
+  wings add.
+
+**Two new cards, below the views.**
+- **Variance premium**, for the fit on the page:
+  - **Tiles at the 30-day tenor:**
+    - √K_var, with ATM and the wings' share
+    - the quote sum, with its bid–ask
+    - the premium against GARCH
+    - the quote sum's premium against trailing realized
+  - **A row per expiry:**
+    - the sessions in its window
+    - √K_var, ATM IV and the wings' share
+    - GARCH, and the premium against it
+    - realized over as many calendar days before, and the premium
+      against that
+  - **The service's notes:** offline bars, missing windows, split gaps.
+- **Premium history:**
+  - **The chart:** each stored day's 30-day quote sum against the
+    realized vol after it and before it. A second panel shows the premium
+    in vol points, with the mean drawn as a reference line.
+  - **The tiles:**
+    - the mean ex-post premium, with its z and window counts
+    - today's percentile
+    - the windows complete, pending and left out
+  - **A synthetic chain** has no history, and the card says so.
+
+**One GARCH fit, as of the chain.**
+- **What the screenshots showed:** on a stored SPX chain from
+  2025-10-31, the overlay's 30-day GARCH read 12.9% and the card's 15.5%.
+  The overlay was fitted on bars to today, the card on bars to the chain's
+  day.
+- **The fix:** the premium job returns its GARCH fit and trailing vols as
+  the overlay's context. The chart and the cards now draw the same fit, as
+  of the chain.
+  - Compare with history, loaded before any fit, is still as of now.
+  - The lookback is counted back from the chain.
+  - Bars load back as far as the longest expiry's trailing window.
+- **What still differs, on purpose:** the chart's GARCH curve assumes 252
+  sessions a year, while the card counts each window's own (decision 6).
+  - **An example:** the 30 days after Oct 31 hold 19 sessions (weekends
+    and Thanksgiving). That window's GARCH reads 15.9%, against the
+    curve's 16.5%.
+  - **Where the page says so:** the table's Sessions column, and the
+    GARCH tooltips.
+
+**Inputs live in one place.** The premium uses Compare with history's
+source, symbol and lookback (SPY for SPX, decision 3). The card's Load
+history button runs the same load, so there are no new fields.
+
+**Threading, and D15.**
+- **When it prices:** one history load prices the fit on the page. After
+  that, every new fit (a fetch, a refit, SVI or SSVI) is repriced in a
+  TaskRunner job of its own.
+- **While it prices:** the cards and the overlay are blank until the job
+  lands. Nothing on the page describes an earlier fit or another day's
+  GARCH.
+- **Late results:** the worker is FIFO (D9), but a fit can still land
+  between a pricing's submit and its result.
+  - Each result carries the fit it priced, and one for a replaced fit is
+    dropped.
+  - A fit that lands during the first load is priced when the load
+    returns.
+
+**The service changed shape.** I2's version is unmerged, so nothing else
+called it.
+- **It takes a fit, not a symbol:**
+  `load_variance_premium(market, chains, fit, source, realized_symbol, ...)`.
+  - The page's fit is today's.
+  - The chain's symbol names the stored history. `history=False` skips
+    it, for a synthetic chain.
+- **A chain with no stored snapshots** is now priced, with a note. Before,
+  it was refused.
+- **New in the result:**
+  - each expiry's trailing premium (the same length, before the chain)
+  - `tenor_trading_days`
+  - the `VolContext`
+
+**Also:**
+- `QuoteTenor.vol_band`
+- `CurveChart`:
+  - per-point hollow markers (`Curve.hollow`)
+  - a band's readout format and color
+- The history chart reads out one line per panel.
+
+**Tests:**
+- **The service (6):** I2's three, reworked, and three new:
+  - **Today's premiums and the history:**
+    - each expiry's trailing premium against its window's realized sum
+    - the shared GARCH: its returns, its end and the first expiry's
+      expectation
+    - today's quote sum from the fitted chain, not the day's first
+      snapshot
+  - **A split-sized gap** named, and its windows left out
+  - **A chain with no stored snapshots,** priced with a note
+  - **`history=False`:** no lookup, and no note
+  - **Bars that end before the windows:** GARCH and the trailing windows
+    say why
+  - **A blank realized symbol** is refused
+- **The GUI (3):**
+  - **A synthetic fit:**
+    - √K_var and its band on the term chart, and in the hover readout
+    - the cards empty until loaded, then filled
+    - the overlay's GARCH is the card's
+    - a stale result dropped
+    - a refit repriced
+  - **Stored SPX chains against SPY's stored bars, offline:**
+    - the newest snapshot on the page
+    - the overlay as of its day
+    - every window complete, with the mean, the percentile and the chart
+  - **Hollow markers** drawn as outlines
+- **The I1 module:** `vol_band` (one more assertion).
+
+**Checked by eye:** offscreen at 1280 px, on 170 synthetic SPX days: the
+term chart and both cards.
+
+**Not checked live:** that needs stored SPX chains and TWS. I3's variance
+chain request (a wider band and more strikes, with its fetch time
+measured) is still to do.

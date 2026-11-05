@@ -592,6 +592,11 @@ class QuoteTenor:
     def vol(self) -> float:
         return math.sqrt(max(self.mid, 0.0) / self.years)
 
+    @property
+    def vol_band(self) -> tuple[float, float]:
+        return (math.sqrt(max(self.bid, 0.0) / self.years),
+                math.sqrt(max(self.ask, 0.0) / self.years))
+
 
 def quote_tenor(chain: OptionChain, days: float = HEADLINE_DAYS) -> QuoteTenor | None:
     """Every expiry's quote sum, interpolated to ``days`` in total variance, or

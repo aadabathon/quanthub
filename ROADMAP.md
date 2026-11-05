@@ -637,8 +637,12 @@ The order after the 2026-11-03 decisions:
    ~~VARIANCE I2~~ landed 2026-11-05 (D76): realized variance over exact
    trading-day windows, GARCH's expectation, the three premiums, the
    ex-post series with its mean ± Newey–West error, and today's
-   percentile. I4, the card, is next; I3's remaining piece (a variance
-   chain request) can go with it.
+   percentile. ~~VARIANCE I4~~ landed 2026-11-05 (D77): √K_var with its
+   quote band on the Term structure view. Two cards on the Volatility Lab:
+   the variance premium by expiry and at 30 days, and its history, priced
+   against one GARCH fit as of the chain. I3's remaining piece, a variance
+   chain request (fetch time measured with TWS), is all that's left of
+   VARIANCE.
 
 Also approved, to be placed in this order later:
 - HORIZON H0–H1, a low-scope stdlib server

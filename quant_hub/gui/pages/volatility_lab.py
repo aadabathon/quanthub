@@ -30,6 +30,21 @@ steadier on noisy chains. But live SPY/SPX smiles lie outside the SSVI
 slice family, so on liquid chains independent SVI fits much better.
 Switching refits the chain already on the page; it never refetches.
 
+**The variance premium (VARIANCE I4, D77).** Each fit job also reads the
+fit's model-free implied variance (``models/implied_variance``, 26 ms on the
+default chain). The Term structure view draws √K_var per expiry beside ATM
+IV, hollow where over half of it comes from the extrapolated wings, with the
+quote sum's bid–ask band. The Variance premium and Premium history cards
+price *this* fit against the history that "Compare with history" loads
+(``services/vol_context.load_variance_premium``). That job's GARCH is fitted
+on bars up to the chain's day, and the overlay draws the same fit, so the
+chart and the cards agree, and a stored chain from last month isn't set
+against today's GARCH. (Loaded before any fit, the overlay is as of now.)
+Once loaded, every new fit is repriced in a job of its own. The cards and
+the overlay are blank until it lands, so they never describe an earlier fit
+(D15), and a late result for a fit since replaced is dropped. A market
+chain's history is its stored snapshots; a synthetic chain has none.
+
 The Surface view switches between a heatmap and a rotatable 3D surface
 (``gui/surface3d.py``, Plotly, D32). The same job builds the 3D mesh
 (``vol_surface.surface_mesh``) from the fit. The 3D view embeds Chromium,
@@ -45,18 +60,28 @@ import logging
 from dataclasses import dataclass
 
 import numpy as np
+import pandas as pd
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QHBoxLayout, QStackedWidget, QVBoxLayout, QWidget
 
+from quant_hub.data.options import ChainRequest
 from quant_hub.data.stats import TRADING_DAYS_PER_YEAR
-from quant_hub.tasks import TaskRunner
-from quant_hub.gui.charts import Curve, CurveChart, Heatmap, SmileGrid
+from quant_hub.gui.charts import (
+    Curve,
+    CurveChart,
+    Heatmap,
+    Panel,
+    Series,
+    SmileGrid,
+    StackedTimeSeries,
+)
 from quant_hub.gui.components import (
-    CardGrid,
     Card,
+    CardGrid,
     DataTable,
     EmptyState,
     Field,
+    MetricTile,
     PageHeader,
     PageStack,
     SegmentedControl,
@@ -65,6 +90,7 @@ from quant_hub.gui.components import (
     StatTable,
     button,
     label,
+    metric_row,
 )
 from quant_hub.gui.pages.base import ScrollPage, saved_grid
 from quant_hub.gui.surface3d import Surface3D
@@ -76,9 +102,18 @@ from quant_hub.gui.theme import (
     SIDE_PANEL_WIDTH,
     SPACE_M,
 )
-from quant_hub.data.options import ChainRequest
 from quant_hub.models.carry import FIXED_RATE, NONE, REGRESSION, CarryFit, implied_carry
+from quant_hub.models.implied_variance import (
+    HEADLINE_DAYS,
+    VarianceTermStructure,
+    implied_variance,
+)
 from quant_hub.models.svi import SSVISurface
+from quant_hub.models.variance_premium import (
+    MIN_INDEPENDENT_WINDOWS,
+    MIN_PERCENTILE_HISTORY,
+    Premium,
+)
 from quant_hub.models.vol_surface import (
     SurfaceFit,
     SurfaceMesh,
@@ -91,8 +126,14 @@ from quant_hub.models.vol_surface import (
 )
 from quant_hub.services.market_service import MarketService
 from quant_hub.services.option_chains import ChainService
-from quant_hub.services.vol_context import VolContext, load_vol_context
+from quant_hub.services.vol_context import (
+    VariancePremiumView,
+    VolContext,
+    load_variance_premium,
+    load_vol_context,
+)
 from quant_hub.storage.state_store import ViewStateStore
+from quant_hub.tasks import TaskRunner
 
 _logger = logging.getLogger(__name__)
 
@@ -127,18 +168,57 @@ class _Result:
     mesh_problem: str
     carry: CarryFit | None = None
     snapshot: int | None = None
+    variance: VarianceTermStructure | None = None
+
+
+@dataclass(frozen=True)
+class _Priced:
+    """One premium job's output, for the fit it priced (D15)."""
+
+    fit: SurfaceFit
+    view: VariancePremiumView | None
+    problem: str = ""
+
+
+@dataclass(frozen=True)
+class _History:
+    """A history load: the fit priced against it (its view carries the
+    overlay's context, as of the chain), or with no fit yet the overlay alone."""
+
+    inputs: tuple[str, str, int]
+    """``(symbol, source, lookback days)`` as loaded, for repricing later fits."""
+    priced: _Priced | None
+    context: VolContext | None = None
+
+
+_MOSTLY_EXTRAPOLATED = 0.5
+"""A K_var with more than this share from the wings is drawn hollow."""
 _VIEWS = ("Smiles", "Term structure", "Surface")
 _HEATMAP, _3D = "Heatmap", "3D"
 _SUBTITLES = {
     "Smiles": "Implied vol vs log-moneyness ln(K/F), one panel per expiry, each on its own "
               "scale",
-    "Term structure": "At-the-money vol by expiry: the SVI fit, the true surface when "
-                      "known, and history",
+    "Term structure": "ATM IV and √K_var by expiry (hollow: over half from the wings), "
+                      "the quote sum's bid–ask band, the true surface when known, and history",
     "Surface": "Fitted IV over moneyness in ATM standard deviations (k/√θ), expiries as rows",
     _3D: "Fitted IV over k/√θ and days to expiry: drag to rotate, scroll to zoom, hover "
          "for values",
 }
 _GROUP_WIDTH = 150
+_CONTEXT_HINT = ("Overlay a GARCH expected-vol curve and trailing realized vols from any source "
+                 "(ibkr reads the local store first), as of the chain. The variance premium "
+                 "cards use the same fit.")
+_GARCH_TIP = ("GARCH's expected vol over the window's own NYSE sessions, per calendar year, as "
+              "implied variance is quoted. The chart's GARCH curve is the same fit but assumes "
+              "252 sessions a year, so a window short of sessions (a holiday month) reads lower "
+              "here.")
+_PREMIUM_SUBTITLE = ("This fit's implied variance against GARCH and realized, from the "
+                     "history Compare with history loads")
+_HISTORY_SUBTITLE = (f"{HEADLINE_DAYS:g}-day implied (each stored day's first snapshot, by its "
+                     "quote sums) against the realized vol after and before it")
+_NOT_LOADED = ("No comparison yet",
+               ("Press Load history. It uses the source, symbol and lookback of Compare with "
+                "history, on the Term structure view: for SPX chains, SPY's bars."))
 
 
 class VolatilityLabPage(ScrollPage):
@@ -152,6 +232,9 @@ class VolatilityLabPage(ScrollPage):
         self._fit: SurfaceFit | None = None
         self._truth: SSVISurface | None = None
         self._context: VolContext | None = None
+        self._variance: VarianceTermStructure | None = None
+        self._premium: VariancePremiumView | None = None
+        self._premium_inputs: tuple[str, str, int] | None = None
         self._mesh: SurfaceMesh | None = None
         self._mesh_problem = ""
         self._surface3d: Surface3D | None = None
@@ -178,6 +261,9 @@ class VolatilityLabPage(ScrollPage):
                          ("carry", self._build_carry(), None),
                          ("checks", self._build_checks(), None)],
                         x=9, w=3, y=7, min_width=SIDE_PANEL_WIDTH)
+        grid.add_column([("premium", self._build_premium(), None),
+                         ("premium_history", self._build_premium_history(), 20)],
+                        x=0, w=9, y=27)
         self._grid = saved_grid(grid, state_store, f"{_STATE_KEY}.cards")
         self.body.addWidget(grid, 1)
         self._ensure_surface3d()
@@ -298,9 +384,7 @@ class VolatilityLabPage(ScrollPage):
         controls.addWidget(self._load_button)
         controls.addStretch(1)
         column.addLayout(controls)
-        self._context_label = label(
-            "Overlay a GARCH expected-vol curve and trailing realized vols from any source "
-            "(ibkr reads the local store first).", "muted")
+        self._context_label = label(_CONTEXT_HINT, "muted")
         column.addWidget(self._context_label)
         self._term_chart = CurveChart(x_axis="price", y_axis="percent", x_name="Days",
                                       x_fmt="{:,.0f}")
@@ -367,6 +451,82 @@ class VolatilityLabPage(ScrollPage):
         card.body.addWidget(self._checks)
         self._note = label("", "muted", wrap=True)
         card.body.addWidget(self._note)
+        return card
+
+    def _build_premium(self) -> Card:
+        card = self._premium_card = Card("Variance premium", _PREMIUM_SUBTITLE)
+        self._premium_load = button("Load history", icon_name="ph.download-simple",
+                                    on_click=self._load_history)
+        card.add_action(self._premium_load)
+        self._premium_stack = PageStack()
+        body = QWidget()
+        column = QVBoxLayout(body)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(SPACE_M)
+        days = f"{HEADLINE_DAYS:g}d"
+        self._premium_tiles = {
+            "kvar": MetricTile(f"√K_var · {days}"), "quotes": MetricTile(f"Quote sum · {days}"),
+            "garch": MetricTile("Against GARCH"), "trailing": MetricTile("Against realized")}
+        self._premium_tiles["kvar"].setToolTip(
+            "The fitted smile's model-free implied variance, wings included, interpolated "
+            "to the tenor in total variance")
+        self._premium_tiles["quotes"].setToolTip(
+            "The quotes alone, summed as the VIX is (CBOE's strike rules), at the tenor: the "
+            "number the history uses")
+        self._premium_tiles["garch"].setToolTip(_GARCH_TIP)
+        self._premium_tiles["trailing"].setToolTip(
+            "The quote sum less the realized vol over the same number of calendar days "
+            "before the chain")
+        column.addLayout(metric_row(list(self._premium_tiles.values())))
+        self._premium_table = DataTable(
+            [("Expiry", "left"), ("Sessions", "right"), ("√K_var", "right"),
+             ("ATM IV", "right"), ("Wings", "right"), ("GARCH", "right"),
+             ("vs GARCH", "right"), ("Realized", "right"), ("vs realized", "right")],
+            row_height=32)
+        self._premium_table.balance_columns()
+        self._premium_table.setMinimumHeight(6 * 32 + 36)
+        for col, tip in ((1, "NYSE sessions between the chain and the expiry (decision 6)"),
+                         (4, "The share of K_var from the extrapolated wings, past the quotes"),
+                         (5, _GARCH_TIP),
+                         (7, "Realized vol over as many calendar days before the chain")):
+            self._premium_table.horizontalHeaderItem(col).setToolTip(tip)
+        column.addWidget(self._premium_table)
+        self._premium_notes = label("", "muted", wrap=True)
+        column.addWidget(self._premium_notes)
+        self._premium_empty = EmptyState("ph.activity", *_NOT_LOADED)
+        self._premium_stack.addWidget(body)
+        self._premium_stack.addWidget(self._premium_empty)
+        self._premium_body = body
+        self._premium_stack.setCurrentWidget(self._premium_empty)
+        card.body.addWidget(self._premium_stack, 1)
+        return card
+
+    def _build_premium_history(self) -> Card:
+        card = self._history_card = Card("Premium history", _HISTORY_SUBTITLE)
+        self._history_stack = PageStack()
+        body = QWidget()
+        column = QVBoxLayout(body)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(SPACE_M)
+        self._history_tiles = {"mean": MetricTile("Mean premium · ex post"),
+                               "percentile": MetricTile("Today's percentile"),
+                               "windows": MetricTile("Windows")}
+        self._history_tiles["mean"].setToolTip(
+            "Averaged in variance; shown as √ of the mean implied less √ of the mean realized. "
+            "z is the mean over its Newey–West error, which runs small on a short history "
+            "(about 85% coverage at one year).")
+        self._history_tiles["percentile"].setToolTip(
+            "Today's quote sum less trailing realized, among every earlier stored day's")
+        column.addLayout(metric_row(list(self._history_tiles.values())))
+        self._history_chart = StackedTimeSeries(readout_per_panel=True)
+        self._history_chart.setMinimumHeight(260)
+        column.addWidget(self._history_chart, 1)
+        self._history_empty = EmptyState("ph.chart-line", *_NOT_LOADED)
+        self._history_stack.addWidget(body)
+        self._history_stack.addWidget(self._history_empty)
+        self._history_body = body
+        self._history_stack.setCurrentWidget(self._history_empty)
+        card.body.addWidget(self._history_stack, 1)
         return card
 
     # ----------------------------------------------------------- lifecycle
@@ -465,6 +625,7 @@ class VolatilityLabPage(ScrollPage):
         self._truth, self._fit, self._mesh = result.truth, result.fit, result.mesh
         self._mesh_problem, self._carry, self._snapshot = (result.mesh_problem, result.carry,
                                                             result.snapshot)
+        self._variance = result.variance
         for widget in self._run_buttons():
             widget.setEnabled(True)
         fit = self._fit
@@ -478,6 +639,7 @@ class VolatilityLabPage(ScrollPage):
             self._header.set_status(f"Fitted {len(fit.slices)} expiries from "
                                     f"{len(chain.quotes)} quotes")
         self._render()
+        self._reprice()
 
     def _on_error(self, exc: Exception) -> None:
         for widget in self._run_buttons():
@@ -493,27 +655,93 @@ class VolatilityLabPage(ScrollPage):
             self._header.set_status(str(exc), error=True)
             return
         source = self._source.current()
-        self._load_button.setEnabled(False)
+        inputs = (symbol, source, lookback)
+        fit, market_chain = self._fit, self._truth is None
+        for widget in (self._load_button, self._premium_load):
+            widget.setEnabled(False)
         self._header.set_status(f"Loading {symbol} from {source} and fitting GARCH…")
-        self._tasks.submit(lambda: load_vol_context(self._market, symbol, source, lookback),
-                           on_done=self._on_context, on_error=self._on_context_error)
+        if fit is not None:
+            self._show_premium_state("Pricing the variance premium…",
+                                     f"Against {symbol} bars from {source}.")
+        self._tasks.submit(
+            lambda: _history_job(self._market, self._chains, fit, market_chain, inputs),
+            on_done=self._on_context, on_error=self._on_context_error)
 
-    def _on_context(self, context: VolContext) -> None:
+    def _on_context(self, history: _History) -> None:
+        self._premium_inputs = history.inputs
+        for widget in (self._load_button, self._premium_load):
+            widget.setEnabled(True)
+        symbol, priced = history.inputs[0], history.priced
+        if priced is None:                   # loaded before any fit: as of now
+            self._show_context(history.context)
+            self._header.set_status(f"Loaded {symbol} history")
+            self._reprice()                  # a fit that landed during the load
+            return
+        if priced.fit is self._fit:
+            self._on_priced(priced)
+        else:
+            self._reprice()                  # a fit that landed during the load
+        if priced.view is None:
+            self._header.set_status(f"History load failed: {priced.problem}", error=True)
+        else:
+            self._header.set_status(f"Loaded {symbol} history as of {priced.view.as_of:%Y-%m-%d}")
+
+    def _show_context(self, context: VolContext | None, why: str = "") -> None:
+        """The overlay: GARCH's curve and the trailing vols, as of the chain once
+        a fit is priced, so the chart and the cards share one GARCH fit."""
         self._context = context
-        self._load_button.setEnabled(True)
-        p = context.garch
-        long_run = float(np.sqrt(p.unconditional_variance * TRADING_DAYS_PER_YEAR))
-        realized = " · ".join(f"{w}d {vol:.1%}" for w, vol in context.realized)
-        self._context_label.setText(
-            f"{context.symbol} · {context.source} · {context.returns_used:,} daily returns to "
-            f"{context.history_end:%Y-%m-%d} · GARCH α {p.alpha:.3f} β {p.beta:.3f}, long-run "
-            f"{long_run:.1%}" + (f" · realized {realized}" if realized else ""))
-        self._header.set_status(f"Loaded {context.symbol} history")
+        if context is None:
+            self._context_label.setText(why or _CONTEXT_HINT)
+        else:
+            p = context.garch
+            long_run = float(np.sqrt(p.unconditional_variance * TRADING_DAYS_PER_YEAR))
+            realized = " · ".join(f"{w}d {vol:.1%}" for w, vol in context.realized)
+            self._context_label.setText(
+                f"{context.symbol} · {context.source} · {context.returns_used:,} daily returns "
+                f"to {context.history_end:%Y-%m-%d} · GARCH α {p.alpha:.3f} β {p.beta:.3f}, "
+                f"long-run {long_run:.1%}" + (f" · realized {realized}" if realized else ""))
         self._render_term_structure()
 
     def _on_context_error(self, exc: Exception) -> None:
-        self._load_button.setEnabled(True)
+        for widget in (self._load_button, self._premium_load):
+            widget.setEnabled(True)
         self._header.set_status(f"History load failed: {exc}", error=True)
+        if self._premium is not None:
+            self._render_premium()          # the fit's earlier pricing still holds
+        else:
+            self._show_premium_state(*_NOT_LOADED)
+
+    def _reprice(self) -> None:
+        """Price the fit on the page against the history last loaded, if any.
+        The cards and the overlay are blank until it lands, so they never show
+        an earlier fit, or another day's GARCH."""
+        if self._premium_inputs is None or self._fit is None:
+            return
+        fit, market_chain, inputs = self._fit, self._truth is None, self._premium_inputs
+        self._premium = None
+        pricing = f"Pricing this fit against {inputs[0]} bars from {inputs[1]}…"
+        self._show_premium_state("Pricing the variance premium…", pricing)
+        self._show_context(None, pricing)
+        self._tasks.submit(
+            lambda: _premium_job(self._market, self._chains, fit, market_chain, inputs),
+            on_done=self._on_priced, on_error=self._on_premium_error)
+
+    def _on_priced(self, priced: _Priced) -> None:
+        if priced.fit is not self._fit:
+            return           # a fit since replaced; its own job is queued behind this one
+        self._premium = view = priced.view
+        if view is None:
+            self._show_premium_state("No comparison", priced.problem)
+            self._show_context(None, f"No comparison: {priced.problem}")
+            return
+        self._show_context(view.context, next(
+            (n for n in view.notes if n.startswith("No GARCH")), ""))
+        self._render_premium()
+
+    def _on_premium_error(self, exc: Exception) -> None:
+        self._show_premium_state("No comparison", f"Pricing failed: {exc}")
+        self._show_context(None, f"Pricing failed: {exc}")
+        _logger.error("variance premium failed: %s", exc)
 
     # --------------------------------------------------------------- render
     def _on_view(self, view: str) -> None:
@@ -602,13 +830,152 @@ class VolatilityLabPage(ScrollPage):
                                 context.garch_vol(grid), PALETTE.ramp[2], 1.6, fmt="{:.2%}"))
         curves.append(Curve("ATM IV (SVI fit)", days, atm, PALETTE.series, 1.8, fmt="{:.2%}",
                             marker="o"))
+        band = None
+        if self._variance is not None:
+            expiries = self._variance.expiries
+            curves.append(Curve(
+                "√K_var (fit)", np.array([e.dte for e in expiries], dtype=float),
+                np.array([e.smile.vol for e in expiries]), PALETTE.series_2, 1.6,
+                fmt="{:.2%}", marker="o",
+                hollow=tuple(e.smile.extrapolated_share > _MOSTLY_EXTRAPOLATED
+                             for e in expiries)))
+            quoted = [e for e in expiries if e.quotes is not None]
+            if len(quoted) >= 2:
+                band = (np.array([e.dte for e in quoted], dtype=float),
+                        np.array([e.quotes.vol_band[0] for e in quoted]),
+                        np.array([e.quotes.vol_band[1] for e in quoted]), "Quote sum bid–ask")
         if context is not None and context.realized:
             curves.append(Curve(
                 "Realized (trailing)",
                 np.array([VolContext.calendar_days(w) for w, _ in context.realized]),
                 np.array([vol for _, vol in context.realized]), PALETTE.ramp[3], 1.0,
                 fmt="{:.2%}", marker="d", line=False, readout=False))
-        self._term_chart.set_curves(curves)
+        self._term_chart.set_curves(curves, band=band, band_fmt="{:.2%}",
+                                    band_color=PALETTE.series_2)
+
+    def _show_premium_state(self, title: str, body: str) -> None:
+        """Both premium cards blank, saying why (not loaded, pricing, a problem)."""
+        for empty, stack in ((self._premium_empty, self._premium_stack),
+                             (self._history_empty, self._history_stack)):
+            empty.set_text(title, body)
+            stack.setCurrentWidget(empty)
+        self._premium_card.set_subtitle(_PREMIUM_SUBTITLE)
+        self._history_card.set_subtitle(_HISTORY_SUBTITLE)
+
+    def _render_premium(self) -> None:
+        view = self._premium
+        tiles = self._premium_tiles
+        days = f"{view.tenor_days:g}d"
+        self._premium_card.set_subtitle(
+            f"{view.symbol} as of {view.as_of:%Y-%m-%d %H:%M} against {view.realized_symbol} "
+            f"bars from {view.source}")
+        tenor, quotes = view.tenor, view.quote_tenor
+        if tenor is not None:
+            tiles["kvar"].set_value(f"{tenor.vol:.1%}", hint=(
+                f"ATM {tenor.smile.atm_vol:.1%} · wings {tenor.smile.extrapolated_share:.0%}"))
+        else:
+            tiles["kvar"].set_value("—", hint=f"no two fitted expiries bracket {days}")
+        if quotes is not None:
+            low, high = quotes.vol_band
+            tiles["quotes"].set_value(f"{quotes.vol:.1%}", hint=f"bid–ask {low:.1%}–{high:.1%}")
+        else:
+            tiles["quotes"].set_value("—", hint=f"no two quote sums bracket {days}")
+        garch, trailing = view.garch_tenor, view.trailing
+        tiles["garch"].set_value(_points(garch), hint=(
+            f"GARCH {garch.against_vol:.1%}, {view.tenor_trading_days} sessions" if garch
+            else "no GARCH comparison"))
+        tiles["trailing"].set_value(_points(trailing), hint=(
+            f"realized {trailing.against_vol:.1%}, {days} before" if trailing
+            else "no trailing window"))
+        self._premium_table.set_rows([
+            [f"{e.dte:.0f}d", (str(e.trading_days), PALETTE.text_secondary),
+             f"{e.implied.vol:.1%}", f"{e.implied.atm_vol:.1%}",
+             (f"{e.implied.extrapolated_share:.0%}",
+              PALETTE.warning if e.implied.extrapolated_share > _MOSTLY_EXTRAPOLATED
+              else PALETTE.text_secondary),
+             f"{e.garch.against_vol:.1%}" if e.garch else "—", _points(e.garch),
+             f"{e.trailing.against_vol:.1%}" if e.trailing else "—", _points(e.trailing)]
+            for e in view.expiries])
+        self._premium_notes.setText(" ".join(view.notes))
+        self._premium_notes.setVisible(bool(view.notes))
+        self._premium_stack.setCurrentWidget(self._premium_body)
+        self._render_history()
+
+    def _render_history(self) -> None:
+        view = self._premium
+        ex_post, trailing = view.ex_post, view.trailing_history
+        days = sorted({p.as_of.date() for p in (*ex_post.points, *trailing.points)})
+        if len(days) < 2:
+            self._history_empty.set_text("No history yet", self._no_history_reason(view))
+            self._history_stack.setCurrentWidget(self._history_empty)
+            self._history_card.set_subtitle(_HISTORY_SUBTITLE)
+            return
+        self._history_card.set_subtitle(
+            f"{view.symbol}: {view.tenor_days:g}-day implied on {len(days)} stored days, by "
+            f"their quote sums, against {view.realized_symbol}'s realized vol after and before")
+        summary = ex_post.summary()
+        tiles = self._history_tiles
+        if summary is not None:
+            z = summary.mean / summary.error if summary.error > 0 else float("nan")
+            tiles["mean"].set_value(
+                f"{summary.vol_points * 100:+.1f} pts",
+                hint=f"z {z:+.1f} · {summary.windows} windows, {summary.independent} "
+                     "independent")
+        else:
+            tiles["mean"].set_value("—", hint=(
+                f"from {MIN_INDEPENDENT_WINDOWS} windows that don't overlap"))
+        earlier = sum(p.as_of.date() < view.as_of.date() for p in trailing.points)
+        if view.trailing_percentile is not None:
+            tiles["percentile"].set_value(_ordinal(round(100 * view.trailing_percentile)),
+                                          hint=f"against realized, of {earlier} earlier days")
+        else:
+            tiles["percentile"].set_value("—", hint=(
+                f"{earlier} earlier days; ranks from {MIN_PERCENTILE_HISTORY}"))
+        tiles["windows"].set_value(
+            f"{len(ex_post.points)} complete",
+            hint=f"{ex_post.pending} pending · {len(ex_post.excluded)} left out")
+        tiles["windows"].setToolTip("\n".join(
+            f"{e.as_of:%Y-%m-%d}: {e.reason}" for e in ex_post.excluded[:20]))
+
+        after = {p.as_of.date(): p.premium for p in ex_post.points}
+        before = {p.as_of.date(): p.premium for p in trailing.points}
+        implied = {d: (before.get(d) or after[d]).implied_vol for d in days}
+
+        def series(premiums: dict, value) -> np.ndarray:
+            return np.array([value(premiums[d]) if d in premiums else np.nan for d in days])
+
+        def vol_points(premium: Premium) -> float:
+            return 100 * premium.vol_points
+
+        self._history_chart.set_panels(pd.DatetimeIndex(days), [
+            Panel(f"{view.tenor_days:g}-day vol", [
+                Series("Implied (quote sum)", np.array([implied[d] for d in days]),
+                       PALETTE.series_2, fmt="{:.1%}"),
+                Series("Realized after", series(after, lambda p: p.against_vol),
+                       PALETTE.series, fmt="{:.1%}"),
+                Series("Realized before", series(before, lambda p: p.against_vol),
+                       PALETTE.ramp[2], 1.2, dashed=True, fmt="{:.1%}")],
+                  axis="percent", stretch=3),
+            Panel("Premium, vol points", [
+                Series("Ex post", series(after, vol_points), PALETTE.series, fmt="{:+.1f}"),
+                Series("Against trailing", series(before, vol_points), PALETTE.ramp[2], 1.2,
+                       dashed=True, fmt="{:+.1f}")],
+                  stretch=2, zero_line=True,
+                  references=([(f"mean {100 * summary.vol_points:+.1f}",
+                                100 * summary.vol_points)] if summary is not None else ())),
+        ])
+        self._history_stack.setCurrentWidget(self._history_body)
+
+    def _no_history_reason(self, view: VariancePremiumView) -> str:
+        if self._truth is not None:
+            return ("A synthetic chain has no history. A market chain's is its stored "
+                    "snapshots, one a day (D63).")
+        if view.days_with_snapshots == 0:
+            return next((n for n in view.notes if n.startswith("No stored")),
+                        f"No stored {view.symbol} chains.")
+        return (f"{view.days_with_snapshots} stored day(s) of {view.symbol} so far. The chart "
+                "needs two, and each day's window completes "
+                f"{view.tenor_days:g} calendar days later.")
 
     def _render_diagnostics(self) -> None:
         fit, truth = self._fit, self._truth
@@ -680,7 +1047,7 @@ def _fit_job(truth: SSVISurface, spec: SyntheticChainSpec, method: str) -> _Resu
     """Worker thread: quote, fit, and mesh the surface (or say why it can't)."""
     fit = fit_surface(synthetic_chain(truth, spec), method=method)
     mesh, problem = _mesh(fit, truth)
-    return _Result(truth, fit, mesh, problem)
+    return _Result(truth, fit, mesh, problem, variance=_variance(fit))
 
 
 def _refit_job(chain, truth: SSVISurface | None, method: str, carry: CarryFit | None,
@@ -688,7 +1055,7 @@ def _refit_job(chain, truth: SSVISurface | None, method: str, carry: CarryFit | 
     """Worker thread: the same chain (carry included), another fit method."""
     fit = fit_surface(chain, method=method)
     mesh, problem = _mesh(fit, truth)
-    return _Result(truth, fit, mesh, problem, carry, snapshot)
+    return _Result(truth, fit, mesh, problem, carry, snapshot, _variance(fit))
 
 
 def _market_job(chains: ChainService, symbol: str, source: str,
@@ -699,7 +1066,47 @@ def _market_job(chains: ChainService, symbol: str, source: str,
     carry = implied_carry(chain)
     fit = fit_surface(carry.chain, method=method)
     mesh, problem = _mesh(fit, None)
-    return _Result(None, fit, mesh, problem, carry, snapshot)
+    return _Result(None, fit, mesh, problem, carry, snapshot, _variance(fit))
+
+
+def _variance(fit: SurfaceFit) -> VarianceTermStructure | None:
+    """The fit's model-free implied variance, or None with no fitted expiry."""
+    return implied_variance(fit) if fit.slices else None
+
+
+def _premium_job(market: MarketService, chains: ChainService, fit: SurfaceFit,
+                 market_chain: bool, inputs: tuple[str, str, int]) -> _Priced:
+    """Worker thread: this fit's variance against the history (``inputs``).
+    A market chain's stored snapshots are its history; a synthetic one has none."""
+    symbol, source, lookback = inputs
+    if not fit.slices:
+        return _Priced(fit, None, "No fitted expiries to price.")
+    try:
+        view = load_variance_premium(market, chains, fit, source, symbol,
+                                     lookback_days=lookback, history=market_chain)
+    except ValueError as exc:
+        return _Priced(fit, None, str(exc))
+    return _Priced(fit, view)
+
+
+def _history_job(market: MarketService, chains: ChainService, fit: SurfaceFit | None,
+                 market_chain: bool, inputs: tuple[str, str, int]) -> _History:
+    """Worker thread: the fit priced against the history, which carries the
+    overlay's GARCH as of the chain; with no fit yet, the overlay as of now."""
+    if fit is None:
+        symbol, source, lookback = inputs
+        return _History(inputs, None, load_vol_context(market, symbol, source, lookback))
+    return _History(inputs, _premium_job(market, chains, fit, market_chain, inputs))
+
+
+def _points(premium: Premium | None) -> str:
+    """A premium in vol points, for reading (its average is in variance)."""
+    return "—" if premium is None else f"{100 * premium.vol_points:+.1f} pts"
+
+
+def _ordinal(n: int) -> str:
+    suffix = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
 
 
 def _mesh(fit: SurfaceFit, truth: SSVISurface | None) -> tuple[SurfaceMesh | None, str]:

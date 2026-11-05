@@ -21,17 +21,24 @@ days. ``garch_vol`` draws a smooth curve with ``n = calendar_days ×
 
 The variance risk premium (VARIANCE I2, ``load_variance_premium``)
 ------------------------------------------------------------------
-From the stored chains of one underlying and the daily bars of another
-(SPX's chains with SPY's bars, decision 3), all on the worker thread:
+From a fitted chain, the stored chains of its underlying and the daily bars
+of another symbol (SPX's chains with SPY's bars, decision 3), all on the
+worker thread:
 
-* **Today's**, from the newest snapshot: each expiry's fitted K_var
-  (``models/implied_variance``) against GARCH's expectation over its window,
-  and the 30-day tenor against GARCH and against trailing realized.
-* **The history**, one snapshot per trading day (the day's first, which the
-  daily collector takes after the open): each one's 30-day implied variance
-  against the realized variance that followed (ex post), and against the
-  trailing realized. The mean ex-post premium carries its Newey–West error.
-  Today's trailing premium is placed among the earlier ones.
+* **Today's**, from the fit it's given: the one on the Volatility Lab, so
+  the card describes the chain the page draws (D15). Each expiry's fitted
+  K_var (``models/implied_variance``) against GARCH's expectation over its
+  window and against the realized variance of the same length before it.
+  The 30-day tenor against GARCH, and its quote sum against trailing
+  realized. GARCH is fitted on the lookback's bars up to the chain's day,
+  and returned as a ``VolContext``, so the lab's overlay draws the same fit
+  the card reads.
+* **The history**, one stored snapshot per trading day (the day's first,
+  which the daily collector takes after the open): each one's 30-day
+  implied variance against the realized variance that followed (ex post),
+  and against the trailing realized. The mean ex-post premium carries its
+  Newey–West error. Today's trailing premium is placed among the earlier
+  days'. A chain with no stored snapshots (a synthetic one) has no history.
 
 **The history is the quote sum.** Each stored day is valued with the quote
 sums alone (``quote_tenor``, the VIX's own number), not a fitted smile. A
@@ -43,7 +50,7 @@ between the two is visible.
 
 **No look-ahead.** Only completed sessions count: a bar dated today is
 dropped, since the session may still be open. GARCH sees only the bars up
-to the newest snapshot's day. A window whose last bar doesn't exist yet is
+to the fitted chain's day. A window whose last bar doesn't exist yet is
 pending, never averaged. Split-sized gaps (D57) are named, and their
 windows left out.
 """
@@ -55,6 +62,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
 import numpy as np
+import pandas as pd
 
 from quant_hub.data.splits import SplitGap
 from quant_hub.data.stats import TRADING_DAYS_PER_YEAR, annualized_volatility
@@ -83,9 +91,10 @@ from quant_hub.models.variance_premium import (
     trailing_series,
     window_after,
 )
-from quant_hub.models.vol_surface import fit_surface
+from quant_hub.models.vol_surface import SurfaceFit
 from quant_hub.services.market_service import MarketService
 from quant_hub.services.option_chains import ChainService
+from quant_hub.storage.chain_store import ChainSnapshotSummary
 
 REALIZED_WINDOWS = (21, 63, 126, 252)
 """Trailing windows in trading days (~1, 3, 6, 12 months)."""
@@ -137,7 +146,11 @@ def load_vol_context(
     end = now or datetime.now()
     history = market.get_return_history(symbol, end - timedelta(days=lookback_days), end,
                                         source=source)               # return math (D38)
-    returns = history.log_returns()
+    return _context(history.symbol, history.source, history.log_returns(), history.end)
+
+
+def _context(symbol: str, source: str, returns: pd.Series, end: datetime) -> VolContext:
+    """GARCH and the trailing realized vols from daily log returns."""
     parameters, h_next = _garch(returns.to_numpy())
     realized = tuple(
         (window, annualized_volatility(returns.iloc[-window:]))
@@ -145,9 +158,8 @@ def load_vol_context(
         if len(returns) >= window
     )
     return VolContext(
-        symbol=history.symbol, source=history.source, history_end=history.end,
-        returns_used=len(returns), realized=realized, garch=parameters,
-        next_variance=h_next,
+        symbol=symbol, source=source, history_end=end, returns_used=len(returns),
+        realized=realized, garch=parameters, next_variance=h_next,
     )
 
 
@@ -155,83 +167,104 @@ def load_vol_context(
 
 @dataclass(frozen=True)
 class ExpiryPremium:
-    """One expiry of the newest snapshot: its fitted K_var against GARCH."""
+    """One fitted expiry: its K_var against GARCH, and against the realized
+    variance of the same length before the chain (``None`` when there's no
+    comparison: GARCH failed, or that window lacks a bar)."""
 
     dte: float
     implied: SmileVariance
-    garch: Premium
+    garch: Premium | None
+    trailing: Premium | None
     trading_days: int
 
 
 @dataclass(frozen=True)
 class VariancePremiumView:
-    """Everything the variance-premium card shows (module docstring)."""
+    """Everything the variance-premium cards show (module docstring)."""
 
     symbol: str
     realized_symbol: str
     source: str
     as_of: datetime
     tenor_days: float
+    tenor_trading_days: int
+    """NYSE sessions in the tenor's window after the chain (decision 6)."""
     days_with_snapshots: int
     expiries: tuple[ExpiryPremium, ...]
     tenor: TenorVariance | None
     """The fitted K_var at the tenor; ``None`` when no two expiries bracket it."""
     quote_tenor: QuoteTenor | None
-    """The quote sums alone at the tenor, for today's snapshot."""
+    """The quote sums alone at the tenor, for the fitted chain."""
     garch_tenor: Premium | None
     trailing: Premium | None
-    """Today's quote-sum tenor against trailing realized: the history's measure."""
+    """The quote-sum tenor against trailing realized: the history's measure."""
     trailing_percentile: float | None
     ex_post: PremiumSeries
     trailing_history: PremiumSeries
     split_gaps: tuple[SplitGap, ...]
     notes: tuple[str, ...]
+    context: VolContext | None = None
+    """GARCH and trailing realized as of the chain: the fit behind the GARCH
+    columns, for the term structure to draw (``None`` when GARCH failed)."""
 
 
 def load_variance_premium(
-    market: MarketService, chains: ChainService, symbol: str, source: str,
-    realized_symbol: str | None = None, tenor_days: float = HEADLINE_DAYS,
-    lookback_days: int = 1825, now: datetime | None = None,
+    market: MarketService, chains: ChainService, fit: SurfaceFit, source: str,
+    realized_symbol: str, tenor_days: float = HEADLINE_DAYS, lookback_days: int = 1825,
+    now: datetime | None = None, history: bool = True,
 ) -> VariancePremiumView:
-    """Blocking (snapshots, history, a fit and GARCH): run on the TaskRunner."""
-    symbol = symbol.strip().upper()
-    realized = (realized_symbol or symbol).strip().upper()
-    if not symbol:
-        raise ValueError("symbol is required")
+    """Blocking (snapshots, history and GARCH): run on the TaskRunner.
+
+    ``fit`` is today's surface: its chain is the one priced (carry implied,
+    for a market chain), and its symbol names the stored history. Bars come
+    from ``realized_symbol`` at ``source``. ``history=False`` skips the
+    stored snapshots (a synthetic chain has none)."""
+    chain = fit.chain
+    symbol, realized = chain.symbol.upper(), realized_symbol.strip().upper()
+    if not realized:
+        raise ValueError("a symbol for the realized side is required")
+    if lookback_days < 60:
+        raise ValueError("lookback must be at least 60 days for a GARCH fit")
     end = now or datetime.now()
-    summaries = sorted(chains.snapshots(symbol), key=lambda s: (s.as_of, s.id))
-    if not summaries:
-        raise ValueError(f"no stored {symbol} chains yet: fetch one on the Volatility Lab, "
-                         f"or add {symbol} to [collect] chains")
+    as_of, day0 = chain.as_of, chain.as_of.date()
+    term = implied_variance(fit)
     notes: list[str] = []
 
-    # Today's: the newest snapshot, fitted.
-    newest = summaries[-1]
-    term = implied_variance(fit_surface(implied_carry(chains.load(newest.id)).chain))
-
-    # The history: each trading day's first snapshot, valued by its quote sums.
-    first_of_day: dict[date, int] = {}
+    # The history: each trading day's first stored snapshot, valued by its
+    # quote sums. Today's is the fitted chain's own.
+    summaries = sorted(chains.snapshots(symbol) if history else [],
+                       key=lambda s: (s.as_of, s.id))
+    first_of_day: dict[date, ChainSnapshotSummary] = {}
     for s in summaries:
-        first_of_day.setdefault(s.as_of.date(), s.id)
-    by_id = {s.id: s for s in summaries}
+        first_of_day.setdefault(s.as_of.date(), s)
     points: list[ImpliedPoint] = []
     unbracketed = 0
-    today_quotes: QuoteTenor | None = None
-    for day, snapshot_id in sorted(first_of_day.items()):
-        quoted = quote_tenor(implied_carry(chains.load(snapshot_id)).chain, tenor_days)
+    for s in first_of_day.values():
+        quoted = quote_tenor(implied_carry(chains.load(s.id)).chain, tenor_days)
         if quoted is None or not quoted.mid > 0:
             unbracketed += 1
             continue
-        points.append(ImpliedPoint(by_id[snapshot_id].as_of, tenor_days, quoted.mid))
-        if day == newest.as_of.date():
-            today_quotes = quoted
+        points.append(ImpliedPoint(s.as_of, tenor_days, quoted.mid))
+    if history and not summaries:
+        notes.append(f"No stored {symbol} chains, so no history: fetch one a day on the "
+                     f"Volatility Lab, or add {symbol} to [collect] chains.")
     if unbracketed:
         notes.append(f"{unbracketed} stored day(s) had no two expiries with a quote sum "
                      f"around {tenor_days:g} days, and are left out.")
+    today_quotes = quote_tenor(chain, tenor_days)
+    if today_quotes is not None and not today_quotes.mid > 0:
+        today_quotes = None
+    tenor = term.tenor(tenor_days)
+    if tenor is None:
+        notes.append(f"No two fitted expiries bracket {tenor_days:g} days.")
 
-    # Bars: completed sessions only, from before the first window to today.
-    start = min(end - timedelta(days=lookback_days),
-                summaries[0].as_of - timedelta(days=tenor_days + 10))
+    # Bars: completed sessions only, from before the earliest window (the
+    # GARCH lookback, the longest expiry's trailing window, the history's
+    # first) to today.
+    earliest = min(s.as_of for s in summaries) if summaries else as_of
+    longest = max(e.dte for e in term.expiries)
+    start = min(as_of - timedelta(days=lookback_days), as_of - timedelta(days=longest + 10),
+                earliest - timedelta(days=tenor_days + 10))
     history = market.get_return_history(realized, start, end, source=source)
     if history.offline_reason:
         notes.append(f"{realized} bars are stored ones only: {history.offline_reason}")
@@ -242,36 +275,45 @@ def load_variance_premium(
         notes.append(f"{realized} has {len(gaps)} split-sized gap(s) (D57); windows over them "
                      "are left out.")
 
-    # GARCH, on the bars up to the newest snapshot's day.
-    day0 = newest.as_of.date()
-    seen = closes[np.array([ts.date() <= day0 for ts in closes.index])]
-    expiries: list[ExpiryPremium] = []
-    garch_tenor: Premium | None = None
-    returns = np.log(seen.to_numpy()[1:] / seen.to_numpy()[:-1])
+    # GARCH and the trailing vols, on the lookback's bars up to the chain's day.
+    first = (as_of - timedelta(days=lookback_days)).date()
+    seen = closes[np.array([first <= ts.date() <= day0 for ts in closes.index])]
+    context: VolContext | None = None
+    garch: tuple[GARCH11Parameters, float, date] | None = None
     try:
-        parameters, h_next = _garch(returns)
+        if len(seen) < 3:
+            raise ValueError(f"{len(seen)} {realized} bar(s) up to {day0:%Y-%m-%d}")
+        returns = pd.Series(np.log(seen.to_numpy()[1:] / seen.to_numpy()[:-1]),
+                            index=seen.index[1:])
+        context = _context(realized, history.source, returns, seen.index[-1].to_pydatetime())
+        garch = (context.garch, context.next_variance, seen.index[-1].date())
     except ValueError as exc:
         notes.append(f"No GARCH comparison: {exc}.")
-    else:
-        last_bar = seen.index[-1].date()
-        for e in term.expiries:
-            point = ImpliedPoint(newest.as_of, e.dte, e.total)
-            expiries.append(ExpiryPremium(
-                e.dte, e.smile, against_garch(point, parameters, h_next, last_bar),
-                len(window_after(day0, e.dte))))
-        tenor = term.tenor(tenor_days)
-        if tenor is not None:
-            garch_tenor = against_garch(ImpliedPoint(newest.as_of, tenor_days, tenor.smile.total),
-                                        parameters, h_next, last_bar)
+
+    def against(days: float, total: float) -> tuple[Premium | None, Premium | None]:
+        point = ImpliedPoint(as_of, days, total)
+        trailing = trailing_series([point], closes, gap_days)
+        return (against_garch(point, *garch) if garch is not None else None,
+                trailing.points[0].premium if trailing.points else None)
+
+    expiries = tuple(ExpiryPremium(e.dte, e.smile, *against(e.dte, e.total),
+                                   len(window_after(day0, e.dte)))
+                     for e in term.expiries)
+    if any(e.trailing is None for e in expiries):
+        short = ", ".join(f"{e.dte:.0f}d" for e in expiries if e.trailing is None)
+        notes.append(f"No trailing realized for {short}: the window lacks {realized} bars "
+                     "or holds a split-sized gap.")
+    garch_tenor = against(tenor_days, tenor.smile.total)[0] if tenor is not None else None
+    today = against(tenor_days, today_quotes.mid)[1] if today_quotes is not None else None
 
     ex_post = ex_post_series(points, closes, gap_days)
-    trailing = trailing_series(points, closes, gap_days)
-    today = next((p for p in trailing.points if p.as_of.date() == day0), None)
-    earlier = [p.premium.variance for p in trailing.points if p.as_of.date() < day0]
+    trailing_history = trailing_series(points, closes, gap_days)
+    earlier = [p.premium.variance for p in trailing_history.points if p.as_of.date() < day0]
     return VariancePremiumView(
-        symbol=symbol, realized_symbol=realized, source=history.source, as_of=newest.as_of,
-        tenor_days=tenor_days, days_with_snapshots=len(first_of_day),
-        expiries=tuple(expiries), tenor=term.tenor(tenor_days), quote_tenor=today_quotes,
-        garch_tenor=garch_tenor, trailing=today.premium if today else None,
-        trailing_percentile=percentile(today.premium.variance, earlier) if today else None,
-        ex_post=ex_post, trailing_history=trailing, split_gaps=gaps, notes=tuple(notes))
+        symbol=symbol, realized_symbol=realized, source=history.source, as_of=as_of,
+        tenor_days=tenor_days, tenor_trading_days=len(window_after(day0, tenor_days)),
+        days_with_snapshots=len(first_of_day), expiries=expiries,
+        tenor=tenor, quote_tenor=today_quotes, garch_tenor=garch_tenor, trailing=today,
+        trailing_percentile=percentile(today.variance, earlier) if today else None,
+        ex_post=ex_post, trailing_history=trailing_history, split_gaps=gaps,
+        notes=tuple(notes), context=context)
