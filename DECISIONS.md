@@ -2485,3 +2485,307 @@ Those are the market's own total-return falls.
 
 **Checked** with a screenshot of the Review page: the tests' made-up book,
 with your stored French series.
+
+## D68 — HEDGE U1: the hedge math (2026-11-04)
+
+D59 put HEDGE U1 after ALLOCATION A1–A2. U1 is the hedge math in
+`models/hedge.py`: pure and tested, with no page yet (that's U4) and no
+VIX history yet (that's U2). It has every candidate HEDGE_PLAN lists and
+the yardstick that compares them.
+
+**Rule and linear candidates (§4).** Each gives a hedged daily return
+series from the book's:
+- **Cash at weight w:** (1 − w)·R_B + w·r.
+- **Another stream at weight w:** a Treasury fund, or your trend fund.
+- **Scaling the market exposure:** R_H = r + (1 − h(1 − e))·(R_B − r).
+  The exposure e ∈ [0, 1] is decided at close t and held to t + 1, and
+  the size is h ∈ [0, 1]. h = 0 is the book exactly. Before a rule has
+  its history, e = 1, so it doesn't hedge.
+  - **Trend on the market:** above its 200-day average, or a positive
+    12-month excess return (time-series momentum, Moskowitz–Ooi–
+    Pedersen 2012).
+  - **Vol targeting:** e = min(1, σ*/σ̂), from 21-day realized vol, or
+    GARCH(1,1) (Moreira–Muir 2017). It never levers. The GARCH
+    parameters are fitted on the whole series, a stated look-ahead;
+    realized vol has none.
+
+**Rolled option programs (§2–3).**
+- **The programs:** a put at K = m·S, a put spread (less a put at m₂·S),
+  or a zero-cost collar. The collar's call strike solves C(K_c) = P(K)
+  by bisection above the forward; the call's price falls in its strike.
+- **Rolls:** at expiry, or every n trading days. Each roll buys
+  q = h·b·W/S units on the hedged book's value.
+- **Self-financing:** premiums come out of the book, and payoffs go back
+  in. Each trade pays a half-spread c of each leg's price, and expiry
+  settles at intrinsic with no spread.
+- **Marks:** Black–Scholes, European, at σ = VIX·ρ·s(k, T), with k the
+  log-moneyness to the forward. The smile s is a function U3 will build
+  from today's surface; the flat smile runs beside it (decision 5). A
+  position keeps the rate and dividend yield of the day it was bought, a
+  negligible approximation over 1 to 12 months.
+- **Granularity:** whole contracts round n = h·b·V/(100·S). The ratio
+  they give is h_eff. On a $50k book half hedged at β 0.9, with the index
+  at $500, that's 0.45 contracts, which rounds to none.
+- This is Coval–Shumway's (2001) measurement of put returns, on a book.
+
+**The yardstick (§5):**
+- **Crash windows by rule:** every spell in which the market's
+  total-return level fell at least 15% from a peak. On French's century
+  that's 20 windows, from 1929–32 to 2025.
+- **Cost:** 252 × the mean of R_B − R_H on the days outside the windows,
+  with its Newey–West error.
+- **The crash table:** the book's return over each window, unhedged and
+  hedged, and what the hedge paid. Its mean is U4's "saved" axis.
+- **Δ log growth:** 252 × the mean of the paired daily log difference,
+  with its Newey–West error. Pairing cancels the shared market noise.
+- **Drawdown:** the deepest fall and the worst 252 days, hedged and not.
+- **Convexity:** Henriksson–Merton up and down betas of the hedge's
+  monthly return on the market's. Henriksson–Merton (1981) waits for its
+  verification in the canon.
+
+**First numbers** on French's 1926–2026 series, for a book at β 0.9.
+These are first looks for the lab, not a recommendation: selection
+across many candidates flatters the best one.
+
+| Hedge | Δ log growth | Deepest fall | β↑ / β↓ |
+|---|---|---|---|
+| None | | 80% | |
+| Cash 30% | −1.5% ± 0.5% | 67% | −0.28 / −0.26, linear |
+| 200-day trend | +1.0% ± 1.1% | 31% | −0.35 / −0.59, convex |
+| 10% OTM 3-month put* | +0.1% ± 0.7% | 51% | −0.10 / −0.34, convex |
+| 10% OTM 3-month collar* | +0.7% ± 0.8% | 44% | −0.33 / −0.32, linear |
+
+\* With a stand-in for VIX (21-day realized vol × 1.15). It carries
+little of the real variance premium, so the puts come out near break-even.
+Real VIX history (U2) will price them properly.
+
+**Canon:** Moreira–Muir (2017), Moskowitz–Ooi–Pedersen (2012) and
+Coval–Shumway (2001) now live in `models/hedge.py`.
+
+**Tests (33):**
+- rule candidates:
+  - h = 0 is the book exactly; the timing is t → t + 1
+  - the mixes are exact
+  - the trend rules go out in planted slides, and wait out their warm-up
+  - vol targeting tracks the vol and never levers, for both estimators
+- programs:
+  - Black–Scholes marks on a single position, to 1e-12
+  - settlement at intrinsic in a planted slide, spreads included
+  - the plan's worked premium (0.72 per 100 for a 10% OTM 3-month put at
+    21%)
+  - the collar's strike against parity (at the forward, C = P)
+  - crash losses falling as h grows
+  - a spread costing and paying less than its put
+  - Δg negative for dear puts and positive for cheap ones in a jumpy
+    world
+  - whole contracts and h_eff
+- yardstick:
+  - crash windows by rule
+  - cost on calm days only
+  - Δg against its closed form, and Newey–West against the true error
+    for iid and AR(1) differences
+  - cash linear, trend convex
+  - the worst year
+- refusals throughout
+
+## D69 — HEDGE U2: FRED, and the index's history from IBKR (2026-11-04)
+
+U1's option programs mark their puts from VIX history and roll them on
+the index. U2 brings both in, along with the bill rates. It also lands
+the data batch's last provider, FRED (D59, D60).
+
+**FRED** (`providers/fred.py`, stdlib only).
+- **Terms** (D60): a free key, the credit line in the app, and
+  third-party series for personal use.
+  - The key goes in `settings.toml` as `[fred] key`: 32 lower-case
+    letters and digits, checked when the file is read. It's never
+    committed, logged, or put in an error message. A refused request
+    reports FRED's own reason, never the URL that carries the key.
+  - Every FRED series' citation starts with the credit line, so the
+    Data page's preview shows it.
+  - VIXCLS's adds Cboe's copyright, for personal use.
+- **The series:**
+  - `VIXCLS`: the VIX at the close, from 1990
+  - `DTB3`: the 3-month bill, discount basis, from 1954
+  - `DGS3MO`: the 3-month Treasury at constant maturity, from 1981.
+    REGIME.md's cash-rate row names it.
+- **Stored as published:** percent, in the D60 series store, one SHA-256
+  per reply. FRED's "." days are left out, never filled. The models
+  convert the units.
+- **The refresh:** `ExternalDataService.refresh_fred`. A series is
+  fetched when its copy is 20 hours old, or always when forced. Each
+  series fails on its own, keeping its stored copy. Without a key, the
+  refresh says how to set one.
+- **Where it shows:** Ctrl+K **Fetch FRED series**, and a **Fetch FRED**
+  button on the Data page. Without a key, that card's note says how to
+  get one.
+
+**The index from IBKR.**
+- **Index contracts:** the history source now asks for a listed index
+  (SPX, VIX) as an index contract, as the chain code already did
+  (`option_chain.underlying_spec`, which gained VIX).
+- **Bases and volume:** an index's level has no dividends or splits, so
+  both price bases read TRADES. It has no volume: IBKR's −1 stays
+  negative, and the bar check reads it as missing, as it always has.
+- **The depth check:** Ctrl+K **Sync index history from IBKR**, offered
+  only with IBKR on. It asks for SPX and VIX daily from 1980, one task
+  each, through the cached source, which stores the bars. The log says
+  the first day IBKR served, which is HEDGE decision 4's depth.
+
+**Not checked live:** FRED needs your key, and IBKR needs TWS. Until
+then, U1's programs can run on French's total-return level with no
+dividend, a close stand-in for the price index's options.
+
+**Tests:**
+- FRED's JSON shape: "." days left out, the credit line in every
+  citation, and each unreadable reply naming its fault
+- the key: checked, never in an error, FRED's own reason reported
+- the refresh: stale or forced, a failure keeping its copy, no key
+- the `[fred]` setting
+- SPX and VIX as index contracts with TRADES, and SPY still a stock
+- both Ctrl+K commands on the worker
+- the sync command absent with IBKR off
+- the Data page's FRED note
+
+## D70 — HEDGE U3: the hedge lab's service (2026-11-04)
+
+`services/hedge.py` feeds U1's math with stored data and runs every
+candidate on the book. It's offline only: nothing is fetched behind the
+owner's back (V0). Whatever is missing is named, with how to get it. U4's
+page will call it on the TaskRunner.
+
+**Two books** (HEDGE §1):
+- **The β proxy** (`proxy_book`): R_B = r + b·(R_m − r) on French's
+  market and bills since 1926. It holds every crash, and it's a floor.
+- **Today's mix** (`mix_book`): Portfolio's replay, P&L over today's
+  equity with options repriced in full, plus the cash line's interest at
+  the cash rate. It's exact, but it covers only the lookback. With h = 0
+  a hedge leaves it unchanged, and the tests hold the replay to 1e-15.
+- **β** is W2's regression β for the portfolio row, or the risk model's
+  without regressions.
+
+**A change to decision 4, approved 2026-11-04.** Decision 4 chose IBKR's
+index for the option candidates, because French's series seemed to have
+no price levels to strike against. Its total-return level is one.
+- A put on it with no dividend has the economics of a put on the price
+  index with its dividend, to a fraction of a percent of moneyness a
+  quarter.
+- It covers the whole VIX window from 1990, at least as deep as IBKR's
+  can be.
+
+So the option programs run on it, and IBKR's SPX history (U2) becomes the
+cross-check. Today's mix uses its benchmark's own returns the same way.
+
+**Today's shape** (§3): from the newest stored SPX chain, else SPY's,
+fitted as the Volatility Lab fits it.
+- **σ_ATM,30**, and ρ = σ_ATM,30 / today's VIX (FRED). VIX itself is the
+  market's 30-day variance strike, standing in for VARIANCE I1's, which
+  isn't built.
+- **The smile** s(k, T) = σ(k, T)/σ_ATM,30, on a grid of log-moneyness
+  (−0.8 to 0.4) and tenors (7 days to 18 months), interpolated linearly
+  and held flat beyond, as the surface holds its vol
+  (`models/hedge.grid_smile`).
+- **The half-spread** (decision 6): the median (ask − bid)/(ask + bid)
+  over the chain's out-of-the-money puts.
+- **Without a chain:** flat, ρ = 1, no costs, and it says so. VIX sits
+  above the ATM vol, so ρ = 1 overstates every put a little.
+- **The flat smile** runs beside it on request (decision 5).
+
+**The candidates** are decision 2's list (`v1_candidates`):
+- puts 5, 10 and 20% out of the money, over 1, 3 and 12 months
+- put spreads: 95/85 over a month, 90/80 over three
+- the zero-cost collar on the 10% put over three months
+- the two trend rules
+- vol targeting at the book's own long-run vol
+- cash
+- any stored stream the caller names, read from stored bars (adjusted
+  where stored). No holding is named in the code; U4's page asks.
+
+Each runs at h = 25, 50 and 100%, on its own window. Options need VIX, so
+they start in 1990, and a stream starts with its own history. Each result
+says its window.
+
+**Today's prices** (§6, `today`): a put's or a put spread's cost a year
+at today's surface (`models/hedge.roll_cost`), and its percentile among
+the same program's VIX-based costs over the window. A collar's net is
+zero by construction, so it isn't priced.
+
+**Checked on a copy of your store:** the β proxy at 0.9, the rule
+candidates since 1926 (U1's numbers again). The option candidates say
+FRED's VIX isn't stored yet, and the shape says there's no stored index
+chain.
+
+**Tests:**
+- the proxy book and VIX's alignment
+- missing data named for French, a stream and the chain
+- options on VIX's window, and the rest on the book's
+- today's mix equal to Portfolio's replay plus interest, with h = 0
+  changing nothing
+- the shape against a known SSVI surface: ATM vol, skew, ρ and
+  half-spread
+- a stream from stored bars, on its own window
+- decision 2's list
+- today's cost against its formula, and its percentile
+- the grid smile and the roll cost against the plan's 2.9% a year
+
+## D71 — HEDGE U4: the Hedge Lab page (2026-11-04)
+
+Decision 9 gave the hedge lab its own dock. It's in the sidebar after
+Portfolio (`gui/pages/hedge_lab.py`, the umbrella icon). It doesn't pick a
+hedge: every candidate goes on one yardstick, and you choose.
+
+**The side panel:**
+- **The book.**
+  - The book itself: the β proxy since 1926, or today's mix as the
+    review analyses it (`ReviewService.current_view`, which needs
+    REGIME.md's history source and cash rate).
+  - β defaults to your newest review's, from A2's record
+    (`ReviewService.latest_beta`), else 1.
+  - The smile: today's surface, or flat beside it.
+  - Holdings to try as hedges, read from stored bars.
+  - The book's value, optional, for whole contracts.
+  - A note says how the options were marked: which surface, ρ and
+    half-spread, or flat with ρ = 1 and no costs when no chain is
+    stored.
+- **The selected hedge:**
+  - Δ log growth ± SE, the cost on calm days ± SE, and the average saved
+    per crash
+  - the deepest fall and the worst 12 months, unhedged → hedged
+  - the down and up betas ± SE
+  - for an option program: its premiums, payoffs, half-spreads and
+    rolls, today's cost a year with its percentile against history, and
+    whole contracts on the chain's index, with the h they give
+
+**The main column:**
+- **Every hedge:** one row per candidate and size, in decision 2's order.
+  Hedges that can't run are listed under the table with why ("Not run:
+  … FRED's VIX isn't stored (Ctrl+K: Fetch FRED series)"). Selecting a
+  row selects that hedge everywhere.
+- **The frontier:** cost a year against the average saved per crash, one
+  dot per row. Dominated dots are muted (`models/hedge.dominated`), and
+  the selected one is highlighted. Nothing is optimized.
+- **Growth and drawdown:** the book unhedged and hedged on the hedge's
+  window. Growth is Σ ln(1 + r), so a century stays readable.
+- **The crashes:** each window, with the book's return unhedged and
+  hedged and what the hedge paid.
+  - **Changed from HEDGE_PLAN:** the table is for the selected hedge. One
+    column per candidate is 15 columns, which a 1280 px window can't
+    show; the frontier and the table above carry the comparison.
+
+**One job:** the whole run is one TaskRunner job. On a copy of your store
+with a stand-in VIX, all 48 hedges ran in 10 seconds.
+
+**At 1280 px** the side panel drops below the hedge table, as the GARCH
+and Markov labs' inputs do (D56). From about 1440 px it sits beside it.
+
+**Tests:**
+- every hedge at three sizes; the selected hedge's card, curves and
+  crashes; a rule hedge without program rows
+- the option hedges named as missing without VIX
+- a bad β naming its field
+- the dominance rule
+- the review's book and β for the lab
+- page geometry at 1280 px
+
+**Checked** with screenshots on a copy of your store, with a stand-in VIX
+(21-day realized vol × 1.15) that exists only in the scratch copy.

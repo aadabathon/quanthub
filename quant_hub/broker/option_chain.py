@@ -64,7 +64,7 @@ _EXPIRY_TIME = time(16, 0)
 
 # Index underlyings and their listing exchange; everything else is a stock
 # routed SMART. Extend only with symbols verified live (SPX: C0, 2026-10-15).
-_INDEX_EXCHANGES = {"SPX": "CBOE"}
+_INDEX_EXCHANGES = {"SPX": "CBOE", "VIX": "CBOE"}
 # Preferred trading class where a symbol lists several (SPX: SPX monthly
 # AM-settled vs SPXW weekly PM-settled; PM settlement matches the 16:00
 # expiry convention above).

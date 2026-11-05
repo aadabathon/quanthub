@@ -85,6 +85,7 @@ def test_ibkr_turned_off_leaves_no_controls_or_sources(tmp_path):
         assert not hasattr(window.show_page("Portfolio"), "_broker_button")   # E1
         # A1 part 2: the ISIN bridge asks nothing of a broker that's off.
         assert core.security_ids.isins(["AAA"]) == ({}, {"AAA": "IBKR is off in settings"})
+        assert "Sync index history from IBKR" not in window._top.search._commands   # U2
     finally:
         _close(app, window)
 
@@ -697,6 +698,30 @@ def test_ctrl_k_fetches_ken_french_on_the_worker(qt_app, monkeypatch):
                         lambda force=False: calls.append(force) or [])
     window._top.search._commands["Fetch Ken French factors"]()
     wait_for(app, lambda: calls == [True])
+
+
+def test_ctrl_k_fetches_fred_and_syncs_the_indices_on_the_worker(qt_app, monkeypatch):
+    # HEDGE U2 (D69): no network in tests; the wiring is real.
+    app, window = qt_app
+    fred = []
+    monkeypatch.setattr(window._core.external_data, "refresh_fred",
+                        lambda force=False: fred.append(force) or [])
+    window._top.search._commands["Fetch FRED series"]()
+    wait_for(app, lambda: fred == [True])
+    asked = []
+
+    def history(symbol, start, end, source, *, basis):
+        asked.append((symbol, start.year, source, basis.value))
+        frame = pd.DataFrame({"close": [100.0, 101.0]},
+                             index=pd.to_datetime(["1990-01-02", "1990-01-03"]))
+        return type("History", (), {"frame": frame})()
+    monkeypatch.setattr(window._core.market_service, "get_history", history)
+    window._top.search._commands["Sync index history from IBKR"]()
+    wait_for(app, lambda: len(asked) == 2)
+    assert asked == [("SPX", 1980, "ibkr", "traded"), ("VIX", 1980, "ibkr", "traded")]
+    page = window.show_page("Data")
+    wait_for(app, lambda: page._header._status.full_text().endswith("price histories"))
+    assert page._fred_note.isVisibleTo(page)                  # the tests set no [fred] key
 
 
 def test_ctrl_k_imports_a_shiller_csv_on_the_worker(qt_app, monkeypatch):
@@ -1962,3 +1987,65 @@ def test_review_names_an_unreadable_rules_line(qt_app, tmp_path):
     wait_for(app, lambda: page._error_note.isVisibleTo(page), timeout_s=30)
     assert "REGIME.md line" in page._error_note._text.text()
     assert page._rules is None
+
+
+# ----------------------------------------------------------------- Hedge Lab
+
+def _seed_hedge_series(core, vix=True):
+    """Made-up French market and bills for 1990–1996, and VIX if asked."""
+    from quant_hub.data.series import FetchedSeries, SeriesMeta
+    dates = pd.bdate_range("1990-01-02", "1996-12-31")
+    rng = np.random.default_rng(9)
+    excess = rng.normal(0.0003, 0.01, len(dates))
+    excess[600:660] -= 0.006                               # a slide
+
+    def series(source, name, values, unit="fraction"):
+        meta = SeriesMeta(source, name, name, unit, "daily", "made up")
+        return FetchedSeries(meta, tuple(d.strftime("%Y-%m-%d") for d in dates),
+                             tuple(float(v) for v in values))
+    fetched = [series("french", "ff3.mkt_rf", excess),
+               series("french", "ff3.rf", np.full(len(dates), 0.0002))]
+    if vix:
+        fetched.append(series("fred", "vixcls", np.full(len(dates), 18.0), unit="percent"))
+    core.series_store.save(fetched, pd.Timestamp("2026-11-04").to_pydatetime(), "h")
+
+
+def _run_hedges(app, page, beta="0.90"):
+    page._beta.set_text(beta)
+    page._run()
+    wait_for(app, lambda: page._outcome is not None, timeout_s=120)
+
+
+def test_the_hedge_lab_runs_every_hedge_and_shows_the_selected_one(qt_app):
+    app, window = qt_app
+    _seed_hedge_series(window._core)
+    page = window.show_page("Hedge Lab")
+    _run_hedges(app, page)
+    assert page._table.rowCount() == 16 * 3                  # decision 2's list at three sizes
+    assert not page._missing.isVisibleTo(page)
+    assert "flat smile, ρ = 1" in page._shape_note._text.text()   # no stored chain
+    put = next(i for i, r in enumerate(page._rows)
+               if r.candidate.name == "Put 10% OTM, 3 mo" and r.size == 1.0)
+    page._table.selectRow(put)
+    app.processEvents()
+    assert page._stats.value_text("rolls") != "—" and page._stats.value_text("today") != "—"
+    assert page._crashes.rowCount() >= 1 and page._crashes.item(0, 0).text().startswith("199")
+    assert "Put 10% OTM, 3 mo at 100%" in page._growth_card.subtitle.full_text()
+    cash = next(i for i, r in enumerate(page._rows) if r.candidate.name == "Cash")
+    page._table.selectRow(cash)
+    app.processEvents()
+    assert page._stats.value_text("rolls") == "—"           # not an option program
+
+
+def test_the_hedge_lab_names_what_its_option_hedges_are_missing(qt_app):
+    app, window = qt_app
+    _seed_hedge_series(window._core, vix=False)
+    page = window.show_page("Hedge Lab")
+    _run_hedges(app, page, beta="1.00")
+    assert page._table.rowCount() == 4 * 3                   # trend ×2, vol targeting, cash
+    assert page._missing.isVisibleTo(page)
+    assert "Fetch FRED series" in page._missing._text.text()
+    assert "Put 5% OTM, 1 mo" in page._missing._text.text()
+    page._beta.set_text("lots")
+    page._run()
+    assert page._header._status.full_text().startswith("β")  # the field names itself

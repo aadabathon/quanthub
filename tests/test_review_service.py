@@ -380,3 +380,17 @@ def test_without_frenchs_market_the_crash_stress_says_how_to_get_it(world):
     review = service.run({"credit calm": True})
     assert review.crash is None
     assert "Fetch Ken French factors" in review.crash_note
+
+
+def test_the_hedge_lab_reads_the_reviews_book_and_its_beta(world):
+    from quant_hub.services.external_data import ExternalDataService
+    service, *_ = world
+    assert service.latest_beta() is None                 # no review has measured one yet
+    service._external = ExternalDataService(french_store())
+    review = service.run({"credit calm": True})
+    assert service.latest_beta() == pytest.approx(review.crash.beta)
+    view, rate = service.current_view()
+    assert rate == pytest.approx(0.04)
+    assert view.report.equity == pytest.approx(review.view.report.equity)
+    # The fixture's clock moves a day between the two, so the windows end a day apart.
+    assert view.report.beta == pytest.approx(review.view.report.beta, abs=0.01)

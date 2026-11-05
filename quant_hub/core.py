@@ -25,6 +25,7 @@ from quant_hub.services.chain_collector import ChainCollector
 from quant_hub.services.external_data import ExternalDataService
 from quant_hub.services.file_import import FileImportService, FileSource
 from quant_hub.services.fund_holdings import FundHoldingsService
+from quant_hub.services.hedge import HedgeService
 from quant_hub.services.fundamentals import FundamentalsService
 from quant_hub.services.market_service import MarketService
 from quant_hub.services.option_chains import ChainService
@@ -77,6 +78,7 @@ class Core:
     holdings_store: HoldingsStore
     fund_holdings: FundHoldingsService
     security_ids: SecurityIdService
+    hedge: HedgeService
     tasks: TaskRunner
     # Read-only IBKR accounts (E1); None when IBKR is off in settings.
     accounts: AccountService | None = None
@@ -195,7 +197,7 @@ def build_core(config: AppConfig | None = None) -> Core:
     fund_holdings = FundHoldingsService(holdings_store, config.sec_identity)
     # Held symbols' ISINs from IBKR, kept in the same database (A1, D66).
     security_ids = SecurityIdService(holdings_store, broker if ibkr else None)
-    external_data = ExternalDataService(series_store)
+    external_data = ExternalDataService(series_store, fred_key=config.fred_key)
     return Core(
         config=config, bus=bus, broker=broker, store=store, state_store=state_store,
         market_service=market_service, chain_store=chain_store, chains=chains,
@@ -211,5 +213,7 @@ def build_core(config: AppConfig | None = None) -> Core:
                              security_ids=security_ids, external_data=external_data),
         series_store=series_store, external_data=external_data,
         holdings_store=holdings_store, fund_holdings=fund_holdings, security_ids=security_ids,
+        # The hedge lab's job, on stored data only (HEDGE U3, D70).
+        hedge=HedgeService(external_data, chains, store),
         accounts=AccountService(broker) if ibkr else None,
     )

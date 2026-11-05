@@ -334,7 +334,7 @@
     "doi": "10.1016/j.jfineco.2011.11.003",
     "question": "Does an asset's own past return predict its future return?",
     "changed": "Across 58 futures, a positive past-year return predicts a positive next month: trend following, documented.",
-    "lives_in": ["quant_hub/models/strategies.py"],
+    "lives_in": ["quant_hub/models/strategies.py", "quant_hub/models/hedge.py"],
     "links": [{"to": "jegadeeshtitman1993", "kind": "builds_on"}],
     "verified": {"via": "crossref", "checked": "2026-11-02", "matched": ["title", "first_author", "year"]}
   },

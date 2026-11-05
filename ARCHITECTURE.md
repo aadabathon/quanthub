@@ -114,7 +114,8 @@ quant_hub/
 │                              simulator.py, options_lab/ (page, underlying,
 │                              pricer, strategy, monte_carlo), volatility_lab.py,
 │                              kalman_lab.py, markov_lab.py, valuation.py,
-│                              review.py, data.py (D64), research/ (page,
+│                              review.py, data.py (D64), hedge_lab.py (D71),
+│                              research/ (page,
 │                              history, timeline, library)
 ├── config.py                  AppConfig
 ├── events.py                  EventBus (thread-safe), LogEvent, log handler
@@ -187,6 +188,10 @@ quant_hub/
 │   ├── stress.py              crash stress: a constant-β replay through
 │   │                          French's market from 1926, its worst falls,
 │   │                          the β band's (A2, D67)
+│   ├── hedge.py               hedges on the book: cash, streams, trend, vol
+│   │                          targeting, rolled puts / spreads / collars at
+│   │                          VIX·ρ·smile; the yardstick: crash windows by
+│   │                          rule, cost, Δ log growth ± NW, convexity (U1)
 │   ├── dcf.py                 unlevered-FCF DCF (the owner's, ported):
 │   │                          projection, terminal conventions, valuation
 │   │                          date, sensitivity, multiples, margin of safety,
@@ -266,6 +271,9 @@ quant_hub/
 │   │                          new filings kept beside old, offline (D62)
 │   ├── security_ids.py        held symbols' ISINs: stored, else IBKR's when
 │   │                          connected; the look-through's bridge (D66)
+│   ├── hedge.py               the hedge lab's job: the β proxy and today's mix,
+│   │                          today's shape (ρ, smile, spread), every candidate
+│   │                          at every size, today's prices; offline (D70)
 │   ├── external_data.py       outside series: Ken French's files refreshed
 │   │                          when a week old, each failure keeping its
 │   │                          stored copy; Shiller CSV imports (D61);
@@ -296,6 +304,8 @@ quant_hub/
 │                              percent → fraction, terms in the docstring (D60)
 ├── providers/sec_nport.py     funds' N-PORT: the fund ticker map, the EDGAR
 │                              Atom feed, primary_doc.xml → FundHoldings (D62)
+├── providers/fred.py          FRED's API: VIXCLS, DTB3, DGS3MO as published;
+│                              the key never logged, the credit line cited (D69)
 ├── storage/holdings_store.py  fund ticker map + every N-PORT report date kept
 │                              (schema v8, D62); held symbols' ISINs (v9, D66)
 ├── storage/series_store.py    outside series as fetched: ext_series (meta,
@@ -386,6 +396,9 @@ Review     = the front door (after Dashboard): the owner's REGIME.md checked
 Data       = everything stored, its source and freshness: outside series
              with a preview and citation, fund holdings, chain snapshots,
              price history; its buttons run the Ctrl+K commands (D64)
+Hedge Lab  = every hedge on the book (β proxy since 1926, or today's mix):
+             the frontier, growth and drawdown, the crash table, the
+             selected hedge's card with today's price (HEDGE U1–U4, D71)
 RESEARCH…  = GARCH Lab, Vol Lab, Kalman Lab, Markov Lab, Research
 ```
 

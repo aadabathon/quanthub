@@ -1,7 +1,65 @@
 # CURRENT_STATE.md
 
 **Update this file whenever meaningful work lands.** Last updated:
-**2026-11-04**: ALLOCATION A2 (D67): crash stress on the Review page.
+**2026-11-04**: HEDGE U4 (D71): the **Hedge Lab** page, in the sidebar
+after Portfolio.
+- **Run every hedge:** 48 rows, every candidate at 25, 50 and 100%, on
+  the β proxy since 1926 or today's mix.
+- **The page shows:**
+  - the frontier of cost against crash loss saved
+  - growth and drawdown, unhedged against the selected hedge
+  - each crash with what the hedge paid
+  - the selected hedge's card: Δ growth ± SE, convexity, today's price
+    and percentile, whole contracts
+- **Until FRED's VIX is stored,** the option hedges are listed as not
+  run, with how to fetch it.
+- **Checked** on a copy of your store with a stand-in VIX; all 48 ran in
+  10 seconds.
+
+Also **2026-11-04**: HEDGE U3 (D70): `services/hedge.py`, the hedge lab's job,
+with no page until U4.
+- **Two books:** the β proxy on French's market since 1926, and today's
+  mix as Portfolio replays it.
+- **The candidates:** decision 2's list, each at three sizes, on its own
+  window. Options start with VIX in 1990, and streams with their own
+  history.
+- **Today's shape:** from your newest stored SPX or SPY chain: ρ, the
+  smile and the half-spread. Without one, flat with ρ = 1, said so.
+- **Today's prices:** each put's cost a year now, and its percentile
+  against history.
+- **Decision 4 changed, with your approval:** the option programs run on
+  French's total-return level, so IBKR's SPX history is a cross-check.
+- **Offline only:** missing data is named with how to get it, never
+  fetched.
+
+Also **2026-11-04**: HEDGE U2 (D69): the data the hedges need.
+- **FRED:** the VIX (from 1990) and the 3-month bill rates, stored as
+  published. Ctrl+K **Fetch FRED series**, or the Data page's **Fetch
+  FRED** button.
+  - **To use it:** get a free key at fredaccount.stlouisfed.org, and add
+    `[fred] key = "…"` to `settings.toml`. Never put it in chat or a
+    repository.
+- **IBKR's index history:** SPX and VIX are now asked for as index
+  contracts. With TWS connected, Ctrl+K **Sync index history from IBKR**
+  stores them from as far back as IBKR serves, and logs how far that is.
+- **Not checked live:** no FRED key and no TWS yet. The tests use
+  fixtures shaped like FRED's replies.
+
+Also **2026-11-04**: HEDGE U1 (D68): `models/hedge.py`, the math only, with no
+page until U4.
+- **Candidates:** cash, another stream (Treasuries, a trend fund), trend
+  on the market (200-day average or 12-month momentum), and vol
+  targeting, each applied to the book at a size h, decided at the close
+  and held to the next. Also rolled puts, put spreads and zero-cost
+  collars, marked at Black–Scholes from VIX, ρ and a smile, with
+  half-spreads and whole-contract granularity.
+- **The yardstick:** crash windows found by rule (20 since 1926), the
+  cost outside them, what each hedge paid in each crash, Δ log growth
+  with a Newey–West error, drawdowns, and up and down betas.
+- **Not yet:** VIX and the index's history (U2), the service with today's
+  smile (U3), and the Hedge Lab page (U4).
+
+Also **2026-11-04**: ALLOCATION A2 (D67): crash stress on the Review page.
 - The book's β, with its 95% band, is replayed through Ken French's daily
   market from 1926: held at β, the rest in T-bills, rebalanced daily.
 - The card shows the worst fall with its dates, the band's falls, the

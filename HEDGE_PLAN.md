@@ -199,6 +199,10 @@ U for umbrella; H is HORIZON's Track H.
 
 ### U1. The hedge math (`models/hedge.py`)
 
+**Status:** landed 2026-11-04 (D68): the linear and rule candidates of
+§4, the rolled option programs of §2–3 (puts, put spreads, collars), and
+the yardstick of §5. The smile function and VIX history come with U2–U3.
+
 - Option programs (puts, put spreads, collars), rolled and marked daily
   as in §2–3.
 - The linear and rule candidates of §4, reusing `strategies.py` and
@@ -218,6 +222,11 @@ U for umbrella; H is HORIZON's Track H.
 
 ### U2. The data
 
+**Status:** landed 2026-11-04 (D69), not yet checked live. FRED's
+VIXCLS, DTB3 and DGS3MO come with `[fred] key`. IBKR's SPX and VIX
+history come by Ctrl+K **Sync index history from IBKR** with TWS
+connected; its log gives the depth.
+
 - **The index, as far back as IBKR serves it,** traded and adjusted. The
   depth is checked first; ALLOCATION A2's decision 3 asks the same
   question.
@@ -232,6 +241,10 @@ U for umbrella; H is HORIZON's Track H.
 
 ### U3. The service
 
+**Status:** landed 2026-11-04 (D70). It changed decision 4, with your
+approval: the option programs run on French's total-return level, so
+IBKR's SPX history is a cross-check rather than the underlying.
+
 - `services/hedge.py` builds both books: b from W2, today's mix from
   Portfolio.
 - It runs the candidates on the TaskRunner.
@@ -240,6 +253,9 @@ U for umbrella; H is HORIZON's Track H.
   quotes; missing data named, never fetched behind your back.
 
 ### U4. The Hedge Lab page
+
+**Status:** landed 2026-11-04 (D71). The crash table is for the selected
+hedge, not one column per candidate, which wouldn't fit 1280 px.
 
 A dock (D55) with cards on the grid (D56):
 - **The book:** b ± SE, the target (whole book or core), the window, and
@@ -317,7 +333,7 @@ A dock (D55) with cards on the grid (D56):
    VIX calls wait for data.
 3. **Settled 2026-11-03 (D59):** CBOE's VIX history, through VARIANCE I3's provider (approved). **Changed by D60:** Cboe's terms refuse storing the data, so VIX comes from FRED's `VIXCLS` (or IBKR's index bars). The question was: **The VIX source:** VARIANCE I3's CBOE provider, IBKR index bars, or
    both.
-4. **Settled 2026-11-03 (D59):** IBKR's index as deep as it goes for the option candidates, and Ken French's series for the linear ones. The question was: **The index history:** IBKR as deep as it goes (checked first), or a
+4. **Settled 2026-11-03 (D59):** IBKR's index as deep as it goes for the option candidates, and Ken French's series for the linear ones. **Changed by D70 (approved 2026-11-04):** French's total-return level is the option underlying too; IBKR's SPX is the cross-check. The question was: **The index history:** IBKR as deep as it goes (checked first), or a
    longer series without strikes for the linear candidates only.
 5. **Settled 2026-11-03 (D59):** today's shape held fixed, with the flat smile beside it (proposed; you had no preference). The question was: **The smile through history:** today's shape held fixed (proposed),
    with the flat smile beside it, or the flat smile only.
