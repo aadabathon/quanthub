@@ -114,7 +114,8 @@ quant_hub/
 │                              simulator.py, options_lab/ (page, underlying,
 │                              pricer, strategy, monte_carlo), volatility_lab.py,
 │                              kalman_lab.py, markov_lab.py, valuation.py,
-│                              review.py, data.py (D64), research/ (page,
+│                              review.py, data.py (D64), hedge_lab.py (D71),
+│                              research/ (page,
 │                              history, timeline, library)
 ├── config.py                  AppConfig
 ├── events.py                  EventBus (thread-safe), LogEvent, log handler
@@ -395,6 +396,9 @@ Review     = the front door (after Dashboard): the owner's REGIME.md checked
 Data       = everything stored, its source and freshness: outside series
              with a preview and citation, fund holdings, chain snapshots,
              price history; its buttons run the Ctrl+K commands (D64)
+Hedge Lab  = every hedge on the book (β proxy since 1926, or today's mix):
+             the frontier, growth and drawdown, the crash table, the
+             selected hedge's card with today's price (HEDGE U1–U4, D71)
 RESEARCH…  = GARCH Lab, Vol Lab, Kalman Lab, Markov Lab, Research
 ```
 

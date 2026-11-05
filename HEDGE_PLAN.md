@@ -254,6 +254,9 @@ IBKR's SPX history is a cross-check rather than the underlying.
 
 ### U4. The Hedge Lab page
 
+**Status:** landed 2026-11-04 (D71). The crash table is for the selected
+hedge, not one column per candidate, which wouldn't fit 1280 px.
+
 A dock (D55) with cards on the grid (D56):
 - **The book:** b ± SE, the target (whole book or core), the window, and
   the sizes.

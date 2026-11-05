@@ -2727,3 +2727,65 @@ chain.
 - decision 2's list
 - today's cost against its formula, and its percentile
 - the grid smile and the roll cost against the plan's 2.9% a year
+
+## D71 — HEDGE U4: the Hedge Lab page (2026-11-04)
+
+Decision 9 gave the hedge lab its own dock. It's in the sidebar after
+Portfolio (`gui/pages/hedge_lab.py`, the umbrella icon). It doesn't pick a
+hedge: every candidate goes on one yardstick, and you choose.
+
+**The side panel:**
+- **The book.**
+  - The book itself: the β proxy since 1926, or today's mix as the
+    review analyses it (`ReviewService.current_view`, which needs
+    REGIME.md's history source and cash rate).
+  - β defaults to your newest review's, from A2's record
+    (`ReviewService.latest_beta`), else 1.
+  - The smile: today's surface, or flat beside it.
+  - Holdings to try as hedges, read from stored bars.
+  - The book's value, optional, for whole contracts.
+  - A note says how the options were marked: which surface, ρ and
+    half-spread, or flat with ρ = 1 and no costs when no chain is
+    stored.
+- **The selected hedge:**
+  - Δ log growth ± SE, the cost on calm days ± SE, and the average saved
+    per crash
+  - the deepest fall and the worst 12 months, unhedged → hedged
+  - the down and up betas ± SE
+  - for an option program: its premiums, payoffs, half-spreads and
+    rolls, today's cost a year with its percentile against history, and
+    whole contracts on the chain's index, with the h they give
+
+**The main column:**
+- **Every hedge:** one row per candidate and size, in decision 2's order.
+  Hedges that can't run are listed under the table with why ("Not run:
+  … FRED's VIX isn't stored (Ctrl+K: Fetch FRED series)"). Selecting a
+  row selects that hedge everywhere.
+- **The frontier:** cost a year against the average saved per crash, one
+  dot per row. Dominated dots are muted (`models/hedge.dominated`), and
+  the selected one is highlighted. Nothing is optimized.
+- **Growth and drawdown:** the book unhedged and hedged on the hedge's
+  window. Growth is Σ ln(1 + r), so a century stays readable.
+- **The crashes:** each window, with the book's return unhedged and
+  hedged and what the hedge paid.
+  - **Changed from HEDGE_PLAN:** the table is for the selected hedge. One
+    column per candidate is 15 columns, which a 1280 px window can't
+    show; the frontier and the table above carry the comparison.
+
+**One job:** the whole run is one TaskRunner job. On a copy of your store
+with a stand-in VIX, all 48 hedges ran in 10 seconds.
+
+**At 1280 px** the side panel drops below the hedge table, as the GARCH
+and Markov labs' inputs do (D56). From about 1440 px it sits beside it.
+
+**Tests:**
+- every hedge at three sizes; the selected hedge's card, curves and
+  crashes; a rule hedge without program rows
+- the option hedges named as missing without VIX
+- a bad β naming its field
+- the dominance rule
+- the review's book and β for the lab
+- page geometry at 1280 px
+
+**Checked** with screenshots on a copy of your store, with a stand-in VIX
+(21-day realized vol × 1.15) that exists only in the scratch copy.

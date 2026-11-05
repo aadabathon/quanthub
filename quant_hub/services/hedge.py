@@ -148,6 +148,8 @@ class Shape:
     atm30: float | None
     half_spread: float
     label: str
+    symbol: str = ""               # the chain's index, for whole contracts
+    spot: float | None = None      # its spot when the chain was stored
 
 
 @dataclass(frozen=True)
@@ -159,6 +161,9 @@ class Result:
     assessment: H.Assessment | None = None
     program: H.ProgramRun | None = None
     missing: str = ""                          # why there's no assessment
+    hedged: pd.Series | None = None            # R_H on the window
+    unhedged: pd.Series | None = None          # R_B on the same days
+    market: pd.Series | None = None            # R_m on the same days
 
 
 @dataclass(frozen=True)
@@ -255,12 +260,14 @@ class HedgeService:
             when = surface.as_of_text
             if flat:
                 return Shape(H.flat_smile, rho, atm30, spread,
-                             f"flat smile, ρ {rho:.2f} from the {symbol} surface of {when}")
+                             f"flat smile, ρ {rho:.2f} from the {symbol} surface of {when}",
+                             symbol, surface.spot)
             forwards = [surface.point(surface.spot, d).forward for d in _GRID_DAYS]
             grid = np.array([[surface.point(f * math.exp(k), d).vol / atm30 for k in _GRID_K]
                              for f, d in zip(forwards, _GRID_DAYS)])
             return Shape(H.grid_smile(_GRID_K, _GRID_DAYS, grid), rho, atm30, spread,
-                         f"the {symbol} surface of {when}, ρ {rho:.2f}, half-spread {spread:.1%}")
+                         f"the {symbol} surface of {when}, ρ {rho:.2f}, half-spread {spread:.1%}",
+                         symbol, surface.spot)
         return Shape(H.flat_smile, 1.0, None, 0.0,
                      "flat smile, ρ = 1, no costs: no stored SPX or SPY chain")
 
@@ -282,7 +289,9 @@ class HedgeService:
                 try:
                     hedged, program = self._hedged(book, window, candidate, h, shape, long_run)
                     results.append(Result(candidate, h, first, last,
-                                          H.assess(window.returns, hedged, window.market), program))
+                                          H.assess(window.returns, hedged, window.market), program,
+                                          hedged=hedged, unhedged=window.returns,
+                                          market=window.market))
                 except ValueError as exc:
                     results.append(Result(candidate, h, first, last, missing=str(exc)))
         _logger.info("hedge lab: %d candidates × %d sizes on %s (%s)", len(candidates), len(sizes),

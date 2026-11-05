@@ -637,6 +637,19 @@ def assess(book: pd.Series, hedged: pd.Series, market: pd.Series,
         beta_up_error=up[1], beta_down_error=down[1])
 
 
+def dominated(costs: np.ndarray, saved: np.ndarray) -> np.ndarray:
+    """For each hedge, whether another costs no more and saves no less,
+    and is better on at least one (the frontier's dimmed dots)."""
+    c, s = np.asarray(costs, dtype=float), np.asarray(saved, dtype=float)
+    if c.shape != s.shape:
+        raise ValueError("costs and savings pair up")
+    out = np.zeros(len(c), dtype=bool)
+    for i in range(len(c)):
+        better = (c <= c[i]) & (s >= s[i]) & ((c < c[i]) | (s > s[i]))
+        out[i] = bool(better.any())
+    return out
+
+
 def _compound(returns: pd.Series) -> float:
     return float(np.expm1(np.log1p(returns.to_numpy()).sum()))
 

@@ -1,7 +1,22 @@
 # CURRENT_STATE.md
 
 **Update this file whenever meaningful work lands.** Last updated:
-**2026-11-04**: HEDGE U3 (D70): `services/hedge.py`, the hedge lab's job,
+**2026-11-04**: HEDGE U4 (D71): the **Hedge Lab** page, in the sidebar
+after Portfolio.
+- **Run every hedge:** 48 rows, every candidate at 25, 50 and 100%, on
+  the β proxy since 1926 or today's mix.
+- **The page shows:**
+  - the frontier of cost against crash loss saved
+  - growth and drawdown, unhedged against the selected hedge
+  - each crash with what the hedge paid
+  - the selected hedge's card: Δ growth ± SE, convexity, today's price
+    and percentile, whole contracts
+- **Until FRED's VIX is stored,** the option hedges are listed as not
+  run, with how to fetch it.
+- **Checked** on a copy of your store with a stand-in VIX; all 48 ran in
+  10 seconds.
+
+Also **2026-11-04**: HEDGE U3 (D70): `services/hedge.py`, the hedge lab's job,
 with no page until U4.
 - **Two books:** the β proxy on French's market since 1926, and today's
   mix as Portfolio replays it.

@@ -320,6 +320,31 @@ class ReviewService:
                       tuple(checks), tuple(streams), calm, volatility, tuple(drafts),
                       tuple(notes), netting, netting_note, crash, crash_note)
 
+    def current_view(self) -> tuple[PortfolioView, float]:
+        """Today's book as the review analyses it, as measured, and the cash
+        rate: the Hedge Lab's "today's mix" (HEDGE U4). Needs section 2's
+        history source and cash rate, and positions."""
+        rules, _, _ = self.load_rules()
+        settings = rules.settings
+        source = settings.history_source or _blank("History source")
+        if settings.cash_rate is None:
+            _blank("Cash rate")
+        snapshot, _, _, _ = self._positions()
+        names = {row.symbol: row.sleeve for row in rules.sleeves if row.sleeve}
+        view = self._portfolio.analyse(snapshot, None, source,
+                                       settings.benchmark or DEFAULT_BENCHMARK,
+                                       settings.lookback_days or DEFAULT_LOOKBACK,
+                                       settings.cash_rate, now=self._now(), sleeves=names)
+        return view, settings.cash_rate
+
+    def latest_beta(self) -> float | None:
+        """The book's β from the newest review that measured one (A2's)."""
+        for record in self._store.reviews(5):
+            crash = record.payload.get("crash")
+            if crash and crash.get("beta") is not None:
+                return float(crash["beta"])
+        return None
+
     # ------------------------------------------------------------ the journal
     def reviews(self, limit: int | None = None) -> list[ReviewRecord]:
         return self._store.reviews(limit)

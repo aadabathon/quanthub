@@ -348,3 +348,11 @@ def test_a_rolled_puts_cost_a_year_is_its_premium_times_rolls():
     assert 0 < spread < cost
     with pytest.raises(ValueError, match="collar"):
         H.roll_cost(H.OptionProgram(0.9, 91, collar=True), np.array([0.04]), 0.0, np.array([0.2]))
+
+
+def test_a_dominated_hedge_costs_more_and_saves_less_than_another():
+    costs = np.array([0.01, 0.02, 0.02, 0.03])
+    saved = np.array([0.05, 0.04, 0.08, 0.08])
+    assert H.dominated(costs, saved).tolist() == [False, True, False, True]
+    with pytest.raises(ValueError):
+        H.dominated(costs, saved[:2])
