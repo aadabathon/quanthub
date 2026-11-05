@@ -162,7 +162,7 @@
     "doi": "10.1093/rfs/1.3.195",
     "question": "What does the dividend yield tell us about future returns and dividend growth?",
     "changed": "A log-linear identity splits the dividend yield into expected returns and expected dividend growth: the basis of valuation-ratio forecasting.",
-    "lives_in": [],
+    "lives_in": ["quant_hub/models/regime_inputs.py"],
     "links": [{"to": "shiller1981", "kind": "builds_on"}, {"to": "gordon1959", "kind": "generalizes"}],
     "verified": {"via": "crossref", "checked": "2026-11-02", "matched": ["title", "first_author", "year"]}
   },
@@ -292,7 +292,7 @@
     "doi": "10.1093/rfs/hhm014",
     "question": "Do the popular predictors of the equity premium work out of sample?",
     "changed": "Almost none beat the historical mean out of sample; in-sample success was unstable.",
-    "lives_in": [],
+    "lives_in": ["quant_hub/models/regime_inputs.py"],
     "links": [{"to": "campbellshiller1988", "kind": "challenges"}],
     "verified": {"via": "crossref", "checked": "2026-11-02", "matched": ["title", "first_author", "year"]}
   },

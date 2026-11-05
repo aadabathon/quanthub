@@ -166,7 +166,7 @@
     "question": "Can ARCH be made parsimonious?",
     "changed": "GARCH(1,1): lagged variance enters the recursion, so three parameters capture long volatility memory.",
     "assumed": "Symmetric response to good and bad news.",
-    "lives_in": ["quant_hub/models/garch.py", "quant_hub/models/variance_premium.py"],
+    "lives_in": ["quant_hub/models/garch.py", "quant_hub/models/regime_inputs.py", "quant_hub/models/variance_premium.py"],
     "links": [{"to": "engle1982", "kind": "generalizes"}],
     "verified": {"via": "crossref", "checked": "2026-11-02", "matched": ["title", "first_author", "year"]}
   },
@@ -205,7 +205,7 @@
     "doi": "10.2307/1912559",
     "question": "Can a series switch between regimes that are never observed?",
     "changed": "Markov-switching models with a filter for regime probabilities: recessions found from GNP data alone.",
-    "lives_in": ["quant_hub/models/markov.py"],
+    "lives_in": ["quant_hub/models/markov.py", "quant_hub/models/regime_inputs.py"],
     "links": [{"to": "baumetal1970", "kind": "builds_on"}, {"to": "kalman1960", "kind": "builds_on"}],
     "verified": {"via": "crossref", "checked": "2026-11-02", "matched": ["title", "first_author", "year"]}
   },

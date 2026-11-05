@@ -183,6 +183,11 @@ quant_hub/
 │   │                          the HMM and GARCH gates, implied growth (W7,
 │   │                          D49); the days that decide the numbers are
 │   │                          portfolio.py's (D53)
+│   ├── regime_inputs.py       REGIME_MODEL's inputs as known at the time:
+│   │                          publication lags, real-time CAPE/ECY, the
+│   │                          stock–bond correlation, trend, realized vol,
+│   │                          GARCH + HMM refitted yearly, expanding
+│   │                          percentile and z (D78)
 │   ├── allocation.py          the core and the rest: the book's β split,
 │   │                          the core weight for the Beta band (A1, D65);
 │   │                          effective holdings looking through it (D66)
@@ -258,6 +263,8 @@ quant_hub/
 │   │                          variance premium, from its symbol's stored
 │   │                          chains and another symbol's bars, with one
 │   │                          GARCH fit as of the chain (D76, D77)
+│   ├── regime_inputs.py       stored French + Shiller series → every regime
+│   │                          input, with provenance and what's missing (D78)
 │   ├── workstation.py         local-store overview, windowed history, GBM
 │   │                          forecast fan (the Dashboard's data, D31)
 │   ├── option_chains.py       ChainService: chains by named source, every
