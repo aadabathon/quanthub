@@ -166,7 +166,7 @@
     "question": "Can ARCH be made parsimonious?",
     "changed": "GARCH(1,1): lagged variance enters the recursion, so three parameters capture long volatility memory.",
     "assumed": "Symmetric response to good and bad news.",
-    "lives_in": ["quant_hub/models/garch.py"],
+    "lives_in": ["quant_hub/models/garch.py", "quant_hub/models/variance_premium.py"],
     "links": [{"to": "engle1982", "kind": "generalizes"}],
     "verified": {"via": "crossref", "checked": "2026-11-02", "matched": ["title", "first_author", "year"]}
   },
@@ -192,7 +192,7 @@
     "doi": "10.2307/1913610",
     "question": "How do you get standard errors when errors are also autocorrelated?",
     "changed": "Bartlett-weighted autocovariances give a HAC covariance that is always positive semi-definite.",
-    "lives_in": ["quant_hub/models/regression.py", "quant_hub/models/growth.py", "quant_hub/models/regime.py"],
+    "lives_in": ["quant_hub/models/growth.py", "quant_hub/models/regime.py", "quant_hub/models/regression.py", "quant_hub/models/variance_premium.py"],
     "links": [{"to": "white1980", "kind": "generalizes"}, {"to": "hansen1982", "kind": "builds_on"}],
     "verified": {"via": "crossref", "checked": "2026-11-02", "matched": ["title", "first_author", "year"]}
   },

@@ -173,6 +173,20 @@
     "verified": {"via": "crossref", "checked": "2026-11-02", "matched": ["title", "first_author", "year"]}
   },
   {
+    "id": "carrmadan1998",
+    "title": "Towards a Theory of Volatility Trading",
+    "authors": ["Peter Carr", "Dilip Madan"],
+    "year": 1998,
+    "venue": "Volatility: New Estimation Techniques for Pricing Derivatives (Risk Books)",
+    "url": "https://doi.org/10.1017/CBO9780511569708.013",
+    "question": "How do you trade volatility itself, rather than through an option's delta?",
+    "changed": "Spanning: any smooth payoff is a bond, a forward and a strip of puts and calls; the log contract's strip prices variance.",
+    "assumed": "European options quoted at every strike; a continuous price path for the variance result.",
+    "lives_in": ["quant_hub/models/implied_variance.py"],
+    "links": [{"to": "breedenlitzenberger1978", "kind": "builds_on"}],
+    "verified": {"via": "none", "checked": "2026-11-05", "note": "Book chapter in Jarrow (ed.), Risk Books, 1998, with no DOI. Crossref has only the 2001 Cambridge University Press reprint (pp. 458–476), the link, and that record carries no year to match."}
+  },
+  {
     "id": "carrmadan1999",
     "title": "Option valuation using the fast Fourier transform",
     "authors": ["Peter Carr", "Dilip B. Madan"],
@@ -186,6 +200,20 @@
     "verified": {"via": "crossref", "checked": "2026-11-02", "matched": ["title", "first_author", "year"]}
   },
   {
+    "id": "demeterfi1999",
+    "title": "A Guide to Volatility and Variance Swaps",
+    "authors": ["Kresimir Demeterfi", "Emanuel Derman", "Michael Kamal", "Joseph Zou"],
+    "year": 1999,
+    "venue": "The Journal of Derivatives",
+    "doi": "10.3905/jod.1999.319129",
+    "question": "What does a variance swap cost, and how is it hedged?",
+    "changed": "The variance swap is replicated by a 1/K²-weighted strip of out-of-the-money options plus a forward, with the errors from discrete strikes and jumps worked out.",
+    "assumed": "A continuous price path; options across a wide range of strikes.",
+    "lives_in": ["quant_hub/models/implied_variance.py"],
+    "links": [{"to": "carrmadan1998", "kind": "builds_on"}],
+    "verified": {"via": "crossref", "checked": "2026-11-05", "matched": ["title", "first_author", "year"]}
+  },
+  {
     "id": "brittenjonesneuberger2000",
     "title": "Option Prices, Implied Price Processes, and Stochastic Volatility",
     "authors": ["Mark Britten-Jones", "Anthony Neuberger"],
@@ -194,7 +222,7 @@
     "doi": "10.1111/0022-1082.00228",
     "question": "Can expected future variance be read from options without a model?",
     "changed": "A strip of option prices across strikes gives risk-neutral expected integrated variance: the idea behind the VIX.",
-    "lives_in": [],
+    "lives_in": ["quant_hub/models/implied_variance.py"],
     "links": [{"to": "breedenlitzenberger1978", "kind": "builds_on"}, {"to": "dupire1994", "kind": "builds_on"}],
     "verified": {"via": "crossref", "checked": "2026-11-02", "matched": ["title", "first_author", "year"]}
   },
@@ -237,6 +265,21 @@
     "verified": {"via": "none", "checked": "2026-11-02", "note": "Wilmott Magazine article with no DOI."}
   },
   {
+    "id": "cboe2003",
+    "label": "CBOE 2003",
+    "title": "The CBOE Volatility Index – VIX",
+    "authors": ["Chicago Board Options Exchange"],
+    "year": 2003,
+    "venue": "CBOE white paper",
+    "url": "https://www.cboe.com/tradable_products/vix/",
+    "question": "How should a volatility index be computed from listed S&P 500 options?",
+    "changed": "The VIX moved from Black–Scholes at-the-money vols to the model-free variance sum over out-of-the-money strikes, with the K₀ term, at a constant 30 days.",
+    "assumed": "European SPX options with two-sided quotes, and a continuous price path.",
+    "lives_in": ["quant_hub/models/implied_variance.py"],
+    "links": [{"to": "demeterfi1999", "kind": "builds_on"}],
+    "verified": {"via": "none", "checked": "2026-11-05", "note": "An exchange white paper with no registered identifier, first issued with the 2003 change of method and revised since; the link is CBOE's VIX page."}
+  },
+  {
     "id": "lee2004",
     "title": "The Moment Formula for Implied Volatility at Extreme Strikes",
     "authors": ["Roger W. Lee"],
@@ -245,7 +288,7 @@
     "doi": "10.1111/j.0960-1627.2004.00200.x",
     "question": "How steep can the implied-variance smile be in the wings?",
     "changed": "Total implied variance grows at most linearly in log-strike, with slopes set by which moments of the price are finite.",
-    "lives_in": ["quant_hub/models/svi.py", "quant_hub/models/vol_surface.py"],
+    "lives_in": ["quant_hub/models/implied_variance.py", "quant_hub/models/svi.py", "quant_hub/models/vol_surface.py"],
     "links": [{"to": "breedenlitzenberger1978", "kind": "builds_on"}],
     "verified": {"via": "crossref", "checked": "2026-11-02", "matched": ["title", "first_author", "year"]}
   },
@@ -262,6 +305,20 @@
     "verified": {"via": "none", "checked": "2026-11-02", "note": "A conference presentation; no DOI."}
   },
   {
+    "id": "jiangtian2005",
+    "title": "The Model-Free Implied Volatility and Its Information Content",
+    "authors": ["George J. Jiang", "Yisong S. Tian"],
+    "year": 2005,
+    "venue": "The Review of Financial Studies",
+    "doi": "10.1093/rfs/hhi027",
+    "question": "Does model-free implied volatility forecast realized volatility, and how is it computed from a finite set of strikes?",
+    "changed": "It subsumed the information in at-the-money implied vol and past realized vol, and the errors from truncating and discretizing the strike integral were measured.",
+    "assumed": "S&P 500 index options; a smile interpolated between listed strikes.",
+    "lives_in": ["quant_hub/models/implied_variance.py"],
+    "links": [{"to": "brittenjonesneuberger2000", "kind": "builds_on"}],
+    "verified": {"via": "crossref", "checked": "2026-11-05", "matched": ["title", "first_author", "year"]}
+  },
+  {
     "id": "carrwu2009",
     "title": "Variance Risk Premiums",
     "authors": ["Peter Carr", "Liuren Wu"],
@@ -270,9 +327,51 @@
     "doi": "10.1093/rfs/hhn038",
     "question": "How much do investors pay to hedge variance?",
     "changed": "Synthetic variance swaps show realized variance sits well below implied: a large, negative variance risk premium.",
-    "lives_in": [],
+    "lives_in": ["quant_hub/models/variance_premium.py"],
     "links": [{"to": "brittenjonesneuberger2000", "kind": "builds_on"}, {"to": "covalshumway2001", "kind": "builds_on"}],
     "verified": {"via": "crossref", "checked": "2026-11-02", "matched": ["title", "first_author", "year"]}
+  },
+  {
+    "id": "bollerslevtauchenzhou2009",
+    "title": "Expected Stock Returns and Variance Risk Premia",
+    "authors": ["Tim Bollerslev", "George Tauchen", "Hao Zhou"],
+    "year": 2009,
+    "venue": "The Review of Financial Studies",
+    "doi": "10.1093/rfs/hhp008",
+    "question": "Does the gap between implied and realized variance predict stock returns?",
+    "changed": "The variance risk premium, implied variance less trailing realized, predicted quarterly index returns better than the usual valuation ratios, in sample.",
+    "assumed": "The VIX squared against high-frequency realized variance over the past month.",
+    "lives_in": ["quant_hub/models/variance_premium.py"],
+    "links": [{"to": "brittenjonesneuberger2000", "kind": "builds_on"}],
+    "verified": {"via": "crossref", "checked": "2026-11-05", "matched": ["title", "first_author", "year"]}
+  },
+  {
+    "id": "driessenmaenhoutvilkov2009",
+    "title": "The Price of Correlation Risk: Evidence from Equity Options",
+    "authors": ["Joost Driessen", "Pascal J. Maenhout", "Grigory Vilkov"],
+    "year": 2009,
+    "venue": "The Journal of Finance",
+    "doi": "10.1111/j.1540-6261.2009.01467.x",
+    "question": "Why are index options expensive when single-stock options aren't?",
+    "changed": "Index options carry a large variance premium and single-stock options little; the gap is the price of correlation risk.",
+    "assumed": "S&P 100 index and component options; model-free implied variances.",
+    "lives_in": ["quant_hub/models/variance_premium.py"],
+    "links": [{"to": "brittenjonesneuberger2000", "kind": "builds_on"}],
+    "verified": {"via": "crossref", "checked": "2026-11-05", "matched": ["title", "first_author", "year"]}
+  },
+  {
+    "id": "fukasawa2012",
+    "title": "The Normalizing Transformation of the Implied Volatility Smile",
+    "authors": ["Masaaki Fukasawa"],
+    "year": 2012,
+    "venue": "Mathematical Finance",
+    "doi": "10.1111/j.1467-9965.2011.00483.x",
+    "question": "What does absence of arbitrage say about the smile in Black–Scholes' own d₂ coordinate?",
+    "changed": "d₂ is monotone in the strike, so the log contract's price is the total implied variance averaged under a standard normal in d₂.",
+    "assumed": "Arbitrage-free European prices at every strike.",
+    "lives_in": ["quant_hub/models/implied_variance.py"],
+    "links": [{"to": "brittenjonesneuberger2000", "kind": "builds_on"}],
+    "verified": {"via": "crossref", "checked": "2026-11-05", "matched": ["title", "first_author", "year"]}
   },
   {
     "id": "gatheraljacquier2012",

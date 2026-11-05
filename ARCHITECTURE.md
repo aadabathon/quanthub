@@ -216,6 +216,13 @@ quant_hub/
 │   │                          butterfly/calendar checks; synthetic chains;
 │   │                          surface_mesh (total variance linear in T at
 │   │                          fixed k, checked between expiries)
+│   ├── implied_variance.py    model-free implied variance: the fitted smile's
+│   │                          K_var (quoted range + wings), the VIX-style
+│   │                          quote sum and its bid/ask band, constant-
+│   │                          maturity tenors, forward variances (D75)
+│   ├── variance_premium.py    realized variance over NYSE trading-day windows,
+│   │                          GARCH's expected total, the three premiums,
+│   │                          ex-post series + Newey–West mean (D76)
 │   ├── market_surface.py      MarketSurface: a fit → (σ, r, q) at any (K, T),
 │   │                          extrapolation flagged; apply_surface fills
 │   │                          strategy legs (sticky strike) (C4)
@@ -247,7 +254,9 @@ quant_hub/
 │   ├── underlying.py          any source → spot (quote, else last close) +
 │   │                          realized vol, with provenance (D28)
 │   ├── vol_context.py         any source → trailing realized vols + GARCH
-│   │                          expected-vol term structure (D30)
+│   │                          expected-vol term structure (D30); the
+│   │                          variance premium from stored chains and
+│   │                          another symbol's bars (D76)
 │   ├── workstation.py         local-store overview, windowed history, GBM
 │   │                          forecast fan (the Dashboard's data, D31)
 │   ├── option_chains.py       ChainService: chains by named source, every
