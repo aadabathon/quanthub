@@ -2977,3 +2977,93 @@ import time.
 
 **Checked live:** the v9 → v10 migration on a copy of your store, with its
 backup. Your five stored snapshots are kept, with empty hashes.
+
+## D75 — VARIANCE I1: model-free implied variance (2026-11-05)
+
+VARIANCE_PLAN's first milestone: the price of variance read off a chain,
+offline. `models/implied_variance.py`, with the derivation in its
+docstring, as the plan set it out. Nothing reads it yet: I2 adds the
+realized side and the premium, I4 the card.
+
+**Two estimators, each checking the other:**
+- **From the fitted smile:** each slice's K_var·T as 2∫e⁻ᵏ b(k, w(k)) dk,
+  split into the quoted range and SVI's extrapolated wings, with the
+  extrapolated share. Simpson on 4,000 intervals per piece, broken at
+  k = 0 (where the out-of-the-money price has a kink) and at the quoted
+  range's ends. It runs out to where z = −d₂ reaches ±8.
+- **From the quotes (the VIX way):** CBOE's sum over out-of-the-money
+  quotes, with the K₀ term, at mid, bid and ask. A strike with no bid is
+  skipped, and two in a row end that side, as CBOE does. The bid and ask
+  sums bound the quoted strikes' contribution with no model, since every
+  weight is positive.
+- **The z-form** (the smile's total variance averaged under a standard
+  normal in z) is computed too, as the test of the first. They agree to
+  about 10⁻¹¹.
+
+**Three choices the plan left open:**
+- **The exact K₀ term,** 2[F/K₀ − 1 − ln(F/K₀)]. CBOE uses its
+  second-order form, (F/K₀ − 1)²; the exact one costs nothing.
+- **The band check is like-for-like.** The plan compared the fit's
+  integral over the quoted range with the quotes' band. But the sum and
+  the integral differ by discretization and by the half-strips past the
+  end strikes (Jiang & Tian 2005). So the check sums the *fitted* prices
+  on the same strikes with the same weights, and flags a fit outside the
+  band.
+- **K₀ is the highest strike at or below F with a two-sided put.** If its
+  call isn't quoted, parity gives it, from the chain's carry.
+
+**Across expiries:**
+- constant-maturity tenors, linear in total variance between the
+  bracketing expiries, never extrapolated (the headline is 30 days)
+- the quote sums and their band, interpolated alike
+- forward variances, with the calendar check
+
+**A correction to the plan.** Its table gave 16.5% for the VIX sum on
+5-point strikes over −6 to +3 sd. The code gives 16.4%. That's the band's
+own integral, which strikes that dense should match, and the right value.
+Every other figure in the table reproduces: 16.6%, the band shares (86%,
+95%, 98.5%), and the steep skew's 19.3% and 73%. So do the Merton
+example's 14.88% against 15.03%.
+
+**Also:**
+- **`SyntheticChainSpec` gains `k_range_sd`.** The default is today's −2.5
+  to +1.5, so every existing draw is unchanged. The tests use it for
+  decision 2's −6 to +3.
+- **The canon (derivatives strand) gains five papers:**
+  - Carr–Madan 1998, recorded as unchecked: Crossref has only its 2001
+    reprint, with no year
+  - Demeterfi et al. 1999
+  - CBOE 2003, the VIX white paper, recorded as unchecked: it has no
+    identifier
+  - Jiang–Tian 2005
+  - Fukasawa 2012
+
+  Britten-Jones–Neuberger 2000 and Lee 2004 now also list the new module.
+
+**Tests (25):**
+- a flat smile giving σ² exactly
+- the k-form equal to the z-form on fitted SVI, joint SSVI and the true
+  surface
+- the plan's worked example
+- on the synthetic world (four seeds, both bands):
+  - the fit's sum inside the band at every expiry
+  - the whole-smile estimate within half the band of the truth
+  - the wide band cutting the extrapolated share from about 18% to
+    under 5%
+- a lifted fit flagged
+- on a Merton chain:
+  - the spanning integral matching −2E[ln S_T/F] to 10⁻⁶
+  - sitting below E[QV] by the jump term
+  - the quote sum on a dense chain getting there too
+- the sum converging at h² as strikes densify, and truncation only
+  lowering it
+- K₀ and parity; skipped and cut-off strikes; chains that can't make a
+  sum
+- interpolation exact on additive variance, never extrapolated
+- forward variances and the calendar flag
+- inputs validated
+
+**Not checked live:** the SPX/SPY check with TWS running (the plan's last
+I1 item) needs TWS. It records the extrapolated share at today's band and
+at a wide one. Decision 2 already settled on the wide band, so the check
+measures it rather than deciding it.

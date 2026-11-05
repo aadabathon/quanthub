@@ -1,7 +1,18 @@
 # CURRENT_STATE.md
 
 **Update this file whenever meaningful work lands.** Last updated:
-**2026-11-04**: ALLOCATION A4 (D74): snapshot hygiene. That completes
+**2026-11-05**: VARIANCE I1 (D75): model-free implied variance, in
+`models/implied_variance.py`. No page shows it yet; the card is I4.
+- **From a fitted smile:** each expiry's √K_var, split into the quoted
+  range and the extrapolated wings, with the extrapolated share.
+- **From the quotes alone:** the VIX-style sum at mid, bid and ask. The
+  bid and ask sums are a model-free band, and a fit outside it is
+  flagged.
+- **Across expiries:** a 30-day constant-maturity tenor (or any other),
+  and forward variances with the calendar check.
+- **Not checked live:** SPX/SPY with TWS running.
+
+Also **2026-11-04**: ALLOCATION A4 (D74): snapshot hygiene. That completes
 ALLOCATION.
 - **Re-imports are flagged:** importing a file that was imported before
   stops and says what a second copy would do: phantom trade drafts, or

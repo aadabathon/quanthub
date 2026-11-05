@@ -216,6 +216,10 @@ quant_hub/
 │   │                          butterfly/calendar checks; synthetic chains;
 │   │                          surface_mesh (total variance linear in T at
 │   │                          fixed k, checked between expiries)
+│   ├── implied_variance.py    model-free implied variance: the fitted smile's
+│   │                          K_var (quoted range + wings), the VIX-style
+│   │                          quote sum and its bid/ask band, constant-
+│   │                          maturity tenors, forward variances (D75)
 │   ├── market_surface.py      MarketSurface: a fit → (σ, r, q) at any (K, T),
 │   │                          extrapolation flagged; apply_surface fills
 │   │                          strategy legs (sticky strike) (C4)

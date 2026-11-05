@@ -42,7 +42,7 @@ are reproduced as I1's tests.
 | Same, today's request band only (−2.5 to +1.5 ATM sd) | 15.4%: the band holds 86% of the variance |
 | Band −4 to +2 sd | 16.1% (95%) |
 | Band −6 to +3 sd | 16.4% (98.5%) |
-| VIX-style sum, 5-point strikes over −6 to +3 sd | 16.5% |
+| VIX-style sum, 5-point strikes over −6 to +3 sd | 16.4%, the band's own integral (corrected in D75 from 16.5%) |
 | A steeper skew (η = 1.5, ∂σ/∂k ≈ −1.8) | 19.3% against the same 14.0% ATM; today's band holds 73% |
 
 **Put that smile beside a GARCH month of 13.8%** (the app's reading on
@@ -240,6 +240,10 @@ reads D57's `split_gaps` (PR #18).
 
 ### I1. Model-free implied variance
 `models/implied_variance.py`
+
+**Status:** landed 2026-11-05 (D75), offline. The live SPX/SPY check
+waits for TWS. One correction to the table above: the VIX sum on 5-point
+strikes gives 16.4%, the band's own integral, not 16.5%.
 - **From a `SurfaceFit`:** each slice's K_var, split into the quoted range
   and the wings, with the extrapolated share.
 - **From the quotes:** the VIX-style sum with the K₀ term, at mid, bid

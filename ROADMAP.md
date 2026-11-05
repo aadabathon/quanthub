@@ -631,7 +631,10 @@ The order after the 2026-11-03 decisions:
    What-if page (D73). ~~A4~~ landed 2026-11-04 (D74): import hashes, the
    re-import flag, delete after a backup. ALLOCATION is done.
 5. **Then:** VARIANCE, then REGIME_MODEL, which supersedes TARGET's T2
-   and T3. BUDGET folds into A3.
+   and T3. BUDGET folds into A3. ~~VARIANCE I1~~ landed 2026-11-05
+   (D75): model-free implied variance from the fit and from the quotes,
+   with its band, constant-maturity tenors and forward variances. I2,
+   the realized side and the premium, is next.
 
 Also approved, to be placed in this order later:
 - HORIZON H0–H1, a low-scope stdlib server
