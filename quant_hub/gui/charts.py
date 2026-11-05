@@ -891,6 +891,8 @@ class Curve:
     line: bool = True           # False: points only
     readout: bool = True        # False: leave out of the hover readout
                                 # (sparse points that shouldn't be interpolated)
+    hollow: Sequence[bool] = ()  # per point: True draws its marker as an outline
+                                 # (a value that's mostly extrapolated)
 
 
 class CurveChart(QWidget):
@@ -900,7 +902,7 @@ class CurveChart(QWidget):
 
     Extras: labelled vertical reference lines (spot, strike), a zero line,
     labelled points on the axis (breakevens), and a shaded band between two
-    y arrays (a confidence interval)."""
+    y arrays (a confidence interval), read out with ``band_fmt``."""
 
     def __init__(self, x_axis: str = "price", y_axis: str = "price", log_x: bool = False,
                  x_name: str = "S", x_fmt: str = "{:,.2f}") -> None:
@@ -929,6 +931,7 @@ class CurveChart(QWidget):
         self._items: list[pg.GraphicsObject] = []
         self._curves: Sequence[Curve] = ()
         self._band: tuple[np.ndarray, np.ndarray, np.ndarray, str] | None = None
+        self._band_fmt = "{:,.4f}"
         self._vline = pg.InfiniteLine(angle=90, pen=_crosshair_pen(), movable=False)
         self._vline.setVisible(False)
         self._plot.addItem(self._vline, ignoreBounds=True)
@@ -943,11 +946,12 @@ class CurveChart(QWidget):
 
     def set_curves(self, curves: Sequence[Curve], *, vlines: Sequence[tuple[str, float]] = (),
                    zero_line: bool = False, points: Sequence[tuple[float, str]] = (),
-                   band: tuple[np.ndarray, np.ndarray, np.ndarray, str] | None = None) -> None:
+                   band: tuple[np.ndarray, np.ndarray, np.ndarray, str] | None = None,
+                   band_fmt: str = "{:,.4f}", band_color: str = PALETTE.series) -> None:
         for item in self._items:
             self._plot.removeItem(item)
         self._items = []
-        self._curves, self._band = curves, band
+        self._curves, self._band, self._band_fmt = curves, band, band_fmt
         if zero_line:
             self._add(pg.InfiniteLine(pos=0.0, angle=0, pen=pg.mkPen(PALETTE.border_strong)), True)
         if band is not None:
@@ -958,7 +962,7 @@ class CurveChart(QWidget):
             hi_item = pg.PlotCurveItem(self._xv(bx), hi, pen=pg.mkPen(None))
             self._add(lo_item)
             self._add(hi_item)
-            self._add(pg.FillBetweenItem(lo_item, hi_item, brush=_color(PALETTE.series, 0.18)))
+            self._add(pg.FillBetweenItem(lo_item, hi_item, brush=_color(band_color, 0.18)))
         for curve in curves:
             if curve.fill == "zero":
                 self._add(pg.PlotDataItem(curve.x, curve.y, pen=pg.mkPen(None), fillLevel=0.0,
@@ -973,10 +977,13 @@ class CurveChart(QWidget):
                     curve.color, width=curve.width,
                     style=Qt.DashLine if curve.dashed else Qt.SolidLine)))
             if curve.marker:
-                self._add(pg.ScatterPlotItem(self._xv(np.asarray(curve.x, dtype=float)), curve.y,
-                                             symbol=curve.marker, size=9,
-                                             brush=pg.mkBrush(curve.color),
-                                             pen=pg.mkPen(PALETTE.surface, width=1.5)))
+                hollow = list(curve.hollow) or [False] * len(curve.x)
+                self._add(pg.ScatterPlotItem(
+                    self._xv(np.asarray(curve.x, dtype=float)), curve.y,
+                    symbol=curve.marker, size=9,
+                    brush=[pg.mkBrush(PALETTE.surface if h else curve.color) for h in hollow],
+                    pen=[pg.mkPen(curve.color if h else PALETTE.surface, width=1.5)
+                         for h in hollow]))
         for name, x in vlines:
             self._add(pg.InfiniteLine(
                 pos=self._xv(x), angle=90, movable=False,
@@ -1048,8 +1055,9 @@ class CurveChart(QWidget):
                          f"<b style='{strong}'>{curve.fmt.format(y)}</b>")
         if self._band is not None:
             bx, lo, hi, name = self._band
-            parts.append(f"{name} <b style='{strong}'>{float(np.interp(x, bx, lo)):,.4f} – "
-                         f"{float(np.interp(x, bx, hi)):,.4f}</b>")
+            fmt = self._band_fmt
+            parts.append(f"{name} <b style='{strong}'>{fmt.format(float(np.interp(x, bx, lo)))}"
+                         f" – {fmt.format(float(np.interp(x, bx, hi)))}</b>")
         self._readout.setText(sep.join(parts))
 
     def clear(self) -> None:

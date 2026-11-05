@@ -254,9 +254,10 @@ quant_hub/
 │   ├── underlying.py          any source → spot (quote, else last close) +
 │   │                          realized vol, with provenance (D28)
 │   ├── vol_context.py         any source → trailing realized vols + GARCH
-│   │                          expected-vol term structure (D30); the
-│   │                          variance premium from stored chains and
-│   │                          another symbol's bars (D76)
+│   │                          expected-vol term structure (D30); a fit's
+│   │                          variance premium, from its symbol's stored
+│   │                          chains and another symbol's bars, with one
+│   │                          GARCH fit as of the chain (D76, D77)
 │   ├── workstation.py         local-store overview, windowed history, GBM
 │   │                          forecast fan (the Dashboard's data, D31)
 │   ├── option_chains.py       ChainService: chains by named source, every

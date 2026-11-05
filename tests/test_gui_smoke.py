@@ -1707,6 +1707,142 @@ def test_vol_lab_3d_toggle(qt_app):
     assert lab._surface_stack.currentWidget() is lab._surface
 
 
+def test_vol_lab_prices_a_synthetic_fits_variance(qt_app):
+    # VARIANCE I4: √K_var on the term structure, and the premium cards
+    # priced against the history the overlay loads, fit by fit (D15).
+    from dataclasses import replace
+
+    from quant_hub.gui.pages.volatility_lab import _NOT_LOADED, _Priced
+    app, window = qt_app
+    lab = _fitted_vol_lab(app, window)
+    names = [c.name for c in lab._term_chart._curves]
+    assert "√K_var (fit)" in names and lab._term_chart._band is not None
+    kvar = lab._term_chart._curves[names.index("√K_var (fit)")]
+    assert list(kvar.y) == [e.smile.vol for e in lab._variance.expiries]
+    assert not any(kvar.hollow)                       # ~20% from the wings at 21 strikes
+    lab._on_view("Term structure")
+    _hover(lab._term_chart._canvas, 0.5, 0.5)
+    readout = lab._term_chart._readout.text()
+    assert "√K_var (fit)" in readout and "Quote sum bid–ask" in readout
+    assert readout.count("%") >= 4                    # the band reads in percent too
+    assert lab._premium_stack.currentWidget() is lab._premium_empty
+    assert lab._premium_empty._title.text() == _NOT_LOADED[0]
+
+    lab._premium_load.click()                         # the overlay's source: synthetic SPY
+    wait_for(app, lambda: lab._premium is not None, timeout_s=30)
+    assert lab._premium_inputs == ("SPY", "synthetic", 1825)
+    view = lab._premium
+    assert lab._context is view.context is not None   # one GARCH: the chart's is the card's
+    assert "GARCH forecast · SPY" in [c.name for c in lab._term_chart._curves]
+    assert (view.symbol, view.realized_symbol) == ("SYNTH", "SPY")
+    assert lab._premium_stack.currentWidget() is lab._premium_body
+    assert lab._premium_table.rowCount() == len(lab._fit.slices) == 6
+    for key in ("kvar", "quotes"):
+        assert lab._premium_tiles[key].value_text().endswith("%")
+    for key in ("garch", "trailing"):
+        assert lab._premium_tiles[key].value_text().endswith("pts")
+    assert lab._history_stack.currentWidget() is lab._history_empty
+    assert "synthetic chain has no history" in lab._history_empty._body.text()
+
+    # A late result for a replaced fit is dropped.
+    lab._on_priced(_Priced(replace(lab._fit), None, "stale"))
+    assert lab._premium is view and lab._premium_stack.currentWidget() is lab._premium_body
+
+    # A refit is repriced against the same history, and blank until then.
+    before = lab._fit
+    lab._on_method("SSVI")
+    wait_for(app, lambda: lab._fit is not before and lab._premium is not None, timeout_s=30)
+    assert [e.implied.total for e in lab._premium.expiries] == [
+        e.smile.total for e in lab._variance.expiries]
+    assert lab._premium is not view and lab._context is lab._premium.context
+
+
+def test_vol_lab_prices_stored_chains_against_another_symbols_bars(tmp_path):
+    # SPX's stored chains, a snapshot a day, against SPY's stored bars (decision
+    # 3), offline: the newest snapshot on the page, and the history filled.
+    from dataclasses import replace
+    from datetime import date, datetime, time
+
+    from quant_hub.data.ranges import DateRange
+    from quant_hub.data.trading_calendar import trading_days
+    from quant_hub.models.svi import SSVISurface
+    from quant_hub.models.vol_surface import SyntheticChainSpec, synthetic_chain
+    from quant_hub.storage.chain_store import ChainStore
+
+    db = tmp_path / "market_data.db"
+    bars = BarStore(db)
+    dates = pd.bdate_range("2024-01-02", "2025-12-31")
+    closes = 450 * np.exp(np.cumsum(np.random.default_rng(3).normal(0, 0.009, len(dates))))
+    frame = pd.DataFrame({"open": closes, "high": closes, "low": closes, "close": closes,
+                          "volume": np.full(len(dates), 1e6)}, index=dates)
+    bars.insert_bars(InstrumentKey("SPY"), "ibkr", "1 day", frame)
+    bars.add_coverage(InstrumentKey("SPY"), "ibkr", "1 day", DateRange(dates[0], dates[-1]))
+    bars.close()
+    chains = ChainStore(db)
+    surface = SSVISurface(v0=0.16**2, v_inf=0.18**2, kappa=2.0, rho=-0.7, eta=1.0)
+    days = trading_days(date(2025, 6, 2), date(2025, 9, 30))
+    for i, day in enumerate(days):
+        spec = SyntheticChainSpec(spot=6000, seed=i, k_range_sd=(-6, 3), strikes_per_expiry=31)
+        chain = synthetic_chain(surface, spec, as_of=datetime.combine(day, time(10)))
+        chains.save(replace(chain, symbol="SPX", source="ibkr"))
+    chains.close()
+
+    app, window = create_app(AppConfig(db_path=db), argv=["test"])
+    window.show()
+    try:
+        lab = window._pages["Volatility Lab"]          # built at launch (D55), not shown yet
+        lab._on_mode("Market chain")
+        lab._chain_source.select.set_current("stored")
+        lab._fields["chain_symbol"].set_text("SPX")
+        lab._source.set_current("ibkr")
+        lab._symbol.set_text("SPY")
+        lab._lookback.set_text("730")
+        window.show_page("Volatility Lab")             # fits the newest stored SPX chain
+        wait_for(app, lambda: lab._fit is not None, timeout_s=30)
+        assert lab._snapshot is not None and lab._fit.chain.as_of.date() == days[-1]
+        lab._premium_load.click()
+        wait_for(app, lambda: lab._premium is not None, timeout_s=60)
+        view = lab._premium
+        assert (view.symbol, view.realized_symbol, view.source) == ("SPX", "SPY", "ibkr")
+        assert view.days_with_snapshots == len(days)
+        # The overlay is as of the chain's day, not the bars' December end.
+        assert lab._context is view.context
+        assert lab._context.history_end.date() == days[-1]
+        assert "2025-09-30" in lab._context_label.text()
+        assert any("not connected to IBKR" in n for n in view.notes)
+        # The bars reach back past the longest expiry's trailing window.
+        assert view.expiries[-1].dte == 365
+        assert all(e.garch is not None and e.trailing is not None for e in view.expiries)
+        assert lab._premium_table.rowCount() == 6
+
+        # Every window has closed (the bars run to December), so the history
+        # is complete, with its mean, and today ranks among the earlier days.
+        assert len(view.ex_post.points) == len(days) and view.ex_post.pending == 0
+        assert lab._history_stack.currentWidget() is lab._history_body
+        assert len(lab._history_chart._panels) == 2
+        assert lab._history_tiles["mean"].value_text().endswith("pts")
+        assert lab._history_tiles["percentile"].value_text()[:-2].isdigit()
+        assert lab._history_tiles["windows"].value_text() == f"{len(days)} complete"
+        _hover(lab._history_chart._canvas, 0.5, 0.3)
+        assert "Realized after" in lab._history_chart._readout.text()
+    finally:
+        _close(app, window)
+
+
+def test_curve_chart_draws_hollow_points(qt_app):
+    # A point that's mostly extrapolated is an outline: the surface inside it.
+    import pyqtgraph as pg
+
+    from quant_hub.gui.charts import Curve, CurveChart
+    from quant_hub.gui.theme import PALETTE
+    chart = CurveChart()
+    chart.set_curves([Curve("K", np.array([7.0, 30.0]), np.array([0.2, 0.21]),
+                            PALETTE.series_2, marker="o", hollow=(True, False))])
+    (scatter,) = [i for i in chart._items if isinstance(i, pg.ScatterPlotItem)]
+    fills = [p.brush().color().name() for p in scatter.points()]
+    assert fills == [PALETTE.surface.lower(), PALETTE.series_2.lower()]
+
+
 _DRAW_3D = """
 import sys, time
 from pathlib import Path

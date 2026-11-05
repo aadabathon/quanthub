@@ -1,9 +1,10 @@
-"""The variance premium wired through the vol context (VARIANCE I2): stored
-chains, another symbol's bars, today's fit and the history's quote sums."""
+"""The variance premium wired through the vol context (VARIANCE I2, I4): a
+fitted chain, the stored chains of its symbol, another symbol's bars, and the
+history's quote sums."""
 
 import math
 from dataclasses import replace
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 
 import numpy as np
 import pandas as pd
@@ -14,8 +15,18 @@ from quant_hub.data.types import PriceBasis, PriceHistory
 from quant_hub.models.carry import implied_carry
 from quant_hub.models.implied_variance import quote_tenor
 from quant_hub.models.svi import SSVISurface
-from quant_hub.models.variance_premium import window_after
-from quant_hub.models.vol_surface import SyntheticChainSpec, synthetic_chain
+from quant_hub.models.variance_premium import (
+    closes_by_day,
+    garch_expected_total,
+    realized_total,
+    window_after,
+    window_before,
+)
+from quant_hub.models.vol_surface import (
+    SyntheticChainSpec,
+    fit_surface,
+    synthetic_chain,
+)
 from quant_hub.services.market_service import MarketService
 from quant_hub.services.option_chains import ChainService
 from quant_hub.services.vol_context import load_variance_premium
@@ -68,25 +79,46 @@ def world():
     store.close()
 
 
-def load(chains, closes, **kwargs):
+def newest_fit(store, symbol="SYNTH"):
+    newest = max(store.snapshots(symbol), key=lambda s: (s.as_of, s.id))
+    return fit_surface(implied_carry(store.load(newest.id)).chain)
+
+
+def load(chains, closes, fit, **kwargs):
     market = MarketService([PathSource(closes)])
-    return load_variance_premium(market, chains, "synth", "path", realized_symbol="spy",
+    return load_variance_premium(market, chains, fit, "path", realized_symbol="spy",
                                  now=NOW, **kwargs)
 
 
 def test_todays_premium_and_the_history(world):
     chains, store = world
-    view = load(chains, gbm())
+    closes = gbm()
+    fit = newest_fit(store)
+    view = load(chains, closes, fit)
     assert (view.symbol, view.realized_symbol, view.source) == ("SYNTH", "SPY", "path")
-    assert view.as_of == datetime.combine(SNAPSHOT_DAYS[-1], time(15, 30))   # the newest
+    day0 = SNAPSHOT_DAYS[-1]
+    assert view.as_of == datetime.combine(day0, time(15, 30))   # the fitted chain's
     assert view.days_with_snapshots == len(SNAPSHOT_DAYS)
     assert [e.dte for e in view.expiries] == [7, 30, 60, 91, 182, 365]
+    by_day = closes_by_day(closes)
     for e in view.expiries:
-        assert e.trading_days == len(window_after(SNAPSHOT_DAYS[-1], e.dte))
-        assert e.garch.years == pytest.approx(e.dte / 365)
+        assert e.trading_days == len(window_after(day0, e.dte))
+        assert e.garch.years == e.trailing.years == pytest.approx(e.dte / 365)
+        assert e.garch.implied == e.trailing.implied == pytest.approx(e.implied.total)
+        assert e.trailing.against == pytest.approx(                 # the same length, before
+            realized_total(by_day, window_before(day0, e.dte)), rel=1e-12)
         assert e.implied.extrapolated_share < 0.05              # the wide band
     assert view.tenor.days == 30 and view.garch_tenor.years == pytest.approx(30 / 365)
     assert view.garch_tenor.implied == pytest.approx(view.tenor.smile.total)
+
+    # One GARCH fit, as of the chain's day, behind the columns and the overlay.
+    context = view.context
+    assert context.history_end.date() == day0 and context.symbol == "SPY"
+    assert context.returns_used == sum(
+        (day0 - timedelta(days=1825)) <= d <= day0 for d in by_day) - 1
+    first = view.expiries[0]
+    assert first.garch.against == pytest.approx(garch_expected_total(
+        context.garch, context.next_variance, first.trading_days), rel=1e-12)
 
     # The history is each day's first snapshot, valued by its quote sums.
     first = {s.as_of.date(): s.id for s in sorted(store.snapshots("SYNTH"),
@@ -95,8 +127,11 @@ def test_todays_premium_and_the_history(world):
         expected = quote_tenor(implied_carry(store.load(first[p.as_of.date()])).chain, 30)
         assert p.premium.implied == pytest.approx(expected.mid, rel=1e-12)
     assert len(view.trailing_history.points) == len(SNAPSHOT_DAYS)
-    assert view.trailing == view.trailing_history.points[-1].premium
-    assert view.quote_tenor.mid == pytest.approx(view.trailing.implied)
+    # Today's is the fitted chain's quote sum (the late snapshot), over the
+    # same trailing window as the day's first.
+    assert view.quote_tenor.mid == pytest.approx(quote_tenor(fit.chain, 30).mid, rel=1e-12)
+    assert view.trailing.implied == pytest.approx(view.quote_tenor.mid)
+    assert view.trailing.against == view.trailing_history.points[-1].premium.against
     assert view.trailing_percentile is not None and 0 <= view.trailing_percentile <= 1
 
     # Ex post: only windows whose last session has closed (NOW's is still open).
@@ -108,8 +143,8 @@ def test_todays_premium_and_the_history(world):
 
 
 def test_a_split_sized_gap_is_named_and_its_windows_left_out(world):
-    chains, _ = world
-    view = load(chains, gbm(split_on=date(2025, 7, 15)))
+    chains, store = world
+    view = load(chains, gbm(split_on=date(2025, 7, 15)), newest_fit(store))
     assert [g.day.date() for g in view.split_gaps] == [date(2025, 7, 15)]
     assert any("split-sized gap" in n for n in view.notes)
     reasons = {e.reason for e in view.trailing_history.excluded + view.ex_post.excluded}
@@ -118,8 +153,42 @@ def test_a_split_sized_gap_is_named_and_its_windows_left_out(world):
                for p in view.trailing_history.points + view.ex_post.points)
 
 
-def test_no_stored_chains_says_how_to_get_them(world):
+def test_a_chain_with_no_stored_history_is_still_priced(world):
+    # A synthetic chain on the page, say: today's premiums, no history.
     chains, _ = world
-    with pytest.raises(ValueError, match=r"no stored QQQ chains yet.*\[collect\] chains"):
-        load_variance_premium(MarketService([PathSource(gbm())]), chains, "qqq", "path",
-                              now=NOW)
+    chain = synthetic_chain(SURFACE, SyntheticChainSpec(seed=3), as_of=datetime(2025, 11, 3, 11))
+    view = load(chains, gbm(), fit_surface(replace(chain, symbol="QQQ")))
+    assert view.symbol == "QQQ" and view.days_with_snapshots == 0
+    assert all(e.garch is not None and e.trailing is not None for e in view.expiries)
+    assert view.trailing is not None and view.trailing_percentile is None
+    assert not view.ex_post.points and not view.trailing_history.points
+    assert any("No stored QQQ chains" in n and "[collect] chains" in n for n in view.notes)
+
+
+def test_history_off_skips_the_stored_snapshots(world):
+    # The lab's synthetic chain: no lookup, so no advice about collecting it.
+    chains, store = world
+    view = load(chains, gbm(), newest_fit(store), history=False)
+    assert view.days_with_snapshots == 0 and not view.trailing_history.points
+    assert not any("No stored" in n for n in view.notes)
+    assert view.trailing is not None and view.context is not None
+
+
+def test_without_bars_there_is_nothing_to_compare(world):
+    # Bars that end before the windows: GARCH and the trailing windows say
+    # why, and the implied side still shows.
+    chains, store = world
+    closes = gbm()
+    view = load(chains, closes[closes.index < pd.Timestamp(2021, 1, 6)], newest_fit(store))
+    assert [e.dte for e in view.expiries] == [7, 30, 60, 91, 182, 365]
+    assert all(e.garch is None and e.trailing is None for e in view.expiries)
+    assert view.garch_tenor is None and view.trailing is None and view.context is None
+    assert any(n.startswith("No GARCH comparison") for n in view.notes)
+    assert any(n.startswith("No trailing realized for 7d, 30d") for n in view.notes)
+
+
+def test_the_realized_side_needs_a_symbol(world):
+    chains, store = world
+    with pytest.raises(ValueError, match="realized side"):
+        load_variance_premium(MarketService([PathSource(gbm())]), chains, newest_fit(store),
+                              "path", realized_symbol=" ", now=NOW)

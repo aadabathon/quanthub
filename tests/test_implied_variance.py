@@ -353,6 +353,8 @@ def test_the_quote_sums_alone_at_a_constant_maturity():
     assert at_45.mid == pytest.approx(0.5 * sums[30.0].mid + 0.5 * sums[60.0].mid)
     assert at_45.bid < at_45.mid < at_45.ask
     assert at_45.vol == pytest.approx(math.sqrt(at_45.mid / (45 / 365)))
+    low, high = at_45.vol_band
+    assert low == pytest.approx(math.sqrt(at_45.bid / (45 / 365))) and low < at_45.vol < high
     assert quote_tenor(chain, 400) is None and quote_tenor(chain, 3) is None
     fitted = implied_variance(fit_surface(chain)).tenor(30)
     assert at_30.mid == pytest.approx(fitted.smile.total, rel=0.04)   # the wide band holds ~97%

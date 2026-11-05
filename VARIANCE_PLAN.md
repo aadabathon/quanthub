@@ -309,6 +309,15 @@ through FRED (D60).
   - VIX points and own points never mix in one average without a label
 
 ### I4. The card
+
+**Status:** landed 2026-11-05 (D77). Two cards below the views, not a
+dock: D55 docks pages, and D56 moves cards within one.
+- **One GARCH fit, as of the chain,** draws the overlay and fills the
+  cards.
+- **Inputs:** the premium uses Compare with history's source, symbol and
+  lookback.
+- **Each new fit is repriced.** The cards and the overlay are blank until
+  the job lands (D15).
 - **The Term structure view** gains √K_var per expiry, with its quote band,
   beside ATM IV, GARCH and realized. Points that are mostly extrapolated are
   drawn hollow.
