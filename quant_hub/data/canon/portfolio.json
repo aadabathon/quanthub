@@ -232,7 +232,7 @@
     "doi": "10.1111/jofi.12513",
     "question": "Should exposure fall when volatility rises?",
     "changed": "Scaling factors by inverse recent variance raises Sharpe ratios and alphas, because volatility moves more than expected return.",
-    "lives_in": [],
+    "lives_in": ["quant_hub/models/hedge.py"],
     "links": [{"to": "merton1969", "kind": "builds_on"}, {"to": "engle1982", "kind": "builds_on"}],
     "verified": {"via": "crossref", "checked": "2026-11-02", "matched": ["title", "first_author", "year"]}
   }

@@ -220,7 +220,7 @@
     "doi": "10.1111/0022-1082.00352",
     "question": "Do option returns match what the stock's risk alone implies?",
     "changed": "Index options, puts especially, lose far more than their beta predicts: volatility risk carries a price.",
-    "lives_in": [],
+    "lives_in": ["quant_hub/models/hedge.py"],
     "links": [{"to": "blackscholes1973", "kind": "tests"}],
     "verified": {"via": "crossref", "checked": "2026-11-02", "matched": ["title", "first_author", "year"]}
   },

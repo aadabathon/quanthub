@@ -187,6 +187,10 @@ quant_hub/
 │   ├── stress.py              crash stress: a constant-β replay through
 │   │                          French's market from 1926, its worst falls,
 │   │                          the β band's (A2, D67)
+│   ├── hedge.py               hedges on the book: cash, streams, trend, vol
+│   │                          targeting, rolled puts / spreads / collars at
+│   │                          VIX·ρ·smile; the yardstick: crash windows by
+│   │                          rule, cost, Δ log growth ± NW, convexity (U1)
 │   ├── dcf.py                 unlevered-FCF DCF (the owner's, ported):
 │   │                          projection, terminal conventions, valuation
 │   │                          date, sensitivity, multiples, margin of safety,

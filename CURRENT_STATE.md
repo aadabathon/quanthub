@@ -1,7 +1,21 @@
 # CURRENT_STATE.md
 
 **Update this file whenever meaningful work lands.** Last updated:
-**2026-11-04**: ALLOCATION A2 (D67): crash stress on the Review page.
+**2026-11-04**: HEDGE U1 (D68): `models/hedge.py`, the math only, with no
+page until U4.
+- **Candidates:** cash, another stream (Treasuries, a trend fund), trend
+  on the market (200-day average or 12-month momentum), and vol
+  targeting, each applied to the book at a size h, decided at the close
+  and held to the next. Also rolled puts, put spreads and zero-cost
+  collars, marked at Black–Scholes from VIX, ρ and a smile, with
+  half-spreads and whole-contract granularity.
+- **The yardstick:** crash windows found by rule (20 since 1926), the
+  cost outside them, what each hedge paid in each crash, Δ log growth
+  with a Newey–West error, drawdowns, and up and down betas.
+- **Not yet:** VIX and the index's history (U2), the service with today's
+  smile (U3), and the Hedge Lab page (U4).
+
+Also **2026-11-04**: ALLOCATION A2 (D67): crash stress on the Review page.
 - The book's β, with its 95% band, is replayed through Ken French's daily
   market from 1926: held at β, the rest in T-bills, rebalanced daily.
 - The card shows the worst fall with its dates, the band's falls, the

@@ -199,6 +199,10 @@ U for umbrella; H is HORIZON's Track H.
 
 ### U1. The hedge math (`models/hedge.py`)
 
+**Status:** landed 2026-11-04 (D68): the linear and rule candidates of
+§4, the rolled option programs of §2–3 (puts, put spreads, collars), and
+the yardstick of §5. The smile function and VIX history come with U2–U3.
+
 - Option programs (puts, put spreads, collars), rolled and marked daily
   as in §2–3.
 - The linear and rule candidates of §4, reusing `strategies.py` and

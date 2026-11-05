@@ -2485,3 +2485,105 @@ Those are the market's own total-return falls.
 
 **Checked** with a screenshot of the Review page: the tests' made-up book,
 with your stored French series.
+
+## D68 — HEDGE U1: the hedge math (2026-11-04)
+
+D59 put HEDGE U1 after ALLOCATION A1–A2. U1 is the hedge math in
+`models/hedge.py`: pure and tested, with no page yet (that's U4) and no
+VIX history yet (that's U2). It has every candidate HEDGE_PLAN lists and
+the yardstick that compares them.
+
+**Rule and linear candidates (§4).** Each gives a hedged daily return
+series from the book's:
+- **Cash at weight w:** (1 − w)·R_B + w·r.
+- **Another stream at weight w:** a Treasury fund, or your trend fund.
+- **Scaling the market exposure:** R_H = r + (1 − h(1 − e))·(R_B − r).
+  The exposure e ∈ [0, 1] is decided at close t and held to t + 1, and
+  the size is h ∈ [0, 1]. h = 0 is the book exactly. Before a rule has
+  its history, e = 1, so it doesn't hedge.
+  - **Trend on the market:** above its 200-day average, or a positive
+    12-month excess return (time-series momentum, Moskowitz–Ooi–
+    Pedersen 2012).
+  - **Vol targeting:** e = min(1, σ*/σ̂), from 21-day realized vol, or
+    GARCH(1,1) (Moreira–Muir 2017). It never levers. The GARCH
+    parameters are fitted on the whole series, a stated look-ahead;
+    realized vol has none.
+
+**Rolled option programs (§2–3).**
+- **The programs:** a put at K = m·S, a put spread (less a put at m₂·S),
+  or a zero-cost collar. The collar's call strike solves C(K_c) = P(K)
+  by bisection above the forward; the call's price falls in its strike.
+- **Rolls:** at expiry, or every n trading days. Each roll buys
+  q = h·b·W/S units on the hedged book's value.
+- **Self-financing:** premiums come out of the book, and payoffs go back
+  in. Each trade pays a half-spread c of each leg's price, and expiry
+  settles at intrinsic with no spread.
+- **Marks:** Black–Scholes, European, at σ = VIX·ρ·s(k, T), with k the
+  log-moneyness to the forward. The smile s is a function U3 will build
+  from today's surface; the flat smile runs beside it (decision 5). A
+  position keeps the rate and dividend yield of the day it was bought, a
+  negligible approximation over 1 to 12 months.
+- **Granularity:** whole contracts round n = h·b·V/(100·S). The ratio
+  they give is h_eff. On a $50k book half hedged at β 0.9, with the index
+  at $500, that's 0.45 contracts, which rounds to none.
+- This is Coval–Shumway's (2001) measurement of put returns, on a book.
+
+**The yardstick (§5):**
+- **Crash windows by rule:** every spell in which the market's
+  total-return level fell at least 15% from a peak. On French's century
+  that's 20 windows, from 1929–32 to 2025.
+- **Cost:** 252 × the mean of R_B − R_H on the days outside the windows,
+  with its Newey–West error.
+- **The crash table:** the book's return over each window, unhedged and
+  hedged, and what the hedge paid. Its mean is U4's "saved" axis.
+- **Δ log growth:** 252 × the mean of the paired daily log difference,
+  with its Newey–West error. Pairing cancels the shared market noise.
+- **Drawdown:** the deepest fall and the worst 252 days, hedged and not.
+- **Convexity:** Henriksson–Merton up and down betas of the hedge's
+  monthly return on the market's. Henriksson–Merton (1981) waits for its
+  verification in the canon.
+
+**First numbers** on French's 1926–2026 series, for a book at β 0.9.
+These are first looks for the lab, not a recommendation: selection
+across many candidates flatters the best one.
+
+| Hedge | Δ log growth | Deepest fall | β↑ / β↓ |
+|---|---|---|---|
+| None | | 80% | |
+| Cash 30% | −1.5% ± 0.5% | 67% | −0.28 / −0.26, linear |
+| 200-day trend | +1.0% ± 1.1% | 31% | −0.35 / −0.59, convex |
+| 10% OTM 3-month put* | +0.1% ± 0.7% | 51% | −0.10 / −0.34, convex |
+| 10% OTM 3-month collar* | +0.7% ± 0.8% | 44% | −0.33 / −0.32, linear |
+
+\* With a stand-in for VIX (21-day realized vol × 1.15). It carries
+little of the real variance premium, so the puts come out near break-even.
+Real VIX history (U2) will price them properly.
+
+**Canon:** Moreira–Muir (2017), Moskowitz–Ooi–Pedersen (2012) and
+Coval–Shumway (2001) now live in `models/hedge.py`.
+
+**Tests (33):**
+- rule candidates:
+  - h = 0 is the book exactly; the timing is t → t + 1
+  - the mixes are exact
+  - the trend rules go out in planted slides, and wait out their warm-up
+  - vol targeting tracks the vol and never levers, for both estimators
+- programs:
+  - Black–Scholes marks on a single position, to 1e-12
+  - settlement at intrinsic in a planted slide, spreads included
+  - the plan's worked premium (0.72 per 100 for a 10% OTM 3-month put at
+    21%)
+  - the collar's strike against parity (at the forward, C = P)
+  - crash losses falling as h grows
+  - a spread costing and paying less than its put
+  - Δg negative for dear puts and positive for cheap ones in a jumpy
+    world
+  - whole contracts and h_eff
+- yardstick:
+  - crash windows by rule
+  - cost on calm days only
+  - Δg against its closed form, and Newey–West against the true error
+    for iid and AR(1) differences
+  - cash linear, trend convex
+  - the worst year
+- refusals throughout

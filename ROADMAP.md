@@ -619,7 +619,8 @@ The order after the 2026-11-03 decisions:
    N_eff through IBKR's ISIN lookup (D66). ~~A2~~ landed 2026-11-04: crash
    stress on Review, measured, never graded (D67).
 3. **HEDGE U1:** the hedge math ([HEDGE_PLAN.md](HEDGE_PLAN.md)), then
-   U2–U5.
+   U2–U5. ~~U1~~ landed 2026-11-04 (D68): rule hedges, rolled option
+   programs and the yardstick. U2 (the index and VIX history) is next.
 4. **ALLOCATION A3–A4:** the What-if page and snapshot hygiene.
 5. **Then:** VARIANCE, then REGIME_MODEL, which supersedes TARGET's T2
    and T3. BUDGET folds into A3.
