@@ -36,6 +36,7 @@ file.
 from __future__ import annotations
 
 import os
+import re
 import tomllib
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -86,6 +87,7 @@ class AppConfig:
 
     # The SEC's required User-Agent, "Name email@example.com" (D47).
     sec_identity: str = ""
+    fred_key: str = ""                 # [fred] key: FRED's API (HEDGE U2, D69); never logged
 
     # The owner's filled-in REGIME.md, and the folder of broker exports (W7).
     regime_path: Path = field(default_factory=_default_regime_path)
@@ -129,6 +131,11 @@ client_id = 17
 # The SEC asks programs that download its filings to say who is asking:
 # your name and email. Needed only for the Valuation page's company data.
 # identity = "Your Name you@example.com"
+
+[fred]
+# FRED's API needs a free key (fredaccount.stlouisfed.org): 32 letters and
+# digits. It brings the VIX and T-bill history. Keep it out of any repository.
+# key = "…"
 
 [regime]
 # Your filled-in REGIME.md, which the Review page checks. Keep it outside the
@@ -190,12 +197,19 @@ def _identity(value: Any, _base: Path) -> str:
     return value.strip()
 
 
+def _fred_key(value: Any, _base: Path) -> str:
+    if not isinstance(value, str) or not re.fullmatch(r"[a-z0-9]{32}", value.strip()):
+        raise ValueError("must be your FRED API key in quotes: 32 lower-case letters and digits")
+    return value.strip()
+
+
 # [section] key -> (AppConfig field, parser)
 _SETTINGS = {
     "store": {"path": ("db_path", _path)},
     "ibkr": {"enabled": ("ibkr_enabled", _boolean), "host": ("ibkr_host", _host),
              "port": ("ibkr_port", _port), "client_id": ("ibkr_client_id", _client_id)},
     "sec": {"identity": ("sec_identity", _identity)},
+    "fred": {"key": ("fred_key", _fred_key)},
     "regime": {"path": ("regime_path", _path)},
     "positions": {"folder": ("positions_folder", _path)},
     "collect": {"chains": ("collect_chains", _symbols)},

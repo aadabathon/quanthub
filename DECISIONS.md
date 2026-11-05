@@ -2587,3 +2587,62 @@ Coval–Shumway (2001) now live in `models/hedge.py`.
   - cash linear, trend convex
   - the worst year
 - refusals throughout
+
+## D69 — HEDGE U2: FRED, and the index's history from IBKR (2026-11-04)
+
+U1's option programs mark their puts from VIX history and roll them on
+the index. U2 brings both in, along with the bill rates. It also lands
+the data batch's last provider, FRED (D59, D60).
+
+**FRED** (`providers/fred.py`, stdlib only).
+- **Terms** (D60): a free key, the credit line in the app, and
+  third-party series for personal use.
+  - The key goes in `settings.toml` as `[fred] key`: 32 lower-case
+    letters and digits, checked when the file is read. It's never
+    committed, logged, or put in an error message. A refused request
+    reports FRED's own reason, never the URL that carries the key.
+  - Every FRED series' citation starts with the credit line, so the
+    Data page's preview shows it.
+  - VIXCLS's adds Cboe's copyright, for personal use.
+- **The series:**
+  - `VIXCLS`: the VIX at the close, from 1990
+  - `DTB3`: the 3-month bill, discount basis, from 1954
+  - `DGS3MO`: the 3-month Treasury at constant maturity, from 1981.
+    REGIME.md's cash-rate row names it.
+- **Stored as published:** percent, in the D60 series store, one SHA-256
+  per reply. FRED's "." days are left out, never filled. The models
+  convert the units.
+- **The refresh:** `ExternalDataService.refresh_fred`. A series is
+  fetched when its copy is 20 hours old, or always when forced. Each
+  series fails on its own, keeping its stored copy. Without a key, the
+  refresh says how to set one.
+- **Where it shows:** Ctrl+K **Fetch FRED series**, and a **Fetch FRED**
+  button on the Data page. Without a key, that card's note says how to
+  get one.
+
+**The index from IBKR.**
+- **Index contracts:** the history source now asks for a listed index
+  (SPX, VIX) as an index contract, as the chain code already did
+  (`option_chain.underlying_spec`, which gained VIX).
+- **Bases and volume:** an index's level has no dividends or splits, so
+  both price bases read TRADES. It has no volume: IBKR's −1 stays
+  negative, and the bar check reads it as missing, as it always has.
+- **The depth check:** Ctrl+K **Sync index history from IBKR**, offered
+  only with IBKR on. It asks for SPX and VIX daily from 1980, one task
+  each, through the cached source, which stores the bars. The log says
+  the first day IBKR served, which is HEDGE decision 4's depth.
+
+**Not checked live:** FRED needs your key, and IBKR needs TWS. Until
+then, U1's programs can run on French's total-return level with no
+dividend, a close stand-in for the price index's options.
+
+**Tests:**
+- FRED's JSON shape: "." days left out, the credit line in every
+  citation, and each unreadable reply naming its fault
+- the key: checked, never in an error, FRED's own reason reported
+- the refresh: stale or forced, a failure keeping its copy, no key
+- the `[fred]` setting
+- SPX and VIX as index contracts with TRADES, and SPY still a stock
+- both Ctrl+K commands on the worker
+- the sync command absent with IBKR off
+- the Data page's FRED note

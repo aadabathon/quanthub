@@ -607,8 +607,9 @@ that implement it. Read-only, no new dependencies.
 
 The order after the 2026-11-03 decisions:
 1. **The data batch**, each provider behind a terms check: ~~Ken French~~
-   (landed 2026-11-03, D60, with the series store), FRED (VIX comes
-   through it: Cboe's own terms refuse storing), ~~a Shiller CSV~~ (landed
+   (landed 2026-11-03, D60, with the series store), ~~FRED~~ (landed
+   2026-11-04 with HEDGE U2, D69; VIX comes through it, since Cboe's own
+   terms refuse storing; live once `[fred] key` is set), ~~a Shiller CSV~~ (landed
    2026-11-03, D61), ~~SEC N-PORT~~ (landed 2026-11-03, D62)
    holdings, and ~~daily option chain snapshots~~ (landed 2026-11-03, D63). The standing direction:
    accumulate as much free data as possible. ~~A Data page~~ lists what's
@@ -620,7 +621,8 @@ The order after the 2026-11-03 decisions:
    stress on Review, measured, never graded (D67).
 3. **HEDGE U1:** the hedge math ([HEDGE_PLAN.md](HEDGE_PLAN.md)), then
    U2–U5. ~~U1~~ landed 2026-11-04 (D68): rule hedges, rolled option
-   programs and the yardstick. U2 (the index and VIX history) is next.
+   programs and the yardstick. ~~U2~~ landed 2026-11-04 (D69): FRED's VIX
+   and bill rates, and IBKR's index history. U3, the service, is next.
 4. **ALLOCATION A3–A4:** the What-if page and snapshot hygiene.
 5. **Then:** VARIANCE, then REGIME_MODEL, which supersedes TARGET's T2
    and T3. BUDGET folds into A3.

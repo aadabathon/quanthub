@@ -3,8 +3,9 @@
 D59's direction is to accumulate free data. This page shows what the store
 holds, one card per kind:
 
-* **Outside series** (D60, D61): Ken French's factors and Shiller's monthly
-  data, with their unit, range, count and when they were fetched.
+* **Outside series** (D60, D61, D69): Ken French's factors, Shiller's
+  monthly data and FRED's series, with their unit, range, count and when
+  they were fetched.
   Selecting one previews it in the side panel with its citation, which the
   source's terms ask to be shown.
 * **Fund holdings** (D62): the newest N-PORT report per fund.
@@ -55,6 +56,7 @@ class _Overview:
     bars: list
     has_identity: bool
     watchlist: tuple[str, ...]
+    has_fred_key: bool = True
 
 
 def _day(moment) -> str:
@@ -109,11 +111,18 @@ class DataPage(ScrollPage):
             "Outside series", "Free data stored as fetched; select one to preview it",
             [("Source", "left"), ("Series", "left"), ("Title", "left"), ("Frequency", "left"),
              ("From", "left"), ("Through", "left"), ("Values", "right"), ("Fetched", "left")], 2,
-            "Nothing stored yet: Fetch Ken French, or import Shiller's CSV.")
+            "Nothing stored yet: Fetch Ken French, Fetch FRED, or import Shiller's CSV.")
         self._series.setMinimumHeight(300)
+        self._fred_note = Note("ph.info", "info")
+        self._fred_note.set_text('FRED (the VIX and T-bill history) needs [fred] key = "…" in '
+                                 "settings.toml: a free key from fredaccount.stlouisfed.org.")
+        self._fred_note.hide()
+        card.body.addWidget(self._fred_note)
         self._series.selection_changed.connect(self._preview)
         card.add_action(button("Import Shiller CSV…", icon_name="ph.upload-simple",
                                on_click=lambda: self._act("Import Shiller CSV…")))
+        card.add_action(button("Fetch FRED", icon_name="ph.download-simple",
+                               on_click=lambda: self._act("Fetch FRED series")))
         card.add_action(button("Fetch Ken French", "primary", "ph.download-simple",
                                on_click=lambda: self._act("Fetch Ken French factors")))
         return card
@@ -186,7 +195,8 @@ class DataPage(ScrollPage):
     def _read(self) -> _Overview:
         return _Overview(self._external.catalog(), self._funds.catalog(), self._chains.snapshots(),
                          [s.summary for s in self._workstation.overview().series],
-                         self._funds.has_identity, self._collector.watchlist)
+                         self._funds.has_identity, self._collector.watchlist,
+                         self._external.has_fred_key)
 
     def _render(self, o: _Overview) -> None:
         self._series_rows = o.series
@@ -197,6 +207,7 @@ class DataPage(ScrollPage):
                                   f"{f.weight:.1%}", str(f.reports), _day(f.fetched_at)]
                                  for f in o.funds])
         self._identity_note.setVisible(not o.has_identity)
+        self._fred_note.setVisible(not o.has_fred_key)
         per_symbol: dict[str, list] = {}
         for snap in o.chains:                       # newest first
             per_symbol.setdefault(snap.symbol, []).append(snap)

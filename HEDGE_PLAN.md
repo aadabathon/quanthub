@@ -222,6 +222,11 @@ the yardstick of §5. The smile function and VIX history come with U2–U3.
 
 ### U2. The data
 
+**Status:** landed 2026-11-04 (D69), not yet checked live. FRED's
+VIXCLS, DTB3 and DGS3MO come with `[fred] key`. IBKR's SPX and VIX
+history come by Ctrl+K **Sync index history from IBKR** with TWS
+connected; its log gives the depth.
+
 - **The index, as far back as IBKR serves it,** traded and adjusted. The
   depth is checked first; ALLOCATION A2's decision 3 asks the same
   question.

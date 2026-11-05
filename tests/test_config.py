@@ -48,6 +48,14 @@ client_id = 3
     assert config.quote_timeout_s == AppConfig().quote_timeout_s           # untouched defaults
 
 
+def test_the_fred_key(tmp_path):
+    key = "0123456789abcdef0123456789abcdef"
+    config, problems = load_config(write(tmp_path, f'[fred]\nkey = " {key} "\n'))
+    assert problems == [] and config.fred_key == key
+    config, problems = load_config(write(tmp_path, '[fred]\nkey = "ABC"\n'))
+    assert config.fred_key == "" and "key must be your FRED API key" in problems[0]
+
+
 def test_the_sec_identity(tmp_path):
     config, problems = load_config(write(tmp_path, '[sec]\nidentity = " Jane Doe jane@example.com "\n'))
     assert problems == [] and config.sec_identity == "Jane Doe jane@example.com"

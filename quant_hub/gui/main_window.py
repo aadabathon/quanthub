@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from datetime import datetime
 
 from PySide6.QtCore import QByteArray, QTimer
 from PySide6.QtGui import QKeySequence, QScreen, QShortcut
@@ -24,6 +25,7 @@ from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, QInputDialog, QMainWind
 
 from quant_hub.broker.base import ConnectionEvent, ConnectionState
 from quant_hub.core import Core
+from quant_hub.data.types import PriceBasis
 from quant_hub.gui.components import CardGrid
 from quant_hub.gui.pages.base import Commands, Page, Shell
 from quant_hub.gui.sidebar import Sidebar
@@ -32,6 +34,9 @@ from quant_hub.gui.top_bar import TopBar
 from quant_hub.gui.workspace import Workspace
 
 _logger = logging.getLogger(__name__)
+
+INDEX_HISTORY = ("SPX", "VIX")                 # HEDGE U2's index and its vol
+INDEX_HISTORY_FROM = datetime(1980, 1, 2)      # before both start: IBKR's depth decides
 
 PUMP_INTERVAL_MS = 16
 LAYOUT_KEY = "workspace"
@@ -95,9 +100,12 @@ class MainWindow(QMainWindow):
             "Reset layout": self.reset_layout,
             "Reset this page's cards": self.reset_cards,
             "Fetch Ken French factors": self.fetch_french,
+            "Fetch FRED series": self.fetch_fred,
             "Import Shiller CSV…": self.import_shiller,
             "Fetch fund holdings…": self.fetch_fund_holdings,
             "Collect today's chains": self.collect_chains,
+            **({"Sync index history from IBKR": self.sync_indices}
+               if core.config.ibkr_enabled else {}),
         })
 
         # The daily chain snapshots start when TWS connects (D63).
@@ -148,6 +156,31 @@ class MainWindow(QMainWindow):
         self._core.tasks.submit(
             lambda: self._core.external_data.refresh_french(force=True),
             on_error=lambda exc: _logger.warning("Ken French fetch failed: %s", exc))
+
+    def fetch_fred(self) -> None:
+        """Fetch FRED's series now (D69), on the worker. Without [fred] key
+        the error says how to set it; the service logs each series."""
+        self._core.tasks.submit(
+            lambda: self._core.external_data.refresh_fred(force=True),
+            on_error=lambda exc: _logger.warning("FRED fetch failed: %s", exc))
+
+    def sync_indices(self) -> None:
+        """SPX's and VIX's daily history from IBKR, as deep as it serves
+        (HEDGE U2, D69), one task each. The cached source stores the bars;
+        the log says the first day IBKR served, which is the depth check."""
+        for symbol in INDEX_HISTORY:
+            self._core.tasks.submit(
+                lambda s=symbol: self._sync_index(s),
+                on_error=lambda exc, s=symbol: _logger.warning("%s history from IBKR failed: %s",
+                                                              s, exc))
+
+    def _sync_index(self, symbol: str) -> None:
+        """Worker thread: one index's history, from ``INDEX_HISTORY_FROM``."""
+        history = self._core.market_service.get_history(
+            symbol, INDEX_HISTORY_FROM, datetime.now(), "ibkr", basis=PriceBasis.TRADED)
+        frame = history.frame
+        _logger.info("IBKR serves %s daily from %s to %s: %d bars, stored", symbol,
+                     f"{frame.index[0]:%Y-%m-%d}", f"{frame.index[-1]:%Y-%m-%d}", len(frame))
 
     def import_shiller(self, path: str | None = None) -> None:
         """Import the CSV saved from Shiller's ie_data.xls (D61), on the worker.

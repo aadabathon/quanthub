@@ -1,7 +1,20 @@
 # CURRENT_STATE.md
 
 **Update this file whenever meaningful work lands.** Last updated:
-**2026-11-04**: HEDGE U1 (D68): `models/hedge.py`, the math only, with no
+**2026-11-04**: HEDGE U2 (D69): the data the hedges need.
+- **FRED:** the VIX (from 1990) and the 3-month bill rates, stored as
+  published. Ctrl+K **Fetch FRED series**, or the Data page's **Fetch
+  FRED** button.
+  - **To use it:** get a free key at fredaccount.stlouisfed.org, and add
+    `[fred] key = "…"` to `settings.toml`. Never put it in chat or a
+    repository.
+- **IBKR's index history:** SPX and VIX are now asked for as index
+  contracts. With TWS connected, Ctrl+K **Sync index history from IBKR**
+  stores them from as far back as IBKR serves, and logs how far that is.
+- **Not checked live:** no FRED key and no TWS yet. The tests use
+  fixtures shaped like FRED's replies.
+
+Also **2026-11-04**: HEDGE U1 (D68): `models/hedge.py`, the math only, with no
 page until U4.
 - **Candidates:** cash, another stream (Treasuries, a trend fund), trend
   on the market (200-day average or 12-month momentum), and vol

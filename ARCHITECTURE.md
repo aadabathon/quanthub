@@ -300,6 +300,8 @@ quant_hub/
 │                              percent → fraction, terms in the docstring (D60)
 ├── providers/sec_nport.py     funds' N-PORT: the fund ticker map, the EDGAR
 │                              Atom feed, primary_doc.xml → FundHoldings (D62)
+├── providers/fred.py          FRED's API: VIXCLS, DTB3, DGS3MO as published;
+│                              the key never logged, the credit line cited (D69)
 ├── storage/holdings_store.py  fund ticker map + every N-PORT report date kept
 │                              (schema v8, D62); held symbols' ISINs (v9, D66)
 ├── storage/series_store.py    outside series as fetched: ext_series (meta,

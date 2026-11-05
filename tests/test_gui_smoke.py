@@ -85,6 +85,7 @@ def test_ibkr_turned_off_leaves_no_controls_or_sources(tmp_path):
         assert not hasattr(window.show_page("Portfolio"), "_broker_button")   # E1
         # A1 part 2: the ISIN bridge asks nothing of a broker that's off.
         assert core.security_ids.isins(["AAA"]) == ({}, {"AAA": "IBKR is off in settings"})
+        assert "Sync index history from IBKR" not in window._top.search._commands   # U2
     finally:
         _close(app, window)
 
@@ -697,6 +698,30 @@ def test_ctrl_k_fetches_ken_french_on_the_worker(qt_app, monkeypatch):
                         lambda force=False: calls.append(force) or [])
     window._top.search._commands["Fetch Ken French factors"]()
     wait_for(app, lambda: calls == [True])
+
+
+def test_ctrl_k_fetches_fred_and_syncs_the_indices_on_the_worker(qt_app, monkeypatch):
+    # HEDGE U2 (D69): no network in tests; the wiring is real.
+    app, window = qt_app
+    fred = []
+    monkeypatch.setattr(window._core.external_data, "refresh_fred",
+                        lambda force=False: fred.append(force) or [])
+    window._top.search._commands["Fetch FRED series"]()
+    wait_for(app, lambda: fred == [True])
+    asked = []
+
+    def history(symbol, start, end, source, *, basis):
+        asked.append((symbol, start.year, source, basis.value))
+        frame = pd.DataFrame({"close": [100.0, 101.0]},
+                             index=pd.to_datetime(["1990-01-02", "1990-01-03"]))
+        return type("History", (), {"frame": frame})()
+    monkeypatch.setattr(window._core.market_service, "get_history", history)
+    window._top.search._commands["Sync index history from IBKR"]()
+    wait_for(app, lambda: len(asked) == 2)
+    assert asked == [("SPX", 1980, "ibkr", "traded"), ("VIX", 1980, "ibkr", "traded")]
+    page = window.show_page("Data")
+    wait_for(app, lambda: page._header._status.full_text().endswith("price histories"))
+    assert page._fred_note.isVisibleTo(page)                  # the tests set no [fred] key
 
 
 def test_ctrl_k_imports_a_shiller_csv_on_the_worker(qt_app, monkeypatch):
