@@ -201,6 +201,10 @@ The Treynor–Black builder waits for BUDGET's decisions 2–7.
 
 ### A4. Snapshot hygiene
 
+**Status:** landed 2026-11-04 (D74). Every import keeps its file's hash
+(schema v10). A re-import is flagged before it's stored, with what it
+would do. Delete is on the Portfolio page, after a backup. A1–A4 are done.
+
 - **Delete a snapshot** from the Portfolio page, after a backup in D36's
   style, or hide it (decision 7). Always the owner's action, never
   automatic.

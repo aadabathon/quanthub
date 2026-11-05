@@ -315,6 +315,8 @@ quant_hub/
 │                              the key never logged, the credit line cited (D69)
 ├── storage/holdings_store.py  fund ticker map + every N-PORT report date kept
 │                              (schema v8, D62); held symbols' ISINs (v9, D66)
+│                              (position_store: each import's file hash, v10,
+│                              and delete after a backup, D74)
 ├── storage/series_store.py    outside series as fetched: ext_series (meta,
 │                              fetched_at, file SHA-256) + ext_values,
 │                              replaced whole per fetch (schema v7, D60)

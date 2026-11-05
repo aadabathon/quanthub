@@ -2919,3 +2919,61 @@ the core (`Graded.effective_note`), for those notes.
 
 **Checked** with screenshots on that made-up book: seven vectors (today,
 an index mix, a netted mix, and the four references) compared.
+
+## D74 — ALLOCATION A4: snapshot hygiene (2026-11-04)
+
+ALLOCATION finding 5: one export imported twice under two layouts made the
+review draft a trade that never happened, and a snapshot couldn't be
+deleted. Decision 7 settled it: deleting is allowed, after a backup, and
+only by your action.
+
+**Each import keeps its file's hash** (schema v10, migrated after a
+backup).
+- `position_snapshots.sha256` is the file's SHA-256, or for several files
+  of one day, the hash of their sorted hashes, so their order doesn't
+  matter.
+- Snapshots from before v10, and ones kept from the broker, have an empty
+  hash. A re-import of one of those older files can't be caught, but
+  every import from now on can.
+
+**A file imported before is flagged before it's stored**
+(`DuplicateImportError`, nothing saved). The message names the earlier
+import, and says what a second copy would do:
+- **Under another layout:** two snapshots of one day under two layouts
+  make the review draft trades that never happened.
+- **The same layout, with newer imports since:** it becomes the newest
+  snapshot, so the review would read those positions as today's. That's
+  the same phantom, and the tests reproduce it.
+- **The same layout, still the newest:** a second copy only lengthens the
+  history.
+
+The Portfolio page asks first: no leaves it unimported, and yes imports it
+anyway.
+
+**Deleting a snapshot.** The Portfolio page's new **Imported snapshots**
+card lists every stored import: its number, layout, as-of date and
+import time.
+- **Delete…** asks first, then backs the whole store up and deletes the
+  snapshot and its lines.
+- **The backup** goes to `backups/`, named `…before-deleting-snapshot-N…`,
+  through `storage/schema.backup_file`. That's D36's backup made general;
+  the migrations use it too.
+- **The card keeps the backup's path** in its subtitle, even if the
+  re-analysis afterwards fails.
+- **Only ever on your click.** Nothing deletes automatically.
+
+**Tests:**
+- the same file flagged before it's stored, then stored when allowed
+- the other-layout message
+- several files hashing the same in any order
+- a delete: the backup holds the deleted snapshot, the store doesn't, and
+  an unknown number is refused
+- the review's drafts going phantom with an older file re-imported, and
+  back to the real ones once it's deleted
+- the v9 → v10 migration shaped like a new file, old imports kept with
+  empty hashes
+- the Portfolio page: asking before a re-import (no, then yes), and
+  deleting after a backup
+
+**Checked live:** the v9 → v10 migration on a copy of your store, with its
+backup. Your five stored snapshots are kept, with empty hashes.

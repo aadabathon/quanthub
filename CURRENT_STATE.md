@@ -1,7 +1,19 @@
 # CURRENT_STATE.md
 
 **Update this file whenever meaningful work lands.** Last updated:
-**2026-11-04**: ALLOCATION A3, part 2 (D73): the **What-if** page, in the
+**2026-11-04**: ALLOCATION A4 (D74): snapshot hygiene. That completes
+ALLOCATION.
+- **Re-imports are flagged:** importing a file that was imported before
+  stops and says what a second copy would do: phantom trade drafts, or
+  nothing. You choose whether to import it anyway.
+- **Deleting a snapshot:** the Portfolio page's **Imported snapshots**
+  card lists every import. **Delete…** asks, backs the store up to
+  `backups/`, then deletes.
+- **The hash** is in schema v10, migrated after a backup. Imports from
+  before it have no hash, so a re-import of one of those files isn't
+  caught.
+
+Also **2026-11-04**: ALLOCATION A3, part 2 (D73): the **What-if** page, in the
 sidebar after Portfolio.
 - **Build vectors:** type them, or use a builder: today, today's picks to
   a total, an index and cash, picks netted into the core at a target β,

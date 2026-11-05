@@ -42,6 +42,9 @@ Versions:
   (``fund_tickers``, ``fund_filings``, ``fund_holdings``).
 * **9** (D66): held symbols' ISINs (``security_ids``), for the
   look-through count.
+* **10** (D74): each positions snapshot's file hash
+  (``position_snapshots.sha256``), so a second import of the same file is
+  flagged before it's stored. Older snapshots get an empty hash.
 
 Steps are frozen: each one spells out its own SQL, never the stores'
 current schema, which keeps moving. A test holds a migrated file and a new
@@ -64,7 +67,7 @@ from quant_hub.storage.bar_store import StorageError
 
 _logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 BACKUP_DIR = "backups"
 
 _TABLE = """
@@ -174,9 +177,20 @@ def _security_ids(conn: sqlite3.Connection) -> None:
         conn.execute(statement)
 
 
+def _snapshot_hashes(conn: sqlite3.Connection) -> None:
+    """9 -> 10: a file hash per positions snapshot (D74). Frozen SQL; a file
+    that never opened the position store gains the column with the table."""
+    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    if "position_snapshots" not in tables:
+        return
+    columns = {r[1] for r in conn.execute("PRAGMA table_info(position_snapshots)")}
+    if "sha256" not in columns:
+        conn.execute("ALTER TABLE position_snapshots ADD COLUMN sha256 TEXT NOT NULL DEFAULT ''")
+
+
 _STEPS: dict[int, Callable[[sqlite3.Connection], None]] = {
     0: _adopt, 1: _price_basis, 2: _research, 3: _fundamentals, 4: _valuations, 5: _regime,
-    6: _series, 7: _holdings, 8: _security_ids,
+    6: _series, 7: _holdings, 8: _security_ids, 9: _snapshot_hashes,
 }
 
 
@@ -266,9 +280,17 @@ def _record(conn: sqlite3.Connection, version: int, at: datetime, backup: Path |
 
 def _backup(conn: sqlite3.Connection, path: Path, version: int, at: datetime) -> Path:
     """A consistent copy of the whole file, named for its version and time."""
+    return backup_file(conn, path, f"v{version}", at)
+
+
+def backup_file(conn: sqlite3.Connection, path: Path, label: str, at: datetime) -> Path:
+    """A consistent copy of the whole file through ``conn`` (SQLite's backup
+    API, safe while it's open), in ``backups/`` beside it, named for
+    ``label`` and the time. D36's backups, used by migrations and by any
+    destructive action the owner takes (A4's snapshot delete)."""
     folder = path.parent / BACKUP_DIR
     folder.mkdir(exist_ok=True)
-    stem = f"{path.stem}.v{version}.{at:%Y%m%d-%H%M%S}"
+    stem = f"{path.stem}.{label}.{at:%Y%m%d-%H%M%S}"
     target = folder / f"{stem}{path.suffix}"
     counter = 1
     while target.exists():
