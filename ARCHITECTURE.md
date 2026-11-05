@@ -171,9 +171,11 @@ quant_hub/
 ├── models/
 │   ├── backtest.py            daily self-financing portfolio accounting,
 │   │                          explicit decision/earning dates, drift-aware
-│   │                          turnover, causal walk-forward callbacks (R1)
+│   │                          turnover, causal walk-forward callbacks (R1);
+│   │                          a per-session cash series (D80)
 │   ├── backtest_stats.py      net-return metrics, Sharpe + IID standard error,
-│   │                          probabilistic and deflated Sharpe (D41)
+│   │                          probabilistic and deflated Sharpe (D41), over a
+│   │                          constant rate or a cash series (D80)
 │   ├── optimize.py            shared NumPy-only Nelder–Mead minimizer
 │   │                          (MinimizeResult); callers reparameterize
 │   ├── garch.py               stationary GARCH(1,1): simulation, Gaussian
@@ -282,7 +284,9 @@ quant_hub/
 │   │                          and book greeks (D45); gaps
 │   │                          named; the example portfolio
 │   ├── research.py            exact experiment snapshots/replay, matched
-│   │                          tests, sweep manifests and paper imports (D42)
+│   │                          tests, sweep manifests and paper imports (D42);
+│   │                          recorded runs: outside decisions, their cash
+│   │                          and input series, replayed alike (D80)
 │   ├── review.py              the daily review: rules → newest export →
 │   │                          risk/regressions/growth → gates → valuations →
 │   │                          checklist → journal; trade drafts (W7, D49)

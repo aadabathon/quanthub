@@ -259,3 +259,39 @@ def test_insolvency_and_unaffordable_liquidation_are_rejected():
 def test_invalid_walk_forward_plans_are_rejected(args):
     with pytest.raises(ValueError):
         walk_forward_splits(*args)
+
+
+# ------------------------------------------- a cash series (REGIME_MODEL Q3a)
+
+def test_a_constant_cash_series_matches_the_annual_rate_exactly():
+    prices = frame([100, 103, 101, 104, 99])
+    weights = targets(prices, [[0.3], [0.7], [0.0], [0.5]])
+    config = BacktestConfig(half_spread_bps=5, cash_rate=0.04)
+    by_rate = backtest(prices, weights, config)
+    series = pd.Series(config.cash_return, index=prices.index[1:])
+    by_series = backtest(prices, weights, BacktestConfig(half_spread_bps=5), series)
+    np.testing.assert_array_equal(by_series.equity, by_rate.equity)
+    np.testing.assert_array_equal(by_rate.cash, series)        # the result records it
+
+
+def test_idle_cash_compounds_a_moving_bill_rate():
+    prices = frame(np.full(6, 100))
+    bills = pd.Series([0.0001, 0.0004, 0.0, -0.0001, 0.0006], index=prices.index[1:])
+    result = backtest(prices, targets(prices, 0), cash=bills)
+    np.testing.assert_allclose(result.equity.iloc[1:], 100000 * np.cumprod(1 + bills),
+                               rtol=1e-14)
+    # Half invested: half the session's cash return, and the drift follows it.
+    half = backtest(prices, targets(prices, 0.5), cash=bills)
+    np.testing.assert_allclose(half.gross_returns, 0.5 * bills.to_numpy(), rtol=0, atol=1e-15)
+
+
+def test_a_cash_series_is_checked():
+    prices = frame([100, 101, 102])
+    bills = pd.Series([0.0001, 0.0002], index=prices.index[1:])
+    with pytest.raises(ValueError, match="not both"):
+        backtest(prices, targets(prices, 0), BacktestConfig(cash_rate=0.03), bills)
+    with pytest.raises(ValueError, match="earning sessions"):
+        backtest(prices, targets(prices, 0), cash=pd.Series([0.0001, 0.0002],
+                                                              index=prices.index[:-1]))
+    with pytest.raises(ValueError, match="exceed -1"):
+        backtest(prices, targets(prices, 0), cash=bills * 0 - 1)

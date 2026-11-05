@@ -3,6 +3,8 @@ r"""Performance and Sharpe inference for daily research (R1).
 All inputs are realized **net simple returns**, not log returns or price
 levels. Annualization uses p observed sessions/year, default 252. Cash has
 effective annual rate r, so daily excess returns are x=R-(1+r)^(1/p)+1.
+Or, given a cash series f_t on the returns' own dates (REGIME_MODEL Q3a,
+e.g. French's RF), x_t=R_t-f_t: one source of cash, never both.
 No risk-free rate is estimated from the strategy's sample.
 
 Performance
@@ -117,10 +119,11 @@ class DeflatedSharpe:
 
 
 def sharpe_estimate(returns: pd.Series, *, cash_rate: float = 0.0,
-                    periods_per_year: int = TRADING_DAYS_PER_YEAR) -> SharpeEstimate:
+                    periods_per_year: int = TRADING_DAYS_PER_YEAR,
+                    cash: pd.Series | None = None) -> SharpeEstimate:
     """Ex-post Sharpe and the module's IID standard error (NaN if undefined)."""
     values = _returns(returns)
-    cash = _cash_return(cash_rate, periods_per_year)
+    cash = _cash(returns, cash_rate, periods_per_year, cash)
     n = len(values)
     if n < 2:
         return SharpeEstimate(*(float("nan"),) * 4, observations=n)
@@ -139,7 +142,8 @@ def sharpe_estimate(returns: pd.Series, *, cash_rate: float = 0.0,
 
 
 def rolling_sharpe(returns: pd.Series, window: int = 63, *, cash_rate: float = 0.0,
-                   periods_per_year: int = TRADING_DAYS_PER_YEAR) -> pd.Series:
+                   periods_per_year: int = TRADING_DAYS_PER_YEAR,
+                   cash: pd.Series | None = None) -> pd.Series:
     """Trailing sqrt(periods/year) * mean(excess) / sample sd(excess).
 
     Requires a complete window. Constant-return windows and warm-up are
@@ -149,7 +153,7 @@ def rolling_sharpe(returns: pd.Series, window: int = 63, *, cash_rate: float = 0
     _returns(returns)
     if isinstance(window, bool) or not isinstance(window, Integral) or window < 2:
         raise ValueError("rolling window must be an integer >= 2")
-    excess = returns - _cash_return(cash_rate, periods_per_year)
+    excess = returns - _cash(returns, cash_rate, periods_per_year, cash)
     sample = excess.rolling(window)
     sd = sample.std(ddof=1).where(sample.max() > sample.min()).replace(0, np.nan)
     return sample.mean() / sd * math.sqrt(periods_per_year)
@@ -157,7 +161,8 @@ def rolling_sharpe(returns: pd.Series, window: int = 63, *, cash_rate: float = 0
 
 def performance_summary(returns: pd.Series, *, cash_rate: float = 0.0,
                         periods_per_year: int = TRADING_DAYS_PER_YEAR,
-                        turnover: pd.Series | None = None) -> PerformanceSummary:
+                        turnover: pd.Series | None = None,
+                        cash: pd.Series | None = None) -> PerformanceSummary:
     """Summarize the realized window; no implicit dropping of missing returns.
 
     ``turnover`` is optional and must contain one nonnegative observation
@@ -165,7 +170,8 @@ def performance_summary(returns: pd.Series, *, cash_rate: float = 0.0,
     intentionally one session earlier than the returns from ``backtest``.
     """
     values = _returns(returns)
-    cash = _cash_return(cash_rate, periods_per_year)
+    series = cash
+    cash = np.asarray(_cash(returns, cash_rate, periods_per_year, series), dtype=float)
     n = len(values)
     wealth = np.r_[1.0, np.cumprod(1.0 + values)]
     if not np.isfinite(wealth).all() or (wealth <= 0).any():
@@ -191,7 +197,8 @@ def performance_summary(returns: pd.Series, *, cash_rate: float = 0.0,
         observations=n, total_return=float(wealth[-1] - 1),
         cagr=math.expm1(float(np.log1p(values).mean()) * periods_per_year),
         volatility=volatility,
-        sharpe=sharpe_estimate(returns, cash_rate=cash_rate, periods_per_year=periods_per_year),
+        sharpe=sharpe_estimate(returns, cash_rate=cash_rate, periods_per_year=periods_per_year,
+                               cash=series),
         sortino=sortino, max_drawdown=float(np.min(wealth / np.maximum.accumulate(wealth) - 1)),
         turnover_total=total_turnover, turnover_annual=annual_turnover,
     )
@@ -199,7 +206,8 @@ def performance_summary(returns: pd.Series, *, cash_rate: float = 0.0,
 
 def deflated_sharpe(returns: pd.Series, trial_sharpes: np.ndarray,
                     independent_trials: int, *, cash_rate: float = 0.0,
-                    periods_per_year: int = TRADING_DAYS_PER_YEAR) -> DeflatedSharpe:
+                    periods_per_year: int = TRADING_DAYS_PER_YEAR,
+                    cash: pd.Series | None = None) -> DeflatedSharpe:
     """DSR using annualized Sharpes of all recorded trials and explicit effective N.
 
     The cross-trial variance is the sample variance. One effective trial
@@ -211,7 +219,8 @@ def deflated_sharpe(returns: pd.Series, trial_sharpes: np.ndarray,
     if (isinstance(independent_trials, bool) or not isinstance(independent_trials, Integral)
             or not 1 <= independent_trials <= len(trials)):
         raise ValueError("independent_trials must be an integer between one and recorded trial count")
-    estimate = sharpe_estimate(returns, cash_rate=cash_rate, periods_per_year=periods_per_year)
+    estimate = sharpe_estimate(returns, cash_rate=cash_rate, periods_per_year=periods_per_year,
+                               cash=cash)
     threshold = 0.0
     if independent_trials > 1:
         spread = float(np.std(trials, ddof=1))
@@ -222,6 +231,22 @@ def deflated_sharpe(returns: pd.Series, trial_sharpes: np.ndarray,
                               + _EULER_GAMMA * -_NORMAL.inv_cdf(1 / independent_trials / math.e))
     return DeflatedSharpe(estimate.probability_above(threshold), threshold, estimate,
                           int(independent_trials), len(trials))
+
+
+def _cash(returns: pd.Series, rate: float, periods: int, series: pd.Series | None):
+    """Each period's cash return: the series on the returns' own dates (a
+    Series, so it aligns), or the constant from the annual rate."""
+    constant = _cash_return(rate, periods)            # validates the rate either way
+    if series is None:
+        return constant
+    if rate != 0:
+        raise ValueError("give a cash series or a cash_rate, not both")
+    if not isinstance(series, pd.Series) or not series.index.equals(returns.index):
+        raise ValueError("the cash series needs exactly the returns' dates")
+    values = series.to_numpy(dtype=float)
+    if not np.isfinite(values).all() or (values <= -1).any():
+        raise ValueError("cash returns must be finite and exceed -1")
+    return pd.Series(values, index=returns.index)
 
 
 def _cash_return(rate: float, periods: int) -> float:

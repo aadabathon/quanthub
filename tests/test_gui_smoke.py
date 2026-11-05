@@ -565,6 +565,30 @@ def test_research_runs_saves_reopens_and_retains_the_whole_grid(qt_app):
     assert len(window._core.research.list_runs()) == 6
 
 
+def test_research_opens_a_run_recorded_outside_it(qt_app):
+    # REGIME_MODEL Q3a: decisions made elsewhere, with a moving cash rate and
+    # the series behind them, open from the log without an experiment form.
+    from quant_hub.models.backtest import BacktestConfig
+    from tests.test_research import recorded_inputs
+    app, window = qt_app
+    market, beta, bills, signal = recorded_inputs()
+    run = window._core.research.record("Regime β · test", market, beta,
+                                       costs=BacktestConfig(half_spread_bps=1), cash=bills,
+                                       series={"signal": signal},
+                                       details={"model": "a planted signal"})
+    page = window.show_page("Research")
+    before = page._fields["lookback"].text()
+    page.open_run(run.id)
+    wait_for(app, lambda: not page._busy and page._run_result is not None)
+    assert page._run_result.payload["kind"] == "recorded"
+    assert page._fields["lookback"].text() == before          # the form is untouched
+    assert page._chart_stack.currentWidget() is page._chart
+    text = page._provenance.text()
+    assert "Recorded outside Research: a planted signal" in text
+    assert "signal (1999-01-04 →" in text and "stored cash series" in text
+    assert page._fits.rowCount() == 0 and page._trades.rowCount() > 0
+
+
 def test_research_library_imports_notes_and_links_to_experiments(qt_app, tmp_path):
     app, window = qt_app
     page = window.show_page("Research")

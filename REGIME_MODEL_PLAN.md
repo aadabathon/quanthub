@@ -246,6 +246,14 @@ module name stays `regime_model.py`.
   - **Calibration** holds on simulated data with a known event rate.
 
 ### Q3. The evidence run
+
+**Status:** in three parts.
+- **Q3a: landed 2026-11-05 (D80).** Research takes a moving cash rate, and
+  saves recorded runs: decisions made elsewhere, with their input series.
+- **Q3b:** the harness, derived for review first.
+- **Q3c:** the family-wise shift test and the saved run.
+
+The inclusion bar (decision 6) is a family-wise p of 0.05.
 - The walk-forward harness, the baselines, the ledger and the family-wise
   test, as a saved Research run (D42).
   - Then section 10's "a research run supporting it" can name it.
@@ -318,7 +326,11 @@ module name stays `regime_model.py`.
    comes from A2's replay or from β alone.
 5. **The fraction f** for the growth term. Section 4's sizing cap could
    serve.
-6. **The inclusion bar:** the family-wise p, and whether an input with no
+6. **Settled 2026-11-05:** a family-wise p of 0.05, from the circular-shift
+   test across every variant ever tried. Results are reported after each
+   input's publication and by era, and an input stays only if it still
+   clears the bar after publication. The question was: **The inclusion
+   bar:** the family-wise p, and whether an input with no
    post-publication evidence can stay.
 7. **Where the card lives:** Review or LENS O.
 8. **Settled 2026-11-03 (D59):** superseded. T2's rule is one input among the others, and must clear Q3's bar like any input. The question was: **TARGET T2:** superseded (proposed) or built first as the simple
