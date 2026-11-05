@@ -33,6 +33,7 @@ from quant_hub.services.portfolio import PortfolioService
 from quant_hub.services.research import ResearchService
 from quant_hub.services.review import ReviewService
 from quant_hub.services.security_ids import SecurityIdService
+from quant_hub.services.whatif import WhatIfService
 from quant_hub.services.valuation import ValuationService
 from quant_hub.services.workstation import WorkstationService
 from quant_hub.storage.bar_store import BarStore
@@ -79,6 +80,7 @@ class Core:
     fund_holdings: FundHoldingsService
     security_ids: SecurityIdService
     hedge: HedgeService
+    whatif: WhatIfService
     tasks: TaskRunner
     # Read-only IBKR accounts (E1); None when IBKR is off in settings.
     accounts: AccountService | None = None
@@ -198,6 +200,9 @@ def build_core(config: AppConfig | None = None) -> Core:
     # Held symbols' ISINs from IBKR, kept in the same database (A1, D66).
     security_ids = SecurityIdService(holdings_store, broker if ibkr else None)
     external_data = ExternalDataService(series_store, fred_key=config.fred_key)
+    review = ReviewService(portfolio, valuation, regime_store, config.regime_path,
+                           config.positions_folder, fund_holdings=fund_holdings,
+                           security_ids=security_ids, external_data=external_data)
     return Core(
         config=config, bus=bus, broker=broker, store=store, state_store=state_store,
         market_service=market_service, chain_store=chain_store, chains=chains,
@@ -208,12 +213,11 @@ def build_core(config: AppConfig | None = None) -> Core:
         research_store=research_store, research=ResearchService(market_service, research_store),
         fundamentals_store=fundamentals_store, fundamentals=fundamentals,
         valuation_store=valuation_store, valuation=valuation, regime_store=regime_store,
-        review=ReviewService(portfolio, valuation, regime_store, config.regime_path,
-                             config.positions_folder, fund_holdings=fund_holdings,
-                             security_ids=security_ids, external_data=external_data),
-        series_store=series_store, external_data=external_data,
+        review=review, series_store=series_store, external_data=external_data,
         holdings_store=holdings_store, fund_holdings=fund_holdings, security_ids=security_ids,
         # The hedge lab's job, on stored data only (HEDGE U3, D70).
         hedge=HedgeService(external_data, chains, store),
+        # What-if vectors through the review's analysis and rules (A3, D72).
+        whatif=WhatIfService(portfolio, review, state_store),
         accounts=AccountService(broker) if ibkr else None,
     )

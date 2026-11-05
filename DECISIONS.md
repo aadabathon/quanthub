@@ -2789,3 +2789,72 @@ and Markov labs' inputs do (D56). From about 1440 px it sits beside it.
 
 **Checked** with screenshots on a copy of your store, with a stand-in VIX
 (21-day realized vol × 1.15) that exists only in the scratch copy.
+
+## D72 — ALLOCATION A3, part 1: what-if vectors, references and the job (2026-11-04)
+
+D59 put A3, the What-if page, after the hedge track. Part 1 is its math
+and its job; part 2 is the page.
+
+**A vector** (`models/whatif.py`) is a set of weights, each a share of
+equity, with the rest in cash.
+- **Typed:** one holding a line ("SPY 60", "QQQ: 12.5%"). A bad line,
+  a symbol given twice, or a total past 100% is refused, naming the line.
+- **Never a stored snapshot** (finding 5). `to_snapshot` makes a
+  transient one, valued on a $100,000 notional, so the vector runs
+  through `PortfolioService.analyse`, the analysis Portfolio runs.
+- **Long-only, with no leverage.** IRAs can't short or borrow, so a
+  vector can't either.
+
+**The builders:**
+- today, from the review's book: each holding's market value over equity
+- today with the picks scaled to a total: the core unchanged, the picks'
+  mix kept
+- an index and cash
+- today's picks netted into the core at a target β: A1's netting solved
+  for the core, w_C = (β* − Σ wᵢβᵢ)/β_C. It's refused when the picks
+  alone pass β*, or when it would need leverage.
+
+**The references** keep today's names and invested share, long-only by a
+softmax searched with `models/optimize.nelder_mead`:
+- **Minimum variance** (Markowitz 1952).
+- **Equal risk contribution** (Maillard–Roncalli–Teïletche 2010).
+- **Equal weight** (DeMiguel–Garlappi–Uppal 2009). It isn't in the plan.
+  It's added because it's the naive mix the optimizers often fail to beat
+  out of sample, and it costs nothing.
+- **Maximum Sharpe**, labelled "(in-sample)" (decision 6). It's
+  Michaud's (1989) "error maximization", and the module docstring says
+  why.
+
+They're checked against their two-asset closed forms:
+- minimum variance's weight formula
+- equal risk as inverse vol, at any correlation
+- the tangency portfolio Σ⁻¹μ
+
+**The job** (`services/whatif.py`).
+- **The context** is today's book as the review analyses it
+  (`ReviewService.current_view`). It fixes the history source, benchmark,
+  lookback, cash rate and sleeves, at one as-of time, so every vector
+  gets exactly today's window.
+- **`compare`** runs each vector through Portfolio's analysis, then
+  `ReviewService.grade`, which is new: sections 3 and 4 on any book, as
+  measured. It has A1's core exemption, look-through N_eff and netting,
+  and A2's crash stress. Sections 5–8 need options, streams, gates and
+  valuations, which a vector doesn't have.
+- **A vector whose names have no history** says so, and nothing is
+  fetched.
+- **Named sets** are kept in the view-state store (decision 5).
+
+**The Treynor–Black builder** that BUDGET folded into A3 waits for
+BUDGET's decisions 2–7: the budget's β, the fraction f, Σ_ε, a negative
+core, grading, and the data's α̂ beside your belief.
+
+**Tests:**
+- vectors read and refused by line
+- the transient snapshot
+- each builder, the netting landing on β* exactly
+- the references' closed forms, all long-only on the invested share
+- today's vector analysed equal to Portfolio's analysis of the book
+- every vector graded as the review grades it (the core exempt)
+- the builders and references from the context
+- missing history named
+- named sets saved and deleted

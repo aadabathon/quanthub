@@ -188,6 +188,9 @@ quant_hub/
 │   ├── stress.py              crash stress: a constant-β replay through
 │   │                          French's market from 1926, its worst falls,
 │   │                          the β band's (A2, D67)
+│   ├── whatif.py              what-if vectors: parse, a transient snapshot, the
+│   │                          builders, min variance / equal risk / equal
+│   │                          weight / max Sharpe by softmax (A3, D72)
 │   ├── hedge.py               hedges on the book: cash, streams, trend, vol
 │   │                          targeting, rolled puts / spreads / collars at
 │   │                          VIX·ρ·smile; the yardstick: crash windows by
@@ -271,6 +274,9 @@ quant_hub/
 │   │                          new filings kept beside old, offline (D62)
 │   ├── security_ids.py        held symbols' ISINs: stored, else IBKR's when
 │   │                          connected; the look-through's bridge (D66)
+│   ├── whatif.py              the What-if job: today's context, builders,
+│   │                          references, each vector analysed and graded
+│   │                          (ReviewService.grade); named sets (D72)
 │   ├── hedge.py               the hedge lab's job: the β proxy and today's mix,
 │   │                          today's shape (ρ, smile, spread), every candidate
 │   │                          at every size, today's prices; offline (D70)

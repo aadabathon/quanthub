@@ -1,7 +1,18 @@
 # CURRENT_STATE.md
 
 **Update this file whenever meaningful work lands.** Last updated:
-**2026-11-04**: HEDGE U4 (D71): the **Hedge Lab** page, in the sidebar
+**2026-11-04**: ALLOCATION A3, part 1 (D72): what-if vectors and their
+job, with no page until part 2.
+- **Vectors:** typed weights, the rest cash, never stored as a snapshot.
+- **Builders:** today; today's picks scaled to a total; an index and
+  cash; today's picks netted into the core at a target β.
+- **References** on today's names: minimum variance, equal risk, equal
+  weight, and maximum Sharpe, labelled in-sample.
+- **Each vector** goes through Portfolio's analysis and your sections 3
+  and 4 (A1-aware), plus A2's crash stress, over today's exact window.
+- **Named sets** are kept in the local store.
+
+Also **2026-11-04**: HEDGE U4 (D71): the **Hedge Lab** page, in the sidebar
 after Portfolio.
 - **Run every hedge:** 48 rows, every candidate at 25, 50 and 100%, on
   the β proxy since 1926 or today's mix.

@@ -55,7 +55,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime
 from pathlib import Path
 
@@ -176,6 +176,24 @@ class Review:
         """Breached checks, optionally of one grade or effect."""
         return [c for c in self.checks if c.check.outcome is Outcome.BREACH
                 and (consequence is None or c.check.consequence is consequence)]
+
+
+@dataclass(frozen=True, eq=False)
+class Graded:
+    """Sections 3 and 4 on any book, as measured (A3's What-if): the
+    checks, A1's netting, A2's crash stress, and the look-through's notes."""
+
+    checks: tuple[ItemCheck, ...]
+    effective: float | None                 # N_eff, looked through where there's a core
+    netting: CoreNetting | None
+    netting_note: str
+    crash: CrashStress | None
+    crash_note: str
+    notes: tuple[str, ...]
+
+    def count(self, grade: Grade) -> int:
+        return sum(c.check.outcome is Outcome.BREACH and c.check.consequence is grade
+                   for c in self.checks)
 
 
 class ReviewService:
@@ -320,7 +338,7 @@ class ReviewService:
                       tuple(checks), tuple(streams), calm, volatility, tuple(drafts),
                       tuple(notes), netting, netting_note, crash, crash_note)
 
-    def current_view(self) -> tuple[PortfolioView, float]:
+    def current_view(self, now: datetime | None = None) -> tuple[PortfolioView, float]:
         """Today's book as the review analyses it, as measured, and the cash
         rate: the Hedge Lab's "today's mix" (HEDGE U4). Needs section 2's
         history source and cash rate, and positions."""
@@ -334,8 +352,35 @@ class ReviewService:
         view = self._portfolio.analyse(snapshot, None, source,
                                        settings.benchmark or DEFAULT_BENCHMARK,
                                        settings.lookback_days or DEFAULT_LOOKBACK,
-                                       settings.cash_rate, now=self._now(), sleeves=names)
+                                       settings.cash_rate, now=now or self._now(), sleeves=names)
         return view, settings.cash_rate
+
+    def grade(self, view: PortfolioView, snapshot: PositionSnapshot, rules: RuleSet) -> Graded:
+        """Sections 3 and 4 on ``view``, as measured, with A1's core
+        exemption and look-through, A1's netting and A2's crash stress: the
+        What-if page grades every vector as the review grades the book
+        (ALLOCATION A3). Sections 5–8 read options, streams, gates and
+        valuations, which a vector doesn't have."""
+        book_rules = replace(rules, rules=tuple(r for r in rules.rules if r.key.startswith("4.")))
+        wanted = {rule.measure for rule in book_rules.rules}
+        measures, missing = _book_measures(view, snapshot, wanted | {"effective holdings"})
+        notes: list[str] = []
+        effective = view.report.n_effective
+        if rules.core & {row.symbol for row in view.rows}:
+            looked, reason, notes = self._look_through(view, rules)
+            measures.pop("effective holdings", None)
+            if looked is None:
+                missing["effective holdings"] = reason
+                effective = None
+            else:
+                measures["effective holdings"] = [(PORTFOLIO, looked, "")]
+                effective = looked.estimate
+        checks = _checks(book_rules, {k: v for k, v in measures.items() if k in wanted},
+                         missing, {}, view)
+        netting, netting_note = _netting(view, rules)
+        crash, crash_note = self._crash(view)
+        return Graded(tuple(checks), effective, netting, netting_note, crash, crash_note,
+                      tuple(notes))
 
     def latest_beta(self) -> float | None:
         """The book's β from the newest review that measured one (A2's)."""
