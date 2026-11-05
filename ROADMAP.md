@@ -642,7 +642,10 @@ The order after the 2026-11-03 decisions:
    the variance premium by expiry and at 30 days, and its history, priced
    against one GARCH fit as of the chain. I3's remaining piece, a variance
    chain request (fetch time measured with TWS), is all that's left of
-   VARIANCE.
+   VARIANCE. ~~REGIME_MODEL Q1~~ landed 2026-11-05 (D78): every input as it
+   was known at the time, raw and on real-time scales, with GARCH and the
+   HMM refitted each year. Q2 (the three estimates) is next, and needs
+   decision 3 (the horizons).
 
 Also approved, to be placed in this order later:
 - HORIZON H0–H1, a low-scope stdlib server

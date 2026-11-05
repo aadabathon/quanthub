@@ -1,7 +1,20 @@
 # CURRENT_STATE.md
 
 **Update this file whenever meaningful work lands.** Last updated:
-**2026-11-05**: VARIANCE I4 (D77): the Volatility Lab shows the variance
+**2026-11-05**: REGIME_MODEL Q1 (D78): the regime model's inputs, each as it
+was known at the time, in `models/regime_inputs.py` and
+`services/regime_inputs.py`. No page shows them yet.
+- **Daily, from French:** realized vol, the 12-month excess return, the
+  200-day trend, GARCH's expected vol and the HMM's calm probability. The
+  last two are refitted each January on the 10 years before.
+- **Monthly, from Shiller, with publication lags:** CAPE, the excess CAPE
+  yield, and the stock–bond correlation.
+- **Each input** comes raw and as a real-time percentile and z.
+- **Not here:** the credit spread, which waits on Moody's terms.
+- **Not checked live:** the Shiller inputs. French's century built in
+  218 s.
+
+Also **2026-11-05**: VARIANCE I4 (D77): the Volatility Lab shows the variance
 premium.
 - **The Term structure view** draws √K_var per expiry beside ATM IV. A
   point is hollow when it's mostly wings, and the quote sum's bid–ask band

@@ -214,6 +214,12 @@ Each milestone is a few files, reviewed before the next. **Prerequisite:
 TARGET T1,** Shiller's data in the store.
 
 ### Q1. The inputs, stored and real-time
+
+**Status:** approved and landed 2026-11-05 (D78).
+- **Every input but credit:** the credit spread waits on Moody's terms.
+- **The scales:** raw, a real-time percentile and a real-time z.
+- **GARCH and the HMM** are refitted each January on the 10 years before.
+  A century of refits took 218 s.
 - The series above, from the store and T1. The Ken French history comes
   from W2b's provider or a file import (decision 2).
 - Each input's real-time transform (expanding percentile or z), with its

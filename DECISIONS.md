@@ -3308,3 +3308,120 @@ term chart and both cards.
 **Not checked live:** that needs stored SPX chains and TWS. I3's variance
 chain request (a wider band and more strikes, with its fetch time
 measured) is still to do.
+
+## D78 — REGIME_MODEL Q1: the inputs, each as it was known at the time (2026-11-05)
+
+The owner approved Q1 on 2026-11-05. REGIME_MODEL_PLAN's other
+milestones, and its open decisions, still wait.
+
+The math is in `models/regime_inputs.py`, with the derivation in its
+docstring. The service is `services/regime_inputs.py`. Nothing shows the
+inputs yet: Q2 builds on them and Q5 is the card.
+
+**One rule: a value on day t uses only what was published by t's close**
+(Goyal & Welch 2008's discipline).
+- **Daily inputs** use returns through t.
+- **A monthly value** for month m, with a publication lag of ℓ months, is
+  used from the 1st of month m + ℓ + 1, and is indexed by that date.
+- **The lags:**
+  - P and GS10: 0, since monthly averages are known when the month ends
+  - CPI: 1
+  - earnings and dividends: 4. Your Oct 24 file held earnings through
+    June. The earlier scratch valuation run used 3, and the lag is a
+    parameter.
+
+**The inputs:**
+- **Daily, on French's market** (Mkt-RF + RF):
+  - realized volatility over 21 days (zero-mean, as D76's is)
+  - the 12-month log excess return
+  - the total-return index against its 200-day average
+  - GARCH's expected volatility over the next 21 days
+  - the HMM's calm-regime probability, with K = 2
+- **Monthly, on Shiller's data:**
+  - CAPE in real time: the latest price over the latest CPI known, and 120
+    months of real earnings ending at the latest earnings known
+    (Campbell & Shiller 1988)
+  - the excess CAPE yield: 1/CAPE less (GS10 − the trailing 10-year
+    inflation)
+  - the stock–bond correlation over 36 months:
+    - the stock's total return, with the dividend lagged like earnings
+    - a 10-year par bond repriced each month at the next GS10
+- **Each input** is kept raw, as a real-time percentile, and as a
+  real-time z. Both scales use only earlier values. They wait for 120
+  months or 1,260 days of them, and ties count half.
+
+**GARCH and the HMM are refitted walk-forward.**
+- **When and on what:** once a year, on the first trading day of January,
+  on the 10 years before it. Nothing on or after the refit day is used.
+- **Between refits,** the parameters run their causal recursions forward
+  from the window's start.
+- **Nothing later moves an earlier value.** Refits are anchored to
+  calendar years, so appending data moves none. A window counts as full
+  when the data start within its first week.
+- **Measured on French's market, 1926–2026:** 90 refits from 1937, none
+  failed. They took 218 s, about 2.4 s a year, more than the 0.3 ms a day
+  I'd measured on simulated data. It's a worker-thread job, or Q3's.
+- **Why, and what it found about W7:** one fit on the whole sample would
+  give each past day parameters from later data. W7's calm-gate history
+  does exactly that (D49). Today's gate value is fine, since the sample
+  ends there. Its chart and persistence read a history with that
+  look-ahead. That's left as it is, and noted.
+
+**Left out, for decisions of yours:**
+- **The credit spread.** FRED serves Moody's monthly Baa yield from 1919,
+  but Moody's notice on it says the data may not be "stored for
+  subsequent use" for redistribution or resale without consent. Its
+  graph says the data are copyrighted. D60 refused storing Cboe's data on
+  a similar clause. So it waits for your terms call (D34).
+- **A daily stock–bond correlation:** it needs FRED's DGS10.
+- **The horizons** (decision 3): 21 days for GARCH is a parameter until
+  Q2.
+
+**Tests (14):**
+- **The scales:**
+  - the percentile against a direct count, with ties and missing values
+  - z against the earlier mean and sd
+  - both missing until their minimum
+- **The lags:** changing one month of P, CPI or E first moves CAPE
+  exactly ℓ + 1 months later.
+- **Closed forms:**
+  - CAPE with no lags is Shiller's formula
+  - the ECY is its definition, with the real lags
+  - a par bond's month: an unmoved yield returns c/12, and a small move
+    matches the duration approximation
+- **The correlation:**
+  - it equals Pearson's on each window
+  - it recovers a planted ρ = 0.5 within its Fisher interval. The yields
+    are backed out from planted bond returns.
+- **The daily inputs** against their definitions.
+- **The walk-forward:**
+  - refits each January
+  - nothing before the first
+  - a refit's GARCH volatility and calm probability match a fit by hand
+    on its window
+- **No look-ahead:** truncating every series mid-way changes no earlier
+  value, on any input or scale, the walk-forward included.
+- **The service:**
+  - every input from stored series, with their provenance
+  - without Shiller, or without French, the inputs it can build, and
+    how to fetch the rest
+
+**Canon:** Goyal–Welch 2008, Campbell–Shiller 1988, Hamilton 1989 and
+Bollerslev 1986 now list the module.
+
+**Checked live:** French's factors were fetched into a scratch store and
+the century built.
+- **On 2026-09-30, French's last day:**
+  - realized volatility 10.7%
+  - GARCH 13.5% over the next 21 days
+  - calm probability 98.6%
+  - the 12-month log excess return +10.3%
+  - the index 5.8% above its 200-day average
+- **Against the plan's worked example** (SPY, Oct 28): 9.6%, 13.8%, 99%,
+  and 6.5% above.
+- **Known episodes:** the calm probability was about 0 at the ends of
+  October 1987, October 2008 and March 2020, with GARCH volatility at
+  61%, 65% and 55%. In mid-2017 it was 0.99, at 13%.
+
+**Not checked live:** the Shiller inputs. Your Shiller CSV isn't on disk,
+and your store has no outside series until PRs #22 on are merged.
