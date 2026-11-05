@@ -51,6 +51,7 @@ Runs on the task-worker thread (database, files, maybe IBKR).
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import math
 from collections.abc import Mapping, Sequence
@@ -110,6 +111,38 @@ class HoldingRow:
     vol: float                # annualized
     beta: float | None
     risk_share: float         # of the portfolio's vol
+
+
+class DuplicateImportError(ValueError):
+    """The file(s) were imported before (A4). Nothing was stored; the
+    message names the earlier import and says what a second copy does."""
+
+    def __init__(self, snapshot: PositionSnapshot, earlier, newest_id: int | None) -> None:
+        first = earlier[0]
+        differs = [s for s in earlier if s.source != snapshot.source]
+        other = bool(differs)
+        if other:
+            what = (f"read as {differs[0].source} then, and as {snapshot.source} now. Two "
+                    "snapshots of one day under two layouts make the review draft trades that "
+                    "never happened")
+        elif first.id != newest_id:
+            what = ("and newer imports have come since. Importing it again makes it the newest "
+                    "snapshot, so the review would read these positions as today's and draft "
+                    "trades that never happened")
+        else:
+            what = "and it's still the newest snapshot. A second copy only lengthens the history"
+        super().__init__(f"{snapshot.name} was imported before as #{first.id}, on "
+                         f"{first.imported_at:%b %d, %Y}, {what}.")
+        self.snapshot, self.earlier, self.other_layout = snapshot, tuple(earlier), other
+
+
+def files_hash(paths: Sequence[Path]) -> str:
+    """The SHA-256 of one file, or of the sorted hashes of several (one
+    account each), so the same files in any order hash the same."""
+    digests = sorted(hashlib.sha256(Path(p).read_bytes()).hexdigest() for p in paths)
+    if len(digests) == 1:
+        return digests[0]
+    return hashlib.sha256("".join(digests).encode()).hexdigest()
 
 
 PORTFOLIO_ROW = "Portfolio"
@@ -190,13 +223,29 @@ class PortfolioService:
         self._market = market
         self._store = store
 
-    def import_positions(self, paths: str | Path | Sequence[str | Path]
-                         ) -> tuple[int, PositionSnapshot]:
+    def import_positions(self, paths: str | Path | Sequence[str | Path],
+                         allow_duplicate: bool = False) -> tuple[int, PositionSnapshot]:
         """Read one positions file, or several of the same day (one account
-        each) into one snapshot, and keep it."""
-        files = [paths] if isinstance(paths, (str, Path)) else list(paths)
+        each) into one snapshot, and keep it with the files' hash (A4).
+
+        A file already imported raises ``DuplicateImportError`` before
+        anything is stored, naming the earlier import, unless
+        ``allow_duplicate``. The same export kept twice, worst of all under
+        two layouts, made the review draft a trade that never happened
+        (ALLOCATION finding 5)."""
+        files = [Path(p) for p in ([paths] if isinstance(paths, (str, Path)) else paths)]
         snapshot = read_positions_files(files)
-        return self._store.save(snapshot), snapshot
+        digest = files_hash(files)
+        earlier = self._store.with_hash(digest)
+        if earlier and not allow_duplicate:
+            stored = self._store.snapshots()
+            raise DuplicateImportError(snapshot, earlier, stored[0].id if stored else None)
+        return self._store.save(snapshot, sha256=digest), snapshot
+
+    def delete_snapshot(self, snapshot_id: int) -> Path | None:
+        """Delete a stored snapshot, after a backup of the store (A4,
+        decision 7). Only ever the owner's action; returns the backup."""
+        return self._store.delete(snapshot_id)
 
     def keep(self, snapshot: PositionSnapshot) -> int:
         """Keep a snapshot read from somewhere other than a file (the broker,

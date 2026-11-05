@@ -160,6 +160,14 @@ with an error band, never a graded rule.
 
 ### A3. A What-if page
 
+**Status:** landed 2026-11-04.
+- **Part 1** (D72): vectors, builders, the four references (equal weight
+  added beside the plan's three), and the job that analyses and grades
+  each vector.
+- **Part 2** (D73): the What-if page.
+
+The Treynor–Black builder waits for BUDGET's decisions 2–7.
+
 **A dock** (D55), with cards on the 12-column grid (D56).
 - **Vectors.** Type or paste them (symbol → % of equity; the rest is
   cash), or start from a builder:
@@ -192,6 +200,10 @@ with an error band, never a graded rule.
 - page geometry and a smoke test, per AGENTS.md
 
 ### A4. Snapshot hygiene
+
+**Status:** landed 2026-11-04 (D74). Every import keeps its file's hash
+(schema v10). A re-import is flagged before it's stored, with what it
+would do. Delete is on the Portfolio page, after a backup. A1–A4 are done.
 
 - **Delete a snapshot** from the Portfolio page, after a backup in D36's
   style, or hide it (decision 7). Always the owner's action, never

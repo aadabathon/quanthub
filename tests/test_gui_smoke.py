@@ -2049,3 +2049,105 @@ def test_the_hedge_lab_names_what_its_option_hedges_are_missing(qt_app):
     page._beta.set_text("lots")
     page._run()
     assert page._header._status.full_text().startswith("β")  # the field names itself
+
+
+# -------------------------------------------------------------------- What-if
+
+def test_the_whatif_page_builds_compares_and_saves_vectors(qt_app, tmp_path):
+    from test_review_service import RULES, bars, export
+    app, window = qt_app
+    core = window._core
+    bars(core.store, end=pd.Timestamp.today().normalize())
+    path = tmp_path / "newer.csv"
+    path.write_text(export("10/22/2026", {"AAA": 40, "BBB": 20, "CCC": 10}, 3000), encoding="utf-8")
+    core.portfolio.import_positions(path)
+    core.config.regime_path.write_text(RULES, encoding="utf-8")
+    page = window.show_page("What-if")
+    wait_for(app, lambda: page._ctx is not None, timeout_s=60)
+    assert list(page._vectors) == ["Today"] and page._context_note.isVisibleTo(page)
+
+    for builder, value in (("Index and cash", "70"), ("Picks netted into the core", "0.60"),
+                           ("Today, picks to a total", "15")):
+        page._builder.select.set_current(builder)
+        page._on_builder(builder)
+        assert page._params[builder].isVisibleTo(page)
+        page._params[builder].set_text(value)
+        page._build()
+    page._name.set_text("Barbell")
+    page._editor.setPlainText("SPY 50\nBBB 10")
+    page._add_typed()
+    assert list(page._vectors) == ["Today", "SPY 70%", "Netted at β 0.60", "Picks at 15%",
+                                   "Barbell"]
+    page._list.selectRow(3)
+    page._remove()
+    assert "Picks at 15%" not in page._vectors
+
+    page._editor.setPlainText("SPY sixty")
+    page._add_typed()
+    assert page._header._status.full_text().startswith("line 1")      # refused, by line
+
+    page._builder.select.set_current("The four references")
+    page._build()
+    wait_for(app, lambda: len(page._vectors) == 8, timeout_s=60)
+    page._compare()
+    wait_for(app, lambda: page._last is not None, timeout_s=120)
+    assert page._table.columnCount() == 1 + 8 and page._table.rowCount() == 11
+    assert page._table.item(0, 0).text() == "β ± SE"
+    assert page._sharpe_note.isVisibleTo(page) and page._notes.isVisibleTo(page)
+    assert "Fetch Ken French factors" in page._notes._text.text()     # why crash stress is blank
+    assert page._risk.columnCount() == 1 + 8
+
+    page._name.set_text("Barbell")
+    page._editor.setPlainText("SPY 50\nBBB 10")
+    page._save_set()
+    wait_for(app, lambda: page._sets.current() == "Barbell", timeout_s=30)
+    del page._vectors["Barbell"]
+    page._load_set()
+    assert page._vectors["Barbell"] == {"SPY": 0.5, "BBB": 0.1}
+    page._delete_set()
+    wait_for(app, lambda: page._sets.current() == "(no saved sets)", timeout_s=30)
+
+
+def test_the_whatif_page_says_what_todays_book_needs(qt_app):
+    app, window = qt_app
+    page = window.show_page("What-if")                      # no REGIME.md written
+    wait_for(app, lambda: not page._loading, timeout_s=30)
+    assert page._ctx is None
+    assert "can't be read" in page._header._status.full_text()
+    page._compare()
+    assert page._header._status.full_text().startswith("Load today's book")
+
+
+# -------------------------------------------------------- snapshot hygiene (A4)
+
+def test_portfolio_asks_before_a_reimport_and_deletes_after_a_backup(qt_app, tmp_path):
+    from test_review_service import export
+    app, window = qt_app
+    page = window.show_page("Portfolio")
+    answers = []
+    page._confirm = lambda title, text: answers.append(text) or answers_yes.pop(0)
+    path = tmp_path / "10-22-26_port.csv"
+    path.write_text(export("10/22/2026", {"AAA": 40, "BBB": 20}, 3000), encoding="utf-8")
+    page.import_files([path])
+    wait_for(app, lambda: len(page._snapshot_rows) == 1, timeout_s=60)
+
+    answers_yes = [False]                                     # the owner says no
+    page.import_files([path])
+    wait_for(app, lambda: page._header._status.full_text().startswith("Not imported"),
+             timeout_s=60)
+    assert "was imported before as #" in answers[-1] and len(page._snapshot_rows) == 1
+
+    answers_yes = [True]                                      # then yes
+    page.import_files([path])
+    wait_for(app, lambda: len(page._snapshot_rows) == 2, timeout_s=60)
+
+    newest = page._snapshot_rows[0].id
+    page._snapshots.selectRow(0)
+    answers_yes = [True]
+    page._delete_snapshot()
+    wait_for(app, lambda: len(page._snapshot_rows) == 1, timeout_s=60)
+    kept = page._snapshots_card.subtitle.full_text()
+    assert f"Deleted snapshot #{newest}" in kept and "backed up to" in kept
+    assert "Delete snapshot #" in answers[-1]
+    backups = list((window._core.config.db_path.parent / "backups").glob("*before-deleting*"))
+    assert len(backups) == 1

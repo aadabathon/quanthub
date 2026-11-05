@@ -23,7 +23,7 @@
     "question": "Why diversify, and how much of each asset should you hold?",
     "changed": "Choose portfolios by mean and variance: covariances make diversification computable, and the efficient frontier is born.",
     "assumed": "Investors care only about the mean and variance of one-period returns; inputs are known.",
-    "lives_in": ["quant_hub/models/portfolio.py", "quant_hub/models/growth.py"],
+    "lives_in": ["quant_hub/models/portfolio.py", "quant_hub/models/growth.py", "quant_hub/models/whatif.py"],
     "links": [{"to": "bernoulli1738", "kind": "builds_on"}],
     "verified": {"via": "crossref", "checked": "2026-11-02", "matched": ["title", "first_author", "year"]}
   },
@@ -192,7 +192,7 @@
     "doi": "10.1093/rfs/hhm075",
     "question": "Do optimized portfolios beat equal weights out of sample?",
     "changed": "Fourteen models fail to beat 1/N consistently; estimation windows would need centuries to win.",
-    "lives_in": [],
+    "lives_in": ["quant_hub/models/whatif.py"],
     "links": [{"to": "markowitz1952", "kind": "challenges"}, {"to": "blacklitterman1992", "kind": "tests"}],
     "verified": {"via": "crossref", "checked": "2026-11-02", "matched": ["title", "first_author", "year"]}
   },
@@ -205,7 +205,7 @@
     "doi": "10.3905/jpm.2010.36.4.060",
     "question": "What portfolio gives every asset the same share of risk?",
     "changed": "Formalized risk parity: it sits between minimum variance and 1/N and needs no expected returns.",
-    "lives_in": [],
+    "lives_in": ["quant_hub/models/whatif.py"],
     "links": [{"to": "demiguelgarlappiuppal2009", "kind": "builds_on"}],
     "verified": {"via": "crossref", "checked": "2026-11-02", "matched": ["title", "first_author", "year"]}
   },

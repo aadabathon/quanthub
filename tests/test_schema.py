@@ -98,7 +98,8 @@ def test_a_file_from_before_versioning_is_backed_up_then_adopted(tmp_path):
         (6, "2026-10-15T19:30:05", str(result.backup)),
         (7, "2026-10-15T19:30:05", str(result.backup)),
         (8, "2026-10-15T19:30:05", str(result.backup)),
-        (9, "2026-10-15T19:30:05", str(result.backup))]
+        (9, "2026-10-15T19:30:05", str(result.backup)),
+        (10, "2026-10-15T19:30:05", str(result.backup))]
     assert rows(db, "SELECT COUNT(*) FROM bars") == [(count,)]
     # Up to date now: the next start changes nothing and copies nothing.
     again = prepare_store(db, clock)
@@ -204,12 +205,33 @@ def test_version_7_gains_the_fund_holdings_tables_shaped_like_a_new_files(tmp_pa
     assert shapes[0] == shapes[1] and all(shapes[0].values())
 
 
+def test_version_9_gains_snapshot_hashes_and_keeps_the_old_imports(tmp_path):
+    from quant_hub.storage.position_store import PositionStore
+    old, new = tmp_path / "old.db", tmp_path / "new.db"
+    seeded_store(old, version=9)
+    conn = sqlite3.connect(str(old))
+    with conn:
+        conn.execute("CREATE TABLE position_snapshots (id INTEGER PRIMARY KEY, source TEXT NOT "
+                     "NULL, name TEXT NOT NULL, as_of TEXT NOT NULL, imported_at TEXT NOT NULL)")
+        conn.execute("INSERT INTO position_snapshots VALUES (1, 'Generic', 'old.csv', "
+                     "'2026-10-01 16:00:00', '2026-10-02 09:00:00')")
+    conn.close()
+    result = prepare_store(old, clock)
+    assert (result.migrated_from, result.version) == (9, 10) and result.backup.is_file()
+    prepare_store(new, clock)
+    PositionStore(new).close()
+    shapes = [rows(p, "PRAGMA table_info(position_snapshots)") for p in (old, new)]
+    assert shapes[0] == shapes[1]
+    (summary,) = PositionStore(old).snapshots()
+    assert (summary.name, summary.sha256) == ("old.csv", "")
+
+
 def test_version_8_gains_the_security_ids_table_shaped_like_a_new_files(tmp_path):
     from quant_hub.storage.holdings_store import HoldingsStore
     old, new = tmp_path / "old.db", tmp_path / "new.db"
     seeded_store(old, version=8)
     result = prepare_store(old, clock)
-    assert (result.migrated_from, result.version) == (8, 9) and result.backup.is_file()
+    assert (result.migrated_from, result.version) == (8, 10) and result.backup.is_file()
     prepare_store(new, clock)
     HoldingsStore(new).close()
     shapes = [rows(p, "PRAGMA table_info(security_ids)") for p in (old, new)]

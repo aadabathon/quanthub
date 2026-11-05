@@ -2789,3 +2789,191 @@ and Markov labs' inputs do (D56). From about 1440 px it sits beside it.
 
 **Checked** with screenshots on a copy of your store, with a stand-in VIX
 (21-day realized vol × 1.15) that exists only in the scratch copy.
+
+## D72 — ALLOCATION A3, part 1: what-if vectors, references and the job (2026-11-04)
+
+D59 put A3, the What-if page, after the hedge track. Part 1 is its math
+and its job; part 2 is the page.
+
+**A vector** (`models/whatif.py`) is a set of weights, each a share of
+equity, with the rest in cash.
+- **Typed:** one holding a line ("SPY 60", "QQQ: 12.5%"). A bad line,
+  a symbol given twice, or a total past 100% is refused, naming the line.
+- **Never a stored snapshot** (finding 5). `to_snapshot` makes a
+  transient one, valued on a $100,000 notional, so the vector runs
+  through `PortfolioService.analyse`, the analysis Portfolio runs.
+- **Long-only, with no leverage.** IRAs can't short or borrow, so a
+  vector can't either.
+
+**The builders:**
+- today, from the review's book: each holding's market value over equity
+- today with the picks scaled to a total: the core unchanged, the picks'
+  mix kept
+- an index and cash
+- today's picks netted into the core at a target β: A1's netting solved
+  for the core, w_C = (β* − Σ wᵢβᵢ)/β_C. It's refused when the picks
+  alone pass β*, or when it would need leverage.
+
+**The references** keep today's names and invested share, long-only by a
+softmax searched with `models/optimize.nelder_mead`:
+- **Minimum variance** (Markowitz 1952).
+- **Equal risk contribution** (Maillard–Roncalli–Teïletche 2010).
+- **Equal weight** (DeMiguel–Garlappi–Uppal 2009). It isn't in the plan.
+  It's added because it's the naive mix the optimizers often fail to beat
+  out of sample, and it costs nothing.
+- **Maximum Sharpe**, labelled "(in-sample)" (decision 6). It's
+  Michaud's (1989) "error maximization", and the module docstring says
+  why.
+
+They're checked against their two-asset closed forms:
+- minimum variance's weight formula
+- equal risk as inverse vol, at any correlation
+- the tangency portfolio Σ⁻¹μ
+
+**The job** (`services/whatif.py`).
+- **The context** is today's book as the review analyses it
+  (`ReviewService.current_view`). It fixes the history source, benchmark,
+  lookback, cash rate and sleeves, at one as-of time, so every vector
+  gets exactly today's window.
+- **`compare`** runs each vector through Portfolio's analysis, then
+  `ReviewService.grade`, which is new: sections 3 and 4 on any book, as
+  measured. It has A1's core exemption, look-through N_eff and netting,
+  and A2's crash stress. Sections 5–8 need options, streams, gates and
+  valuations, which a vector doesn't have.
+- **A vector whose names have no history** says so, and nothing is
+  fetched.
+- **Named sets** are kept in the view-state store (decision 5).
+
+**The Treynor–Black builder** that BUDGET folded into A3 waits for
+BUDGET's decisions 2–7: the budget's β, the fraction f, Σ_ε, a negative
+core, grading, and the data's α̂ beside your belief.
+
+**Tests:**
+- vectors read and refused by line
+- the transient snapshot
+- each builder, the netting landing on β* exactly
+- the references' closed forms, all long-only on the invested share
+- today's vector analysed equal to Portfolio's analysis of the book
+- every vector graded as the review grades it (the core exempt)
+- the builders and references from the context
+- missing history named
+- named sets saved and deleted
+
+## D73 — ALLOCATION A3, part 2: the What-if page (2026-11-04)
+
+The page on D72's job (`gui/pages/whatif.py`). It's in the sidebar after
+Portfolio. Nothing on it trades, and no vector is ever stored as a
+snapshot.
+
+**The side panel builds vectors:**
+- **Typed:** a name and one holding a line, added to the comparison. A
+  bad line is refused, naming it.
+- **Built:**
+  - today
+  - today's picks to a total (%)
+  - an index and cash, on the benchmark (%)
+  - today's picks netted into the core at a target β
+  - the four references
+
+  Only the chosen builder's parameter field is shown.
+- **Saved sets:** save the typed vector by name, or load or delete one
+  (decision 5).
+- **A note** gives the analysis every vector gets: today's history
+  source, benchmark, lookback and cash rate.
+
+**The main column compares them:**
+- **The vectors:** each one's holdings and cash. Select one to remove it.
+- **The comparison:** the measures down, one column per vector:
+  - β ± SE, vol, VaR 95 and ES 99 (a day)
+  - the lookback's drawdown, and A2's crash stress with its band
+  - effective holdings, looked through the core where it can be
+  - the top risk share, growth, and the fails and warns
+
+  With many vectors the table scrolls sideways.
+- **Risk shares:** each name's share of each vector's vol.
+- **Notes:**
+  - max Sharpe's in-sample warning, whenever it's compared (decision 6)
+  - the analysis settings
+  - each vector that couldn't run, and why
+  - why a measure is blank (French's series not fetched, the core's
+    N-PORT not stored), said once rather than in every column
+
+**The context** loads when the page opens. Without REGIME.md's section 2
+or positions, the page says what's missing, and Compare says to load
+today's book first.
+
+**`ReviewService.grade`** now also says why N_eff couldn't look through
+the core (`Graded.effective_note`), for those notes.
+
+**Tests:**
+- the page on the review tests' made-up book:
+  - the context, and today's vector
+  - every builder, a typed vector, removal, a refused line
+  - the four references
+  - the comparison's shape, the max Sharpe warning, and the blank-measure
+    note
+  - risk shares
+  - a set saved, loaded and deleted
+- the page without a regime, saying what it needs
+- page geometry at 1280 px
+
+**Checked** with screenshots on that made-up book: seven vectors (today,
+an index mix, a netted mix, and the four references) compared.
+
+## D74 — ALLOCATION A4: snapshot hygiene (2026-11-04)
+
+ALLOCATION finding 5: one export imported twice under two layouts made the
+review draft a trade that never happened, and a snapshot couldn't be
+deleted. Decision 7 settled it: deleting is allowed, after a backup, and
+only by your action.
+
+**Each import keeps its file's hash** (schema v10, migrated after a
+backup).
+- `position_snapshots.sha256` is the file's SHA-256, or for several files
+  of one day, the hash of their sorted hashes, so their order doesn't
+  matter.
+- Snapshots from before v10, and ones kept from the broker, have an empty
+  hash. A re-import of one of those older files can't be caught, but
+  every import from now on can.
+
+**A file imported before is flagged before it's stored**
+(`DuplicateImportError`, nothing saved). The message names the earlier
+import, and says what a second copy would do:
+- **Under another layout:** two snapshots of one day under two layouts
+  make the review draft trades that never happened.
+- **The same layout, with newer imports since:** it becomes the newest
+  snapshot, so the review would read those positions as today's. That's
+  the same phantom, and the tests reproduce it.
+- **The same layout, still the newest:** a second copy only lengthens the
+  history.
+
+The Portfolio page asks first: no leaves it unimported, and yes imports it
+anyway.
+
+**Deleting a snapshot.** The Portfolio page's new **Imported snapshots**
+card lists every stored import: its number, layout, as-of date and
+import time.
+- **Delete…** asks first, then backs the whole store up and deletes the
+  snapshot and its lines.
+- **The backup** goes to `backups/`, named `…before-deleting-snapshot-N…`,
+  through `storage/schema.backup_file`. That's D36's backup made general;
+  the migrations use it too.
+- **The card keeps the backup's path** in its subtitle, even if the
+  re-analysis afterwards fails.
+- **Only ever on your click.** Nothing deletes automatically.
+
+**Tests:**
+- the same file flagged before it's stored, then stored when allowed
+- the other-layout message
+- several files hashing the same in any order
+- a delete: the backup holds the deleted snapshot, the store doesn't, and
+  an unknown number is refused
+- the review's drafts going phantom with an older file re-imported, and
+  back to the real ones once it's deleted
+- the v9 → v10 migration shaped like a new file, old imports kept with
+  empty hashes
+- the Portfolio page: asking before a re-import (no, then yes), and
+  deleting after a backup
+
+**Checked live:** the v9 → v10 migration on a copy of your store, with its
+backup. Your five stored snapshots are kept, with empty hashes.

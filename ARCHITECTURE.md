@@ -115,6 +115,7 @@ quant_hub/
 │                              pricer, strategy, monte_carlo), volatility_lab.py,
 │                              kalman_lab.py, markov_lab.py, valuation.py,
 │                              review.py, data.py (D64), hedge_lab.py (D71),
+│                              whatif.py (D73),
 │                              research/ (page,
 │                              history, timeline, library)
 ├── config.py                  AppConfig
@@ -188,6 +189,9 @@ quant_hub/
 │   ├── stress.py              crash stress: a constant-β replay through
 │   │                          French's market from 1926, its worst falls,
 │   │                          the β band's (A2, D67)
+│   ├── whatif.py              what-if vectors: parse, a transient snapshot, the
+│   │                          builders, min variance / equal risk / equal
+│   │                          weight / max Sharpe by softmax (A3, D72)
 │   ├── hedge.py               hedges on the book: cash, streams, trend, vol
 │   │                          targeting, rolled puts / spreads / collars at
 │   │                          VIX·ρ·smile; the yardstick: crash windows by
@@ -271,6 +275,9 @@ quant_hub/
 │   │                          new filings kept beside old, offline (D62)
 │   ├── security_ids.py        held symbols' ISINs: stored, else IBKR's when
 │   │                          connected; the look-through's bridge (D66)
+│   ├── whatif.py              the What-if job: today's context, builders,
+│   │                          references, each vector analysed and graded
+│   │                          (ReviewService.grade); named sets (D72)
 │   ├── hedge.py               the hedge lab's job: the β proxy and today's mix,
 │   │                          today's shape (ρ, smile, spread), every candidate
 │   │                          at every size, today's prices; offline (D70)
@@ -308,6 +315,8 @@ quant_hub/
 │                              the key never logged, the credit line cited (D69)
 ├── storage/holdings_store.py  fund ticker map + every N-PORT report date kept
 │                              (schema v8, D62); held symbols' ISINs (v9, D66)
+│                              (position_store: each import's file hash, v10,
+│                              and delete after a backup, D74)
 ├── storage/series_store.py    outside series as fetched: ext_series (meta,
 │                              fetched_at, file SHA-256) + ext_values,
 │                              replaced whole per fetch (schema v7, D60)
@@ -396,6 +405,9 @@ Review     = the front door (after Dashboard): the owner's REGIME.md checked
 Data       = everything stored, its source and freshness: outside series
              with a preview and citation, fund holdings, chain snapshots,
              price history; its buttons run the Ctrl+K commands (D64)
+What-if    = weight vectors (typed, built, or the four references) through
+             Portfolio's analysis and sections 3–4, side by side, with
+             risk shares; saved sets; nothing trades (A3, D72–D73)
 Hedge Lab  = every hedge on the book (β proxy since 1926, or today's mix):
              the frontier, growth and drawdown, the crash table, the
              selected hedge's card with today's price (HEDGE U1–U4, D71)

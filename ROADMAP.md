@@ -626,7 +626,10 @@ The order after the 2026-11-03 decisions:
    (D70): the service, both books, today's shape. ~~U4~~ landed 2026-11-04
    (D71): the Hedge Lab page. U5 (hooks into the rest, each only if you
    want it) is optional.
-4. **ALLOCATION A3–A4:** the What-if page and snapshot hygiene.
+4. **ALLOCATION A3–A4:** the What-if page and snapshot hygiene. ~~A3~~
+   landed 2026-11-04: vectors, references and the job (D72), and the
+   What-if page (D73). ~~A4~~ landed 2026-11-04 (D74): import hashes, the
+   re-import flag, delete after a backup. ALLOCATION is done.
 5. **Then:** VARIANCE, then REGIME_MODEL, which supersedes TARGET's T2
    and T3. BUDGET folds into A3.
 

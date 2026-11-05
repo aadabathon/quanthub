@@ -1,7 +1,43 @@
 # CURRENT_STATE.md
 
 **Update this file whenever meaningful work lands.** Last updated:
-**2026-11-04**: HEDGE U4 (D71): the **Hedge Lab** page, in the sidebar
+**2026-11-04**: ALLOCATION A4 (D74): snapshot hygiene. That completes
+ALLOCATION.
+- **Re-imports are flagged:** importing a file that was imported before
+  stops and says what a second copy would do: phantom trade drafts, or
+  nothing. You choose whether to import it anyway.
+- **Deleting a snapshot:** the Portfolio page's **Imported snapshots**
+  card lists every import. **Delete…** asks, backs the store up to
+  `backups/`, then deletes.
+- **The hash** is in schema v10, migrated after a backup. Imports from
+  before it have no hash, so a re-import of one of those files isn't
+  caught.
+
+Also **2026-11-04**: ALLOCATION A3, part 2 (D73): the **What-if** page, in the
+sidebar after Portfolio.
+- **Build vectors:** type them, or use a builder: today, today's picks to
+  a total, an index and cash, picks netted into the core at a target β,
+  or the four references.
+- **Compare them** in one table: β ± SE, vol, VaR, ES, drawdown, crash
+  stress, effective holdings, top risk share, growth, fails and warns.
+  Plus risk shares per vector.
+- **Max Sharpe** is shown with its in-sample warning.
+- **Saved sets** are kept in your local store.
+- **Blank measures** say why: French's series not fetched, or the core's
+  N-PORT not stored.
+
+Also **2026-11-04**: ALLOCATION A3, part 1 (D72): what-if vectors and their
+job.
+- **Vectors:** typed weights, the rest cash, never stored as a snapshot.
+- **Builders:** today; today's picks scaled to a total; an index and
+  cash; today's picks netted into the core at a target β.
+- **References** on today's names: minimum variance, equal risk, equal
+  weight, and maximum Sharpe, labelled in-sample.
+- **Each vector** goes through Portfolio's analysis and your sections 3
+  and 4 (A1-aware), plus A2's crash stress, over today's exact window.
+- **Named sets** are kept in the local store.
+
+Also **2026-11-04**: HEDGE U4 (D71): the **Hedge Lab** page, in the sidebar
 after Portfolio.
 - **Run every hedge:** 48 rows, every candidate at 25, 50 and 100%, on
   the β proxy since 1926 or today's mix.

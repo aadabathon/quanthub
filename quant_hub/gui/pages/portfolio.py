@@ -52,6 +52,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QGridLayout,
     QHBoxLayout,
+    QMessageBox,
     QStackedWidget,
 )
 
@@ -83,6 +84,7 @@ from quant_hub.services.accounts import AccountService
 from quant_hub.services.market_service import MarketService
 from quant_hub.services.portfolio import (
     PORTFOLIO_ROW,
+    DuplicateImportError,
     PortfolioService,
     PortfolioView,
     Regressions,
@@ -176,7 +178,8 @@ class PortfolioPage(ScrollPage):
             note.setVisible(False)
         grid.add_column([("inputs", inputs, None), ("warning", self._warning, None),
                          ("finding", self._finding, None), ("sizing", self._build_sizing(), None),
-                         ("influence", self._build_influence(), None)],
+                         ("influence", self._build_influence(), None),
+                         ("snapshots", self._build_snapshots(), None)],
                         x=9, w=3, min_width=SIDE_PANEL_WIDTH)
         self._grid = saved_grid(grid, state_store, f"{_STATE_KEY}.cards")
         self.body.addWidget(grid, 1)
@@ -383,7 +386,58 @@ class PortfolioPage(ScrollPage):
         return card
 
     # ----------------------------------------------------------- lifecycle
+    def _build_snapshots(self) -> Card:
+        """A4: every stored import, and deleting one (after a backup)."""
+        card = Card("Imported snapshots", "Newest first; the page analyses the newest")
+        self._snapshots_card = card
+        self._snapshots = DataTable([("#", "right"), ("Layout", "left"), ("As of", "left"),
+                                     ("Imported", "left")], row_height=30)
+        self._snapshots.balance_columns()
+        self._snapshots.setMinimumHeight(150)
+        card.body.addWidget(self._snapshots, 1)
+        self._snapshot_rows: list = []
+        card.add_action(button("Delete…", icon_name="ph.trash", on_click=self._delete_snapshot))
+        return card
+
+    def _refresh_snapshots(self) -> None:
+        self._tasks.submit(self._portfolio.snapshots, on_done=self._on_snapshots,
+                           on_error=self._on_error)
+
+    def _on_snapshots(self, summaries) -> None:
+        self._snapshot_rows = list(summaries)
+        self._snapshots.set_rows([[str(s.id), s.source, f"{s.as_of:%Y-%m-%d}",
+                                   f"{s.imported_at:%Y-%m-%d %H:%M}"] for s in summaries]
+                                 or [[("No imports yet", PALETTE.muted), "", "", ""]])
+
+    def _confirm(self, title: str, text: str) -> bool:
+        """The owner's yes or no (tests replace it)."""
+        return QMessageBox.question(self, title, text) == QMessageBox.StandardButton.Yes
+
+    def _delete_snapshot(self) -> None:
+        row = self._snapshots.selected_row()
+        if not 0 <= row < len(self._snapshot_rows):
+            self._header.set_status("Select an imported snapshot to delete.", error=True)
+            return
+        s = self._snapshot_rows[row]
+        if not self._confirm("Delete a snapshot",
+                             f"Delete snapshot #{s.id} ({s.name}, {s.source} layout, positions "
+                             f"as of {s.as_of:%b %d, %Y})? The store is backed up first."):
+            return
+        self._tasks.submit(lambda: self._portfolio.delete_snapshot(s.id),
+                           on_done=lambda backup: self._on_deleted(s.id, backup),
+                           on_error=self._on_error)
+
+    def _on_deleted(self, snapshot_id: int, backup) -> None:
+        done = (f"Deleted snapshot #{snapshot_id}. The store was backed up to {backup}."
+                if backup else f"Deleted snapshot #{snapshot_id}.")
+        self._header.set_status(done)
+        self._snapshots_card.set_subtitle(done)            # kept if the re-analysis fails
+        self._keep_status = True
+        self._refresh_snapshots()
+        self._analyse()
+
     def on_show(self) -> None:
+        self._refresh_snapshots()
         if self._view is None:
             self._analyse()
 
@@ -412,12 +466,22 @@ class PortfolioPage(ScrollPage):
         """Import a positions CSV, then analyse it."""
         self.import_files([path])
 
-    def import_files(self, paths: list[Path]) -> None:
+    def import_files(self, paths: list[Path], allow_duplicate: bool = False) -> None:
         """Import positions CSVs as one snapshot (one account each, same day),
-        then analyse it."""
+        then analyse it. A file imported before asks first (A4)."""
         self._header.set_status(f"Importing {' + '.join(p.name for p in paths)}…")
-        self._tasks.submit(lambda: self._portfolio.import_positions(paths),
-                           on_done=self._on_imported, on_error=self._on_error)
+        self._tasks.submit(lambda: self._portfolio.import_positions(paths, allow_duplicate),
+                           on_done=self._on_imported,
+                           on_error=lambda exc: self._on_import_error(exc, paths))
+
+    def _on_import_error(self, exc: Exception, paths: list[Path]) -> None:
+        if isinstance(exc, DuplicateImportError):
+            if self._confirm("Imported before", f"{exc}\n\nImport it again anyway?"):
+                self.import_files(paths, allow_duplicate=True)
+            else:
+                self._header.set_status(f"Not imported: {exc}", error=True)
+            return
+        self._on_error(exc)
 
     def _on_imported(self, result) -> None:
         snapshot_id, snapshot = result
@@ -430,6 +494,7 @@ class PortfolioPage(ScrollPage):
         self._modes.set_current(_IMPORTED)
         self._account = _ALL_ACCOUNTS
         self._keep_status = True
+        self._refresh_snapshots()
         self._analyse()
 
     def load_from_broker(self) -> None:
@@ -462,6 +527,7 @@ class PortfolioPage(ScrollPage):
         self._modes.set_current(_IMPORTED)
         self._account = _ALL_ACCOUNTS
         self._keep_status = True
+        self._refresh_snapshots()
         self._analyse()
 
     def _on_broker_error(self, exc: Exception) -> None:
