@@ -3425,3 +3425,123 @@ the century built.
 
 **Not checked live:** the Shiller inputs. Your Shiller CSV isn't on disk,
 and your store has no outside series until PRs #22 on are merged.
+
+## D79 — REGIME_MODEL Q2: σ̂, μ̂ and the tail (2026-11-05)
+
+**Decision 3, the horizons,** was settled on 2026-11-05: 21 trading days
+for σ̂, and 12 months for μ̂ and the tail. The derivation was written into
+`models/regime_model.py`'s docstring and approved before any code, as the
+plan asks. Each point the review raised was kept as proposed:
+- the inputs enter raw
+- the expected-sign table
+- the floor is in log terms
+- equal weights for μ̂, and a linear pool for the tail
+- month-end origins
+
+**Origins.**
+- **When:** the last trading day of each month, from July 1926.
+- **The targets** over the next 12 months, from French's market:
+  - the log excess return
+  - the deepest fall, including one from the origin's own level
+- **What's known when:** a target is known only 12 months later. At each
+  origin, every model is fitted on the origins whose targets were known by
+  then, and on nothing else.
+- **Overlap:** the targets overlap by 11 months. Errors use Newey–West
+  with 22 lags, twice the overlap.
+
+**σ̂.** Q1's walk-forward now keeps each day's next variance and each
+year's GARCH parameters. `garch_vol_ahead(walk, n)` reads any horizon,
+and its 21-day value is exactly Q1's input.
+
+**μ̂: a combination forecast** (Rapach, Strauss & Zhou 2010).
+- **The forecast:** the historical mean plus the average of each input's
+  OLS tilt.
+- **Campbell & Thompson's restrictions** (2008, new in the canon, checked
+  on Crossref):
+  - a slope with the wrong sign falls back to the mean
+  - the combination is floored at 0
+- **Its error,** by the delta method on influence functions, with
+  `ols`'s Newey–West kernel and small-sample factor:
+  - with one input it equals `ols`'s c′Vc exactly
+  - with none, the mean's error
+- **The floor:** the error is of the unfloored forecast, and the card will
+  say when the floor binds.
+
+**The tail: P(fall ≥ d within 12 months)** for d = 10, 20, 30 and 40%.
+- **The models:** one logistic regression per input, fitted by IRLS in
+  numpy.
+- **Falling back to the base rate:** an input does when
+  - its slope has the wrong sign
+  - its events are perfectly separated
+  - its sample has fewer than 3 episodes. An episode is a run of event
+    origins, so one crash counts once, not twelve times.
+- **The pool:** the inputs' probabilities are averaged, then made
+  non-increasing in d by pool-adjacent-violators.
+- **The interval:** the delta method on the logistic's influence, formed
+  on the logit scale so it stays in (0, 1).
+
+**Measured coverage of the ±1.96 SE intervals** (300 seeds). On
+overlapping targets they run a little short, as D76's did:
+- **μ̂'s mean:** 89% with 29 years of targets, 91% with 50, 92% with 90.
+- **The tail, overlapping 12-month events:** 91% with 50 years, 92% with
+  90.
+- **The tail, one-month events with no overlap:** 94%.
+
+**On French's real century, with the five daily inputs** (Shiller isn't
+in the scratch store), over 1,203 origins: the inputs took 214 s, μ̂
+0.3 s and the tail 3.8 s.
+- **μ̂ doesn't beat the historical mean.**
+  - The combination's R²_OS is −0.9%.
+  - Each input's is between −0.6% and −1.5%.
+  - That's Goyal & Welch's finding again. The valuation inputs, where the
+    earlier scratch evidence was, need Shiller, and Q3 decides what
+    stays.
+- **The tail beats the base rate** at every threshold. Its Brier skill is
+  +7.9% at 10%, +7.1% at 20%, +2.3% at 30% and +4.0% at 40%. Volatility
+  clusters, and falls come with it.
+- **On 2026-09-30:**
+  - σ̂ 13.5% over 21 days, and 18.6% over 252
+  - μ̂ +6.7% ± 1.7%, against a historical mean of +6.6%
+  - P(fall ≥ 20% within 12 months) 21% [15%, 29%], against a base rate
+    of 25.5%
+  - P(≥ 40%) 2.9% [1.1%, 7.1%]
+- **Episodes:**
+  - **2008-09-30:** P(≥ 20%) was 61%. The fall that followed was 41%.
+  - **2007-09-28:** 23%, before a 27% fall.
+  - **1999-12-31:** 19%, before 22%.
+  - **2017-12-29:** 17%, before 20%.
+
+These are research readings, not targets: Q4 makes the rules, and nothing
+reads them yet.
+
+**Tests (15):**
+- **The origins:**
+  - month-ends
+  - the targets against their sums
+  - the deepest fall against brute force
+  - the known dates
+- **σ̂:** at 21 days it equals Q1's, and at 252 the closed form.
+- **Planted truths:** a planted slope is recovered with R²_OS > 0.1, and
+  a useless input averages R²_OS < 0 over 40 seeds.
+- **No look-ahead:** changing a target that becomes known later moves no
+  earlier forecast, and truncation moves none.
+- **The restrictions:**
+  - a wrong sign gives the mean
+  - an input with no expected sign is free
+  - a negative premium is floored
+- **The errors:** equal to `ols`'s, and both coverages measured.
+- **IRLS:** the closed form with one binary regressor, and separation
+  detected.
+- **Episodes and pool-adjacent-violators.**
+- **The tail:**
+  - calibrated within binomial error in each decile, with a better Brier
+    score than the base rate
+  - monotone in d, and untouched where already monotone
+  - a wrong sign or too few episodes gives the base rate
+- **Together:** the estimates run on Q1's inputs.
+
+**Canon:** Campbell–Thompson 2008 is added (Crossref: print 2008, online
+2007). Rapach–Strauss–Zhou 2010 and Goyal–Welch 2008 now list the
+module.
+
+**Next:** Q3, the evidence run, needs decision 6 (the inclusion bar).
