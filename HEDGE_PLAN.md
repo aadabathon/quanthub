@@ -241,8 +241,8 @@ connected; its log gives the depth.
 
 ### U3. The service
 
-**Status:** landed 2026-11-04 (D70). One change to decision 4, for you
-to overrule: the option programs run on French's total-return level, so
+**Status:** landed 2026-11-04 (D70). It changed decision 4, with your
+approval: the option programs run on French's total-return level, so
 IBKR's SPX history is a cross-check rather than the underlying.
 
 - `services/hedge.py` builds both books: b from W2, today's mix from
@@ -330,7 +330,7 @@ A dock (D55) with cards on the grid (D56):
    VIX calls wait for data.
 3. **Settled 2026-11-03 (D59):** CBOE's VIX history, through VARIANCE I3's provider (approved). **Changed by D60:** Cboe's terms refuse storing the data, so VIX comes from FRED's `VIXCLS` (or IBKR's index bars). The question was: **The VIX source:** VARIANCE I3's CBOE provider, IBKR index bars, or
    both.
-4. **Settled 2026-11-03 (D59):** IBKR's index as deep as it goes for the option candidates, and Ken French's series for the linear ones. The question was: **The index history:** IBKR as deep as it goes (checked first), or a
+4. **Settled 2026-11-03 (D59):** IBKR's index as deep as it goes for the option candidates, and Ken French's series for the linear ones. **Changed by D70 (approved 2026-11-04):** French's total-return level is the option underlying too; IBKR's SPX is the cross-check. The question was: **The index history:** IBKR as deep as it goes (checked first), or a
    longer series without strikes for the linear candidates only.
 5. **Settled 2026-11-03 (D59):** today's shape held fixed, with the flat smile beside it (proposed; you had no preference). The question was: **The smile through history:** today's shape held fixed (proposed),
    with the flat smile beside it, or the flat smile only.

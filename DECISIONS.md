@@ -2664,7 +2664,7 @@ page will call it on the TaskRunner.
 - **β** is W2's regression β for the portfolio row, or the risk model's
   without regressions.
 
-**A change to decision 4, for you to overrule.** Decision 4 chose IBKR's
+**A change to decision 4, approved 2026-11-04.** Decision 4 chose IBKR's
 index for the option candidates, because French's series seemed to have
 no price levels to strike against. Its total-return level is one.
 - A put on it with no dividend has the economics of a put on the price

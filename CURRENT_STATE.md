@@ -12,9 +12,8 @@ with no page until U4.
   smile and the half-spread. Without one, flat with ρ = 1, said so.
 - **Today's prices:** each put's cost a year now, and its percentile
   against history.
-- **One change to decision 4, for you to overrule:** the option programs
-  run on French's total-return level, so IBKR's SPX history is a
-  cross-check.
+- **Decision 4 changed, with your approval:** the option programs run on
+  French's total-return level, so IBKR's SPX history is a cross-check.
 - **Offline only:** missing data is named with how to get it, never
   fetched.
 
