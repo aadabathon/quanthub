@@ -1,9 +1,22 @@
 # CURRENT_STATE.md
 
 **Update this file whenever meaningful work lands.** Last updated:
-**2026-11-05**: REGIME_MODEL Q1 (D78): the regime model's inputs, each as it
+**2026-11-05**: REGIME_MODEL Q2 (D79): the regime model's three estimates, in
+`models/regime_model.py`. No page shows them yet.
+- **σ̂:** GARCH at any horizon.
+- **μ̂:** a restricted combination forecast with its Newey–West error.
+- **P(fall ≥ 10/20/30/40% within 12 months):** pooled logistic models,
+  made monotone in d, with an interval.
+- **Each is fitted** at each month-end on targets already known.
+- **On French's century with the daily inputs:**
+  - μ̂ doesn't beat the historical mean (R²_OS −0.9%)
+  - the tail beats the base rate at every threshold
+  - on 2026-09-30, P(fall ≥ 20%) was 21% [15%, 29%]
+- **Not checked live:** the Shiller inputs.
+
+Also **2026-11-05**: REGIME_MODEL Q1 (D78): the regime model's inputs, each as it
 was known at the time, in `models/regime_inputs.py` and
-`services/regime_inputs.py`. No page shows them yet.
+`services/regime_inputs.py`.
 - **Daily, from French:** realized vol, the 12-month excess return, the
   200-day trend, GARCH's expected vol and the HMM's calm probability. The
   last two are refitted each January on the 10 years before.

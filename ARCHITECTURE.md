@@ -187,7 +187,12 @@ quant_hub/
 │   │                          publication lags, real-time CAPE/ECY, the
 │   │                          stock–bond correlation, trend, realized vol,
 │   │                          GARCH + HMM refitted yearly, expanding
-│   │                          percentile and z (D78)
+│   │                          percentile and z (D78); garch_vol_ahead
+│   │                          reads σ̂ at any horizon (D79)
+│   ├── regime_model.py        σ̂, μ̂ (restricted combination forecast,
+│   │                          its error, R²_OS) and P(fall ≥ d) (IRLS
+│   │                          logistics, pooled, monotone in d, with an
+│   │                          interval), month-end origins (D79)
 │   ├── allocation.py          the core and the rest: the book's β split,
 │   │                          the core weight for the Beta band (A1, D65);
 │   │                          effective holdings looking through it (D66)

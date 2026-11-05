@@ -137,7 +137,9 @@ API
 - ``real_time_cape`` and ``excess_cape_yield``: section 2.
 - ``bond_return``, ``stock_bond_correlation``: section 3.
 - ``trend_excess``, ``trend_average``, ``realized_vol``: section 4.
-- ``walk_forward``: section 5.
+- ``walk_forward``: section 5. It keeps each day's next variance and each
+  year's parameters, so ``garch_vol_ahead(walk, n)`` reads GARCH's
+  volatility for any n days ahead (REGIME_MODEL Q2's σ̂).
 - ``RegimeInput``: one input, raw and on both scales. ``on_days`` carries
   one onto a daily grid.
 
@@ -161,12 +163,12 @@ from __future__ import annotations
 
 import math
 from bisect import bisect_left, bisect_right, insort
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 
 import numpy as np
 import pandas as pd
 
-from quant_hub.models.garch import conditional_variances, fit_garch11
+from quant_hub.models.garch import GARCH11Parameters, conditional_variances, fit_garch11
 from quant_hub.models.markov import fit_hmm, hmm_filter
 
 TRADING_DAYS = 252
@@ -356,12 +358,14 @@ def realized_vol(total: pd.Series, days: int = REALIZED_DAYS) -> pd.Series:
 
 @dataclass(frozen=True)
 class Refit:
-    """One year's fit: the day it takes effect and the window it saw."""
+    """One year's fit: the day it takes effect, the window it saw, and the
+    GARCH parameters it gave (``None`` when GARCH couldn't be fitted)."""
 
     day: pd.Timestamp
     window_start: pd.Timestamp
     observations: int
     problem: str = ""     # why a model couldn't be fitted, if one couldn't
+    garch: GARCH11Parameters | None = None
 
 
 @dataclass(frozen=True)
@@ -372,6 +376,10 @@ class WalkForward:
     horizon: int
     regimes: int
     years: int
+    next_variance: pd.Series = field(default_factory=lambda: pd.Series(dtype=float))
+    """h_{t+1}: GARCH's daily variance after day t's return."""
+    refit_of: pd.Series = field(default_factory=lambda: pd.Series(dtype=int))
+    """For each day in ``next_variance``, the index of its refit."""
 
 
 def walk_forward(total: pd.Series, years: int = REFIT_YEARS, horizon: int = GARCH_HORIZON,
@@ -389,7 +397,8 @@ def walk_forward(total: pd.Series, years: int = REFIT_YEARS, horizon: int = GARC
     # or a holiday may come first).
     refit_days = [d for d in starts
                   if d - pd.DateOffset(years=years) + pd.Timedelta(days=7) >= days[0]]
-    vol = pd.Series(np.nan, index=days)
+    following_all = pd.Series(np.nan, index=days)
+    refit_of = pd.Series(-1, index=days)
     calm = pd.Series(np.nan, index=days)
     refits = []
     for i, day in enumerate(refit_days):
@@ -399,6 +408,7 @@ def walk_forward(total: pd.Series, years: int = REFIT_YEARS, horizon: int = GARC
         span = (days >= start) & ((days < end) if end is not None else True)
         after = span & (days >= day)
         problems = []
+        garch: GARCH11Parameters | None = None
         try:
             garch = fit_garch11(values[window]).parameters
         except ValueError as exc:
@@ -407,9 +417,8 @@ def walk_forward(total: pd.Series, years: int = REFIT_YEARS, horizon: int = GARC
             run = values[span]
             h = conditional_variances(run, garch)
             following = garch.omega + garch.alpha * (run - garch.mean) ** 2 + garch.beta * h
-            p, long_run = garch.persistence, garch.unconditional_variance
-            average = long_run + (following - long_run) * (1 - p**horizon) / (horizon * (1 - p))
-            vol[after] = np.sqrt(TRADING_DAYS * average)[days[span] >= day]
+            following_all[after] = following[days[span] >= day]
+            refit_of[after] = i
         try:
             model = fit_hmm(values[window], regimes).model
         except ValueError as exc:
@@ -417,5 +426,26 @@ def walk_forward(total: pd.Series, years: int = REFIT_YEARS, horizon: int = GARC
         else:
             filtered = hmm_filter(model, values[span]).filtered[:, int(np.argmin(model.sigmas))]
             calm[after] = filtered[days[span] >= day]
-        refits.append(Refit(day, days[window][0], int(window.sum()), "; ".join(problems)))
-    return WalkForward(vol.dropna(), calm.dropna(), tuple(refits), horizon, regimes, years)
+        refits.append(Refit(day, days[window][0], int(window.sum()), "; ".join(problems),
+                            garch))
+    known = following_all.notna()
+    walked = WalkForward(pd.Series(dtype=float), calm.dropna(), tuple(refits), horizon,
+                         regimes, years, following_all[known], refit_of[known])
+    return replace(walked, garch_vol=garch_vol_ahead(walked, horizon))
+
+
+def garch_vol_ahead(walk: WalkForward, days: int) -> pd.Series:
+    """Annualized √(252 σ̂²_{t,n}) for n = ``days`` ahead, from each day's next
+    variance and its year's parameters (section 5; REGIME_MODEL Q2's σ̂)."""
+    if days < 1:
+        raise ValueError("the horizon must be a day or more")
+    h = walk.next_variance
+    out = pd.Series(np.nan, index=h.index)
+    for i, refit in enumerate(walk.refits):
+        mask = (walk.refit_of == i).to_numpy()
+        if refit.garch is None or not mask.any():
+            continue
+        p, long_run = refit.garch.persistence, refit.garch.unconditional_variance
+        average = long_run + (h[mask] - long_run) * (1 - p**days) / (days * (1 - p))
+        out[mask] = np.sqrt(TRADING_DAYS * average)
+    return out.dropna()

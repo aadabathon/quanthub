@@ -292,9 +292,22 @@
     "doi": "10.1093/rfs/hhm014",
     "question": "Do the popular predictors of the equity premium work out of sample?",
     "changed": "Almost none beat the historical mean out of sample; in-sample success was unstable.",
-    "lives_in": ["quant_hub/models/regime_inputs.py"],
+    "lives_in": ["quant_hub/models/regime_inputs.py", "quant_hub/models/regime_model.py"],
     "links": [{"to": "campbellshiller1988", "kind": "challenges"}],
     "verified": {"via": "crossref", "checked": "2026-11-02", "matched": ["title", "first_author", "year"]}
+  },
+  {
+    "id": "campbellthompson2008",
+    "title": "Predicting Excess Stock Returns Out of Sample: Can Anything Beat the Historical Average?",
+    "authors": ["John Y. Campbell", "Samuel B. Thompson"],
+    "year": 2008,
+    "venue": "The Review of Financial Studies",
+    "doi": "10.1093/rfs/hhm055",
+    "question": "Can predictors of the equity premium beat the historical mean out of sample once forecasts are held to what theory allows?",
+    "changed": "Setting a wrong-signed slope to zero and flooring the forecast at zero turns several predictors' out-of-sample R² positive, small but worth having to an investor.",
+    "lives_in": ["quant_hub/models/regime_model.py"],
+    "links": [{"to": "welchgoyal2008", "kind": "challenges"}],
+    "verified": {"via": "crossref", "checked": "2026-11-05", "matched": ["title", "first_author", "year"], "note": "Crossref's issued date is 2007-11-20 (online); print is 2008-07, volume 21, issue 4, pages 1509–1531."}
   },
   {
     "id": "rapachstrausszhou2010",
@@ -305,7 +318,7 @@
     "doi": "10.1093/rfs/hhp063",
     "question": "Can the failed predictors work together?",
     "changed": "Averaging many individual forecasts beats the historical mean out of sample, and the gains line up with the business cycle.",
-    "lives_in": [],
+    "lives_in": ["quant_hub/models/regime_model.py"],
     "links": [{"to": "welchgoyal2008", "kind": "challenges"}],
     "verified": {"via": "crossref", "checked": "2026-11-02", "matched": ["title", "first_author", "year"]}
   }

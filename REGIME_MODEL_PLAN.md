@@ -228,6 +228,10 @@ TARGET T1,** Shiller's data in the store.
   the lags, and the stock–bond correlation against a closed form.
 
 ### Q2. The three estimates, derived and tested
+
+**Status:** landed 2026-11-05 (D79). The derivation was reviewed and
+approved first, and is in `models/regime_model.py`'s docstring. The
+module name stays `regime_model.py`.
 - A new module (`models/regime_model.py`, name settled at Q2) holds the
   docstring and pure functions:
   - σ̂ from GARCH
@@ -308,7 +312,7 @@ TARGET T1,** Shiller's data in the store.
    ALLOCATION A1–A4, BUDGET B1–B3, LENS V1 and EXECUTION E2.
 2. **Settled 2026-11-03 (D59):** Ken French's provider first (approved). The question was: **The century's history:** W2b's Ken French provider first, or a manual
    file import now.
-3. **The horizons:** for example, 21 days for σ̂ and 12 months for μ̂ and the
+3. **Settled 2026-11-05:** 21 trading days for σ̂, and 12 months for μ̂ and the tail. The question was: **The horizons:** for example, 21 days for σ̂ and 12 months for μ̂ and the
    tail.
 4. **The chance constraint:** your D and p, and whether the book's crash β
    comes from A2's replay or from β alone.

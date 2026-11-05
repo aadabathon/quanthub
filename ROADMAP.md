@@ -644,8 +644,11 @@ The order after the 2026-11-03 decisions:
    chain request (fetch time measured with TWS), is all that's left of
    VARIANCE. ~~REGIME_MODEL Q1~~ landed 2026-11-05 (D78): every input as it
    was known at the time, raw and on real-time scales, with GARCH and the
-   HMM refitted each year. Q2 (the three estimates) is next, and needs
-   decision 3 (the horizons).
+   HMM refitted each year. ~~REGIME_MODEL Q2~~ landed 2026-11-05 (D79):
+   σ̂ from GARCH at any horizon, μ̂ as a restricted combination forecast
+   with its Newey–West error, and P(fall ≥ d within 12 months) from
+   pooled logistic models with an interval. Q3 (the evidence run) is
+   next; it needs decision 6 (the inclusion bar).
 
 Also approved, to be placed in this order later:
 - HORIZON H0–H1, a low-scope stdlib server
