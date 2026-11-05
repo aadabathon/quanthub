@@ -285,7 +285,8 @@ class ResearchPage(ScrollPage):
         self._set_busy(True)
         self._header.set_status("Verifying saved evidence and replaying accounting…")
         def done(run):
-            self._restore_experiment(run.payload["experiment"])
+            if run.payload.get("kind") != "recorded":    # recorded runs have no form
+                self._restore_experiment(run.payload["experiment"])
             self._render(run)
             self._tabs.set_current("Experiments")
             self._tab("Experiments")
@@ -304,14 +305,15 @@ class ResearchPage(ScrollPage):
         self._tiles["drawdown"].set_value(_number(stats["max_drawdown"], "{:.1%}"))
         self._tiles["turnover"].set_value(_number(stats["turnover_annual"], "{:.1f}×"))
         dates = result.equity.index
-        rolling = rolling_sharpe(result.net_returns, cash_rate=result.config.cash_rate)
+        rolling = rolling_sharpe(result.net_returns, cash=result.cash)
         exposure = result.targets.sum(axis=1).reindex(dates)
         self._chart.set_panels(dates, [
             Panel("Equity · net of costs", [Series("Strategy", result.equity.to_numpy(), fmt="${:,.0f}"),
                      Series("Buy & hold", benchmark.equity.to_numpy(), PALETTE.series_2, dashed=True, fmt="${:,.0f}")], axis="money", stretch=2),
             Panel("Drawdown", [Series("Strategy", result.drawdown.to_numpy(), fill=True, fmt="{:.1%}")], axis="percent"),
             Panel("Rolling Sharpe · 63 sessions", [Series("Sharpe", rolling.reindex(dates).to_numpy(), fmt="{:.2f}")], zero_line=True),
-            Panel("Target gross exposure · decision close", [Series("Exposure", exposure.to_numpy(), fmt="{:.0%}")], axis="percent", y_range=(0, 1)),
+            Panel("Target gross exposure · decision close", [Series("Exposure", exposure.to_numpy(), fmt="{:.0%}")], axis="percent",
+                  y_range=(0, max(1.0, float(exposure.max())))),
         ])
         self._chart_stack.setCurrentWidget(self._chart)
         prov = payload["provenance"]
@@ -320,8 +322,9 @@ class ResearchPage(ScrollPage):
         first = payload["first_decision"]
         warning_count = sum(not fit.get("converged", True) for fit in payload["fits"])
         self._provenance.setText(
-            f"Training first block: {full_dates[0][:10]} → {full_dates[first - 1][:10]}. "
-            f"Test P&L: {str(dates[1].date())} → {str(dates[-1].date())} · {stats['observations']:,} sessions. "
+            (_recorded_origin(payload) if payload.get("kind") == "recorded" else
+             f"Training first block: {full_dates[0][:10]} → {full_dates[first - 1][:10]}. ")
+            + f"Test P&L:{str(dates[1].date())} → {str(dates[-1].date())} · {stats['observations']:,} sessions. "
             f"Before-cost return {result.gross_equity.iloc[-1] / result.config.initial_equity - 1:+.1%} · "
             f"Fees ${result.fees.sum():,.2f} · Sortino {_number(stats['sortino'])}. "
             f"Benchmark: equal-weight buy & hold, same dates and costs. "
@@ -408,3 +411,13 @@ class ResearchPage(ScrollPage):
         self._state_store.save("research", {"fields": {k: f.text() for k, f in self._fields.items()},
                   "source": self._source.current(), "world": self._world.current(), "basis": self._basis.current(),
                   "strategy": self._strategy.current(), "hypothesis": self._hypothesis.toPlainText()})
+
+
+def _recorded_origin(payload) -> str:
+    """Where a recorded run's decisions came from: its model and its inputs."""
+    details = payload.get("details", {})
+    inputs = ", ".join(f"{name} ({values['dates'][0][:10]} → {values['dates'][-1][:10]})"
+                       for name, values in payload.get("series", {}).items())
+    cash = "the stored cash series" if payload.get("cash") else "a constant cash rate"
+    return (f"Recorded outside Research: {details.get('model', 'decisions made elsewhere')}. "
+            + (f"Inputs: {inputs}. " if inputs else "") + f"Cash earns {cash}. ")

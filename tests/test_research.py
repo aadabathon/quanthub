@@ -212,3 +212,61 @@ def test_a_broken_canon_leaves_your_papers_and_says_why(tmp_path, monkeypatch):
     assert [p["title"] for p in research.papers()] == ["Still here"]
     assert "missing paper" in research.canon_error
     store.close()
+
+
+# --------------------------------------- recorded runs (REGIME_MODEL Q3a)
+
+def recorded_inputs(n=260, seed=13):
+    rng = np.random.default_rng(seed)
+    days = pd.bdate_range("1999-01-04", periods=n)
+    market = pd.DataFrame({"MARKET": 100 * np.cumprod(1 + rng.normal(0.0004, 0.01, n))},
+                          index=days)
+    signal = pd.Series(rng.normal(0, 1, n), index=days)
+    beta = pd.DataFrame({"MARKET": np.clip(0.6 + 0.2 * signal.to_numpy()[:-1], 0, 1)},
+                        index=days[:-1])
+    bills = pd.Series(np.linspace(0.0001, 0.0003, n - 1), index=days[1:])
+    return market, beta, bills, signal
+
+
+def test_a_recorded_run_replays_with_its_cash_series(service, monkeypatch):
+    from quant_hub.models.backtest import BacktestConfig, backtest
+    from quant_hub.models.backtest_stats import sharpe_estimate
+    research, _store, db = service
+    market, beta, bills, signal = recorded_inputs()
+    costs = BacktestConfig(half_spread_bps=1, commission_bps=1)
+    run = research.record("Regime β · French market", market, beta, costs=costs, cash=bills,
+                          series={"signal": signal},
+                          provenance={"source": "french", "basis": "total return"},
+                          details={"model": "a planted signal"}, hypothesis="none")
+    expected = backtest(market, beta, costs, bills)
+    np.testing.assert_array_equal(run.result.equity, expected.equity)
+    assert run.payload["kind"] == "recorded" and run.payload["first_decision"] == 0
+    assert run.payload["summary"]["sharpe"]["sharpe"] == pytest.approx(
+        sharpe_estimate(expected.net_returns, cash=bills).sharpe)
+    assert [r["title"] for r in research.list_runs()] == ["Regime β · French market"]
+
+    monkeypatch.setattr(research, "prices", lambda _: pytest.fail("reopen must not fetch"))
+    reopened = research.reopen(run.id)
+    np.testing.assert_allclose(reopened.result.equity, run.result.equity, rtol=0, atol=0)
+    np.testing.assert_array_equal(reopened.result.cash, bills)
+    assert reopened.payload["series"]["signal"]["values"][:3] == signal.iloc[:3].tolist()
+
+    # The cash series is evidence too: changing it breaks the fingerprint.
+    with sqlite3.connect(db) as conn:
+        payload = json.loads(conn.execute("SELECT payload FROM research_runs").fetchone()[0])
+        payload["cash"]["values"][5] += 0.01
+        conn.execute("UPDATE research_runs SET payload=?", (json.dumps(payload),))
+    with pytest.raises(ValueError, match="fingerprint"):
+        research.reopen(run.id)
+
+
+def test_a_recorded_run_is_checked(service):
+    from quant_hub.models.backtest import BacktestConfig
+    research, _store, _db = service
+    market, beta, bills, _ = recorded_inputs()
+    with pytest.raises(ValueError, match="title"):
+        research.record(" ", market, beta, costs=BacktestConfig())
+    with pytest.raises(ValueError, match="dated values"):
+        research.record("x", market, beta, costs=BacktestConfig(), series={"s": [1, 2]})
+    with pytest.raises(ValueError, match="not both"):
+        research.record("x", market, beta, costs=BacktestConfig(cash_rate=0.02), cash=bills)

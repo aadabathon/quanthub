@@ -1,8 +1,18 @@
 # CURRENT_STATE.md
 
 **Update this file whenever meaningful work lands.** Last updated:
-**2026-11-05**: REGIME_MODEL Q2 (D79): the regime model's three estimates, in
-`models/regime_model.py`. No page shows them yet.
+**2026-11-05**: REGIME_MODEL Q3a (D80): Research is ready for the evidence
+run.
+- **The engine and its statistics** earn and measure against a cash series
+  that moves, such as French's daily RF.
+- **`ResearchService.record` saves decisions made elsewhere,** with their
+  cash and input series. They get the same SHA-256 evidence and the same
+  replay, and they open from the Research log.
+- **Decision 6 is settled:** a family-wise p of 0.05.
+- **Next:** Q3b, the harness's derivation, for review.
+
+Also **2026-11-05**: REGIME_MODEL Q2 (D79): the regime model's three estimates, in
+`models/regime_model.py`.
 - **σ̂:** GARCH at any horizon.
 - **μ̂:** a restricted combination forecast with its Newey–West error.
 - **P(fall ≥ 10/20/30/40% within 12 months):** pooled logistic models,

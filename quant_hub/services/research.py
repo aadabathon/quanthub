@@ -15,6 +15,18 @@ Saved arrays replay the actual decisions without refitting or fetching.
 Source SHA-256 records the model implementation; changed code is reported
 on reopen. Bitwise replay across NumPy/platform versions is not promised.
 
+**Recorded runs** (REGIME_MODEL Q3a). ``record`` saves decisions made
+outside Research's strategies, such as the regime model's β path:
+- **What it keeps:** the decisions and their prices, each session's cash
+  return (French's RF, say), and the input series behind the decisions,
+  with their provenance. A free-form ``details`` holds the model's
+  specification.
+- **The same evidence:** the hash, the replay check and the buy-and-hold
+  benchmark are a strategy run's. Replay uses the stored cash series, so
+  a century of moving bill rates replays exactly.
+- **Its kind** is ``"recorded"``. Older runs have no kind, and still
+  reopen as strategy runs.
+
 Papers merge two layers (Lit-1). The literature canon (``data/canon/``)
 owns each canon paper's metadata; the research store keeps what is yours,
 by the same id: reading status, notes, a local PDF and linked runs. Papers
@@ -24,6 +36,7 @@ says what is wrong.
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 import hashlib
@@ -92,6 +105,15 @@ def _frame(frame: pd.DataFrame) -> dict:
 
 def _unframe(data: dict) -> pd.DataFrame:
     return pd.DataFrame(data["values"], index=pd.DatetimeIndex(data["dates"]), columns=data["symbols"])
+
+
+def _series(series: pd.Series) -> dict:
+    return {"dates": [d.isoformat() for d in series.index],
+            "values": series.to_numpy(dtype=float).tolist()}
+
+
+def _unseries(data: dict) -> pd.Series:
+    return pd.Series(data["values"], index=pd.DatetimeIndex(data["dates"]), dtype=float)
 
 
 def _digest(value: dict) -> str:
@@ -188,6 +210,45 @@ class ResearchService:
         self._store.save_run(run_id, payload["created_at"], payload["title"], payload)
         return ResearchRun(run_id, payload, result, benchmark)
 
+    def record(self, title: str, prices: pd.DataFrame, targets: pd.DataFrame, *,
+               costs: BacktestConfig, cash: pd.Series | None = None,
+               series: Mapping[str, pd.Series] | None = None,
+               provenance: dict | None = None, details: dict | None = None,
+               hypothesis: str = "") -> ResearchRun:
+        """Save decisions made outside Research (module docstring). ``targets``
+        are on ``prices.index[:-1]``, as ``backtest`` takes them; ``cash`` on
+        ``prices.index[1:]``. Blocking: run on the TaskRunner."""
+        if not title.strip():
+            raise ValueError("a recorded run needs a title")
+        series = dict(series or {})
+        for name, values in series.items():
+            if not name or not isinstance(values, pd.Series) or not isinstance(
+                    values.index, pd.DatetimeIndex):
+                raise ValueError(f"input series {name!r} needs a name and dated values")
+        result = backtest(prices, targets, costs, cash)
+        benchmark_targets = self._benchmark_targets(prices, costs)
+        benchmark = backtest(prices, benchmark_targets, costs, cash)
+        summary = performance_summary(result.net_returns, cash_rate=costs.cash_rate,
+                                      turnover=result.turnover, cash=cash)
+        run_id = uuid4().hex
+        payload = {"format": _FORMAT_VERSION, "kind": "recorded", "id": run_id,
+                   "created_at": datetime.now(timezone.utc).isoformat(), "title": title.strip(),
+                   "hypothesis": hypothesis, "costs": asdict(costs), "details": details or {},
+                   "provenance": provenance or {},
+                   "software": {"version": __version__, "source_sha256": source_fingerprint(),
+                                "numpy": np.__version__, "pandas": pd.__version__},
+                   "prices": _frame(prices), "first_decision": 0,
+                   "targets": _frame(targets), "benchmark_targets": _frame(benchmark_targets),
+                   "cash": _series(result.cash) if cash is not None else None,
+                   "series": {name: _series(values) for name, values in series.items()},
+                   "fits": [], "summary": asdict(summary),
+                   "equity": result.equity.tolist(), "benchmark_equity": benchmark.equity.tolist(),
+                   "fees": result.fees.tolist(), "net_returns": result.net_returns.tolist()}
+        payload = _finite(payload)
+        payload["evidence_sha256"] = _digest(payload)
+        self._store.save_run(run_id, payload["created_at"], payload["title"], payload)
+        return ResearchRun(run_id, payload, result, benchmark)
+
     @staticmethod
     def _benchmark_targets(prices, costs):
         # Initial equal notionals, then let shares drift. Uniform entry
@@ -253,9 +314,12 @@ class ResearchService:
         if _digest(check) != expected:
             raise ValueError("saved evidence fingerprint does not match")
         prices = _unframe(payload["prices"]).iloc[payload["first_decision"]:]
-        config = BacktestConfig(**payload["experiment"]["costs"])
-        result = backtest(prices, _unframe(payload["targets"]), config)
-        benchmark = backtest(prices, _unframe(payload["benchmark_targets"]), config)
+        recorded = payload.get("kind") == "recorded"
+        config = BacktestConfig(**(payload["costs"] if recorded
+                                   else payload["experiment"]["costs"]))
+        cash = _unseries(payload["cash"]) if recorded and payload["cash"] else None
+        result = backtest(prices, _unframe(payload["targets"]), config, cash)
+        benchmark = backtest(prices, _unframe(payload["benchmark_targets"]), config, cash)
         if not np.allclose(result.equity, payload["equity"], rtol=1e-11, atol=1e-8):
             raise ValueError("saved accounting no longer replays within tolerance")
         return ResearchRun(run_id, payload, result, benchmark, notes,

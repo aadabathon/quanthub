@@ -17,6 +17,16 @@ Cash earns an effective annual rate r converted to one session by
 f = exp(log(1+r)/p)-1, p=252 by default. Negative cash borrows at that same
 rate; shorts require ``allow_short`` and leverage requires a higher gross limit.
 
+**A cash series** (REGIME_MODEL Q3a). Over a century the bill rate moves
+from 0 to 15%, so ``backtest`` also takes the cash return of each session,
+f_(t+1), dated by the session it's earned in (``prices.index[1:]``), as
+Ken French's RF is published. Everything below holds with f replaced by
+f_(t+1) in (2): the session's return, the drift in (3), and so (1). A
+series and a nonzero ``cash_rate`` together are an error: one source of
+cash, never two. The result records the series it used, a constant one
+when it came from ``cash_rate``, so statistics measure excess returns over
+the same cash.
+
 Accounting, derived before implementation
 ----------------------------------------
 Let V_t be equity just before trading at close t; w_t the desired asset
@@ -143,17 +153,22 @@ class BacktestResult:
     equity: pd.Series
     drawdown: pd.Series
     ending_weights: pd.Series      # final mark, no automatic liquidation
+    cash: pd.Series                # cash return per session, earning dates
 
 
 def backtest(prices: pd.DataFrame, targets: pd.DataFrame,
-             config: BacktestConfig | None = None) -> BacktestResult:
+             config: BacktestConfig | None = None,
+             cash: pd.Series | None = None) -> BacktestResult:
     """Run the module's accounting. Targets use ``prices.index[:-1]`` exactly.
 
     Asset columns must match in name and order. Inputs are copied into the
     result; neither is sorted, aligned, filled, or mutated implicitly.
+    ``cash``, when given, is each session's cash return on
+    ``prices.index[1:]`` exactly, in place of ``config.cash_rate``.
     """
     config = config or BacktestConfig()
     validate_price_matrix(prices)
+    cash = cash_returns(prices.index[1:], config, cash)
     if not isinstance(targets, pd.DataFrame):
         raise ValueError("targets must be a DataFrame")
     if not targets.index.equals(prices.index[:-1]) or not targets.columns.equals(prices.columns):
@@ -171,7 +186,7 @@ def backtest(prices: pd.DataFrame, targets: pd.DataFrame,
 
     values = prices.to_numpy(dtype=float)
     returns = values[1:] / values[:-1] - 1.0
-    gross = 1.0 + np.sum(w * returns, axis=1) + (1.0 - w.sum(axis=1)) * config.cash_return
+    gross = 1.0 + np.sum(w * returns, axis=1) + (1.0 - w.sum(axis=1)) * cash.to_numpy()
     if not np.isfinite(gross).all() or (gross <= 0).any():
         raise ValueError("a held portfolio exhausts equity; reduce exposure")
     before = np.zeros_like(w)
@@ -199,7 +214,24 @@ def backtest(prices: pd.DataFrame, targets: pd.DataFrame,
         equity=path, drawdown=drawdown_series(path),
         ending_weights=pd.Series(w[-1] * (1.0 + returns[-1]) / gross[-1],
                                  index=columns, name="ending_weight"),
+        cash=cash,
     )
+
+
+def cash_returns(sessions: pd.DatetimeIndex, config: BacktestConfig,
+                 cash: pd.Series | None = None) -> pd.Series:
+    """The cash return of each session: the supplied series, checked, or a
+    constant one from ``config.cash_rate``."""
+    if cash is None:
+        return pd.Series(config.cash_return, index=sessions, name="cash", dtype=float)
+    if config.cash_rate != 0:
+        raise ValueError("give a cash series or a cash_rate, not both")
+    if not isinstance(cash, pd.Series) or not cash.index.equals(sessions):
+        raise ValueError("the cash series needs exactly the earning sessions, prices.index[1:]")
+    values = cash.to_numpy(dtype=float)
+    if not np.isfinite(values).all() or (values <= -1).any():
+        raise ValueError("cash returns must be finite and exceed -1")
+    return pd.Series(values, index=sessions, name="cash")
 
 
 def _after_cost_fraction(weights: np.ndarray, before: np.ndarray, rate: float) -> np.ndarray:

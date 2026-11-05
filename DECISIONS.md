@@ -3545,3 +3545,75 @@ reads them yet.
 module.
 
 **Next:** Q3, the evidence run, needs decision 6 (the inclusion bar).
+
+## D80 — REGIME_MODEL Q3a: Research gets a moving cash rate and recorded runs (2026-11-05)
+
+The owner started Q3 on 2026-11-05 and set the inclusion bar (decision
+6): a family-wise p of 0.05, from the circular-shift test.
+
+**Q3 comes in three parts:**
+- **Q3a, here:** the two things TARGET T4 said Research lacks. It involves
+  no decisions.
+- **Q3b:** the evidence harness, derived first for review. It has to score
+  variants with a provisional β rule, before Q4 builds the real one.
+- **Q3c:** the family-wise shift test and the saved run.
+
+**The 2026-10-25 test, to reproduce.** The scratch run
+(`spikes/target/combo_timing.py`, local) defines it:
+- **The statistic:** the classical t of the β-timed excess return's α on
+  the market.
+- **The null:** every rule's β path is shifted by the same k days, at
+  least five years from either end, over 2,000 draws.
+- **The family p:** the share of shifts whose best t, across all rules,
+  reaches the observed best.
+
+**A cash series in the engine** (`models/backtest.py`).
+- **The problem:** over a century the bill rate runs from 0 to 15%, and
+  the engine earned a constant rate.
+- **The change:** `backtest` takes each session's cash return, dated by
+  the session it's earned in, as French's RF is published. R1's
+  derivation holds with f replaced by f_(t+1).
+- **One source of cash:** a series and a nonzero `cash_rate` together are
+  an error.
+- **The result records the series it used,** a constant one from
+  `cash_rate`, so the statistics measure excess over the same cash.
+
+**Statistics over it** (`models/backtest_stats.py`). Sharpe, its error,
+Sortino, the rolling Sharpe and the deflated Sharpe each take the series,
+and subtract it period by period. With a constant series they equal the
+annual-rate results.
+
+**Recorded runs** (`ResearchService.record`). These are decisions made
+outside Research's five strategies, such as the regime model's β path.
+- **What they keep:** the prices, the decisions, the cash series, and the
+  input series behind the decisions, with their provenance. A free-form
+  `details` holds the model's specification.
+- **The same evidence as a strategy run:**
+  - the SHA-256, which covers the cash and input series too
+  - replay without fetching, checked against the saved equity
+  - the same buy-and-hold benchmark
+- **The kind:** a recorded run's payload says `"kind": "recorded"`. Older
+  runs have none, and still reopen as strategy runs.
+- **On the Research page,** the log opens a recorded run without touching
+  the experiment form. The page names its model, its inputs with their
+  dates, and its cash. The exposure axis widens past 100% when a run
+  holds more.
+
+**Tests (8):**
+- **The engine:**
+  - a constant series equals the annual rate exactly
+  - idle cash compounds a moving rate
+  - half-invested earns half of it
+  - bad series are refused
+- **The statistics:** a constant series matches the rate, and a moving
+  one is subtracted period by period.
+- **The service:**
+  - a recorded run replays with its cash
+  - changing the stored cash breaks the fingerprint
+  - its inputs are checked
+- **The page:** a recorded run opens from the log. The existing Research
+  tests all still pass.
+
+**Next: Q3b's derivation, for review.** The harness has to set the β rule
+it scores variants with, the growth measure and the ledger. The real
+rule needs decisions 4 (D and p) and 5 (f), and Q4 builds it.

@@ -647,8 +647,10 @@ The order after the 2026-11-03 decisions:
    HMM refitted each year. ~~REGIME_MODEL Q2~~ landed 2026-11-05 (D79):
    σ̂ from GARCH at any horizon, μ̂ as a restricted combination forecast
    with its Newey–West error, and P(fall ≥ d within 12 months) from
-   pooled logistic models with an interval. Q3 (the evidence run) is
-   next; it needs decision 6 (the inclusion bar).
+   pooled logistic models with an interval. Q3 (the evidence run) is in
+   three parts. ~~Q3a~~ landed 2026-11-05 (D80): Research earns a moving
+   cash rate and saves recorded runs. Q3b, the harness's derivation, is
+   next.
 
 Also approved, to be placed in this order later:
 - HORIZON H0–H1, a low-scope stdlib server
