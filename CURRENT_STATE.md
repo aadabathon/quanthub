@@ -1,7 +1,21 @@
 # CURRENT_STATE.md
 
 **Update this file whenever meaningful work lands.** Last updated:
-**2026-11-05**: REGIME_MODEL Q3a (D80): Research is ready for the evidence
+**2026-11-05**: REGIME_MODEL Q3b–Q3c (D81): the evidence run, Ctrl+K "Run
+the regime evidence".
+- **What it tests:** October's 31 rules, ported exactly, plus Q3's 26
+  paths, under the family-wise circular-shift test, and 36 tail
+  forecasts.
+- **Where it's saved:** to Research's log.
+- **On French and your Shiller CSV, no input is kept:**
+  - ECY clears the bar over the century (adjusted p 0.009), but its α
+    since its 2020 paper is −0.10% ± 0.77%
+  - the other inputs lower timing α
+  - no tail forecast survives the family
+- **The kept model is vol targeting.**
+- **Not run on your store yet:** it needs PRs #22 on merged.
+
+Also **2026-11-05**: REGIME_MODEL Q3a (D80): Research is ready for the evidence
 run.
 - **The engine and its statistics** earn and measure against a cash series
   that moves, such as French's daily RF.

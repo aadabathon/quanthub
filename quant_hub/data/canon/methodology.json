@@ -130,6 +130,19 @@
     "verified": {"via": "crossref", "checked": "2026-11-02", "matched": ["title", "first_author", "year"]}
   },
   {
+    "id": "romanowolf2005",
+    "title": "Stepwise Multiple Testing as Formalized Data Snooping",
+    "authors": ["Joseph P. Romano", "Michael Wolf"],
+    "year": 2005,
+    "venue": "Econometrica",
+    "doi": "10.1111/j.1468-0262.2005.00615.x",
+    "question": "When many strategies are tested at once, which can be called better than the benchmark without data snooping?",
+    "changed": "A stepwise test that controls the family-wise error rate and rejects more false nulls than the single-step reality check.",
+    "lives_in": ["quant_hub/models/regime_evidence.py"],
+    "links": [{"to": "white2000", "kind": "builds_on"}],
+    "verified": {"via": "crossref", "checked": "2026-11-05", "matched": ["title", "first_author", "year"]}
+  },
+  {
     "id": "opdyke2007",
     "title": "Comparing Sharpe ratios: So where are the p-values?",
     "authors": ["J. D. Opdyke"],
@@ -165,7 +178,7 @@
     "doi": "10.1111/jofi.12365",
     "question": "What happens to anomalies after they are published?",
     "changed": "Anomaly returns are about 26% lower out of sample and 58% lower after publication: data mining explains some of the decay, investors learning the rest.",
-    "lives_in": [],
+    "lives_in": ["quant_hub/models/regime_evidence.py"],
     "links": [{"to": "lomackinlay1990", "kind": "builds_on"}, {"to": "shleifervishny1997", "kind": "builds_on"}],
     "verified": {"via": "crossref", "checked": "2026-11-02", "matched": ["title", "first_author", "year"]}
   },

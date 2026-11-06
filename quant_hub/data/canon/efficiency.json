@@ -219,6 +219,19 @@
     "verified": {"via": "crossref", "checked": "2026-11-02", "matched": ["title", "first_author", "year"]}
   },
   {
+    "id": "brocklakonishoklebaron1992",
+    "title": "Simple Technical Trading Rules and the Stochastic Properties of Stock Returns",
+    "authors": ["William Brock", "Josef Lakonishok", "Blake LeBaron"],
+    "year": 1992,
+    "venue": "The Journal of Finance",
+    "doi": "10.1111/j.1540-6261.1992.tb04681.x",
+    "question": "Do simple moving-average and range-break rules predict stock returns?",
+    "changed": "On the Dow from 1897 to 1986, returns after the rules' buy signals beat those after sell signals, by more than standard return models explain.",
+    "lives_in": ["quant_hub/models/regime_evidence.py"],
+    "links": [{"to": "fama1970", "kind": "challenges"}],
+    "verified": {"via": "crossref", "checked": "2026-11-05", "matched": ["title", "first_author", "year"]}
+  },
+  {
     "id": "shleifervishny1997",
     "title": "The Limits of Arbitrage",
     "authors": ["Andrei Shleifer", "Robert W. Vishny"],
@@ -256,6 +269,19 @@
     "lives_in": [],
     "links": [{"to": "barberisshleifervishny1998", "kind": "independent"}, {"to": "kahnemantversky1979", "kind": "builds_on"}],
     "verified": {"via": "crossref", "checked": "2026-11-02", "matched": ["title", "first_author", "year"]}
+  },
+  {
+    "id": "campbellshiller1998",
+    "title": "Valuation Ratios and the Long-Run Stock Market Outlook",
+    "authors": ["John Y. Campbell", "Robert J. Shiller"],
+    "year": 1998,
+    "venue": "The Journal of Portfolio Management",
+    "doi": "10.3905/jpm.24.2.11",
+    "question": "What do high price ratios say about the market's long-run returns?",
+    "changed": "The dividend yield and the ten-year smoothed P/E had forecast ten-year real returns, and the high ratios of the late 1990s implied poor ones to come.",
+    "lives_in": ["quant_hub/models/regime_evidence.py", "quant_hub/models/timing_rules.py"],
+    "links": [{"to": "campbellshiller1988", "kind": "builds_on"}],
+    "verified": {"via": "crossref", "checked": "2026-11-05", "matched": ["title", "first_author", "year"]}
   },
   {
     "id": "barberodean2000",
@@ -321,5 +347,18 @@
     "lives_in": ["quant_hub/models/regime_model.py"],
     "links": [{"to": "welchgoyal2008", "kind": "challenges"}],
     "verified": {"via": "crossref", "checked": "2026-11-02", "matched": ["title", "first_author", "year"]}
+  },
+  {
+    "id": "shillerblackjivraj2020",
+    "title": "CAPE and the COVID-19 Pandemic Effect",
+    "authors": ["Robert J. Shiller", "Laurence Black", "Farouk Jivraj"],
+    "year": 2020,
+    "venue": "SSRN working paper",
+    "doi": "10.2139/ssrn.3714737",
+    "question": "How should CAPE be read when long-term interest rates are this low?",
+    "changed": "It read CAPE valuations against long-term interest rates, across the US, UK, Europe, Japan and China, through the 2020 pandemic.",
+    "lives_in": ["quant_hub/models/regime_evidence.py", "quant_hub/models/timing_rules.py"],
+    "links": [{"to": "campbellshiller1998", "kind": "builds_on"}],
+    "verified": {"via": "crossref", "checked": "2026-11-05", "matched": ["title", "first_author", "year"], "note": "An SSRN preprint. Crossref matched the title, the authors and the year. Its abstract doesn't name the excess CAPE yield: dating that measure to 2020 here follows the 2026-10-25 scratch run."}
   }
 ]

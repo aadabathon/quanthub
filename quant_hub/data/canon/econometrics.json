@@ -283,7 +283,7 @@
     "doi": "10.1093/rfs/15.4.1137",
     "question": "Do correlations jump in bear regimes, and does that kill diversification?",
     "changed": "Regime-switching allocation: correlations and volatilities rise together in bad regimes, yet international diversification still pays.",
-    "lives_in": [],
+    "lives_in": ["quant_hub/models/regime_evidence.py"],
     "links": [{"to": "hamilton1989", "kind": "builds_on"}, {"to": "markowitz1952", "kind": "builds_on"}],
     "verified": {"via": "crossref", "checked": "2026-11-02", "matched": ["title", "first_author", "year"]}
   },

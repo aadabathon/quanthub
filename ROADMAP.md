@@ -649,8 +649,11 @@ The order after the 2026-11-03 decisions:
    with its Newey–West error, and P(fall ≥ d within 12 months) from
    pooled logistic models with an interval. Q3 (the evidence run) is in
    three parts. ~~Q3a~~ landed 2026-11-05 (D80): Research earns a moving
-   cash rate and saves recorded runs. Q3b, the harness's derivation, is
-   next.
+   cash rate and saves recorded runs. ~~Q3b–Q3c~~ landed 2026-11-05
+   (D81): the evidence run, 57 β paths and 36 tail forecasts under the
+   family-wise shift test. It keeps no input: ECY clears the bar over the
+   century but not since its 2020 paper. Q4, the rules, needs decisions 4,
+   5 and 9.
 
 Also approved, to be placed in this order later:
 - HORIZON H0–H1, a low-scope stdlib server

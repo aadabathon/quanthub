@@ -32,6 +32,7 @@ from quant_hub.gui.sidebar import Sidebar
 from quant_hub.gui.status_bar import LogDrawer, StatusBar
 from quant_hub.gui.top_bar import TopBar
 from quant_hub.gui.workspace import Workspace
+from quant_hub.services.regime_evidence import run_evidence
 
 _logger = logging.getLogger(__name__)
 
@@ -104,6 +105,7 @@ class MainWindow(QMainWindow):
             "Import Shiller CSV…": self.import_shiller,
             "Fetch fund holdings…": self.fetch_fund_holdings,
             "Collect today's chains": self.collect_chains,
+            "Run the regime evidence": self.run_regime_evidence,
             **({"Sync index history from IBKR": self.sync_indices}
                if core.config.ibkr_enabled else {}),
         })
@@ -163,6 +165,18 @@ class MainWindow(QMainWindow):
         self._core.tasks.submit(
             lambda: self._core.external_data.refresh_fred(force=True),
             on_error=lambda exc: _logger.warning("FRED fetch failed: %s", exc))
+
+    def run_regime_evidence(self) -> None:
+        """REGIME_MODEL Q3c (D81): the evidence run on the stored French and
+        Shiller series, on the worker (about five minutes). The log reports
+        each step and what's kept; the run is saved to Research's log."""
+        self._core.tasks.submit(
+            lambda: run_evidence(self._core.external_data, self._core.research),
+            on_done=lambda run: _logger.info(
+                "Regime evidence saved to Research's log: family p %.3f; kept for μ̂ %s, "
+                "for the tail %s", run.family.p_family, ", ".join(run.kept_mean) or "none",
+                ", ".join(run.kept_tail) or "none"),
+            on_error=lambda exc: _logger.warning("Regime evidence failed: %s", exc))
 
     def sync_indices(self) -> None:
         """SPX's and VIX's daily history from IBKR, as deep as it serves
