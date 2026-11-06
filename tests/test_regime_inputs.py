@@ -28,10 +28,10 @@ from quant_hub.models.regime_inputs import (
 NO_LAGS = dict.fromkeys(LAGS, 0)
 
 
-def shiller_world(months=480, seed=0):
-    """Monthly P, D, E, CPI and GS10 from 1871, dated the 1st."""
+def shiller_world(months=480, seed=0, start="1871-01-01"):
+    """Monthly P, D, E, CPI and GS10 from 1871 (or ``start``), dated the 1st."""
     rng = np.random.default_rng(seed)
-    index = pd.date_range("1871-01-01", periods=months, freq="MS")
+    index = pd.date_range(start, periods=months, freq="MS")
     price = 5 * np.exp(np.cumsum(rng.normal(0.004, 0.04, months)))
     earnings = price * np.exp(rng.normal(math.log(0.06), 0.15, months))
     cpi = 10 * np.exp(np.cumsum(rng.normal(0.002, 0.006, months)))

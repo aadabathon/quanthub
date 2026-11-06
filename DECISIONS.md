@@ -3617,3 +3617,124 @@ outside Research's five strategies, such as the regime model's β path.
 **Next: Q3b's derivation, for review.** The harness has to set the β rule
 it scores variants with, the growth measure and the ledger. The real
 rule needs decisions 4 (D and p) and 5 (f), and Q4 builds it.
+
+## D81 — REGIME_MODEL Q3b–Q3c: the evidence run, and what it keeps (2026-11-05)
+
+Q3b's derivation was written into `models/regime_evidence.py`'s docstring
+and approved before any code. Each reviewed point was kept as proposed:
+- timing α as the gate
+- the whole-window bar, plus a positive α after publication
+- October's 31 rules ported and counted
+- the one-input-alone variants included
+- the publication years
+- the constant-β level read at run time
+
+Q3c built it:
+- `models/timing_rules.py`: October's 31 rules
+- `models/regime_evidence.py`: timing α, both shift tests and the
+  reports
+- `services/regime_evidence.py`: the run
+- Ctrl+K: "Run the regime evidence"
+
+**The port is exact.** On `spikes/target`'s own French and Shiller files,
+all 31 β paths match the scripts bit for bit. All 31 classical t's match
+to two decimals, from ECY × vol's 4.85 down to the dip rule's −4.63.
+
+**What the run does** (about 4½ minutes: the inputs take 219 s, the rest
+46):
+1. **Q1's inputs:** French's century and Shiller's data.
+2. **57 daily β paths:**
+   - October's 31
+   - vol targeting (μ̂ is the historical mean)
+   - the full model, the model without each input, and each input alone
+   - each input's difference path, full minus without
+3. **The shift test:** all 57 shifted together, 2,000 times, on their
+   common days, 1937-07-01 to 2026-09-30.
+4. **The tail:** each input's forecast and the pool, at four thresholds:
+   36 forecasts, each shifted against its events.
+5. **What's kept:**
+   - a μ̂ input whose difference path has adjusted p ≤ 0.05 and a positive
+     α after its paper's year
+   - a tail input whose forecast passes the same way
+6. **The save:** one Research recorded run. Its details hold the ledger:
+   every path's id, its SHA-256 and its statistics.
+
+**The result on French and your Shiller CSV: no input is kept.**
+- **The family has timing:** p_FW is 0.002. The best path is ECY alone, at
+  t 4.64.
+- **ECY passes the whole-window bar but fails after publication.** Its
+  difference path has t 4.19, α +5.3% ± 1.6% and adjusted p 0.009. Since
+  2021, after its 2020 paper, its α is −0.10% ± 0.77%. That's
+  indistinguishable from zero, but not positive, so the protocol drops
+  it.
+- **The other difference paths:**
+  - CAPE is positive but short of the bar (t 1.31, adjusted p 0.97)
+  - the two vol measures, both trends, the calm probability and the
+    stock–bond correlation all *lower* timing α when added (t −1.3 to
+    −3.2)
+- **The tail:** realized vol, GARCH, the calm probability and the pool
+  each beat the base rate at 10–20%, by 6–10% in Brier score. Their timing
+  is real on its own: p < 0.001 against randomly timed deviations. Across
+  the 36-forecast family, the best adjusted p was 0.095 (the pool at 20%),
+  so none clears 0.05. Vol's skill since 2017 is negative.
+- **The kept model is vol targeting:** μ̂ is the historical mean, with
+  GARCH's σ̂. At f = ½ with no leverage, its growth over constant exposure
+  is −0.02% ± 0.52% a year, with a worst drawdown of −51%.
+- **For reference, the full model** had t 4.01 (adjusted p 0.022), μ̂
+  R²_OS +7.1% against the historical mean, and growth +0.15% ± 0.56% at
+  f = ½.
+- **October's ECY rules** still clear the family in this window:
+  - ECY cheap 10%/40%: adjusted p 0.018
+  - ECY cheap: 0.022
+  - ECY × vol: 0.025
+
+**What the result can't settle:**
+- **The post-publication window is short.** Six years can't tell a
+  surviving half-effect from none. Loosening the rule now would be a
+  choice made after seeing the result. If you make it, the ledger records
+  it as a new variant, and the family counts it.
+- **Literature selection** is the risk McLean & Pontiff measure. This is
+  what it looks like.
+
+**Found while building, in the tail's test:**
+- **The null shifts each forecast's deviation from the base rate,** not
+  the whole forecast.
+  - **Why:** the base rate drifts over a century. Shifting a whole
+    forecast put that drift out of line, so a worthless forecast looked
+    skilled.
+  - **The test:** a forecast of the base rate plus noise read p = 0.0
+    before, and reads p > 0.2 now.
+- **Keeping a tail input also takes positive skill.** Under this null, a
+  forecast worse than the base rate can still beat randomly timed
+  deviations: ECY at 30% had skill −0.007 and p 0.009.
+- **A forecast with nothing to test is left out with p = 1:** an exact
+  base rate (a NaN skill had read as p = 0), or a forecast that never
+  leaves the base rate.
+
+**Tests (12):**
+- **Timing:**
+  - scale-free, with constant β at zero
+  - α equal to `ols` with Newey–West
+- **The shift tests:**
+  - planted timing passes the family test, and adjusting never lowers a p
+  - a noise family passes at about its level over 100 seeds
+  - the tail's shift finds a planted skill and not noise
+  - it leaves out forecasts with nothing to test
+  - it doesn't find skill in a worthless forecast on a drifting base rate
+- **The reports:**
+  - the growth rule and its report
+  - crisis drawdowns from the market's own peak and trough
+- **October's rules** keep their shapes.
+- **The run end to end** on synthetic French and Shiller data, saved and
+  replayed.
+- **Ctrl+K** runs on the worker with the app's services.
+
+**Canon,** each checked on Crossref:
+- **New:** Brock, Lakonishok & LeBaron 1992, Campbell & Shiller 1998,
+  Shiller, Black & Jivraj 2020 (an SSRN preprint) and Romano & Wolf 2005.
+- **Now also listing the modules:** Moreira & Muir 2017, Moskowitz, Ooi &
+  Pedersen 2012, Ang & Bekaert 2002 and McLean & Pontiff 2016.
+
+**Not run on your store:** it gets the outside-series tables when PRs #22
+on merge. Then fetch French, import Shiller, and run Ctrl+K "Run the
+regime evidence".

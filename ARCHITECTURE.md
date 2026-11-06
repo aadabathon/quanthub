@@ -191,6 +191,10 @@ quant_hub/
 │   │                          GARCH + HMM refitted yearly, expanding
 │   │                          percentile and z (D78); garch_vol_ahead
 │   │                          reads σ̂ at any horizon (D79)
+│   ├── timing_rules.py        October's 31 timing rules, ported exactly (D81)
+│   ├── regime_evidence.py     timing α, the family-wise circular-shift tests
+│   │                          (β paths and tail forecasts), growth, crises,
+│   │                          eras, publication years (D81)
 │   ├── regime_model.py        σ̂, μ̂ (restricted combination forecast,
 │   │                          its error, R²_OS) and P(fall ≥ d) (IRLS
 │   │                          logistics, pooled, monotone in d, with an
@@ -272,6 +276,8 @@ quant_hub/
 │   │                          GARCH fit as of the chain (D76, D77)
 │   ├── regime_inputs.py       stored French + Shiller series → every regime
 │   │                          input, with provenance and what's missing (D78)
+│   ├── regime_evidence.py     the evidence run: 57 paths, both shift tests,
+│   │                          what's kept, saved to Research's log (D81)
 │   ├── workstation.py         local-store overview, windowed history, GBM
 │   │                          forecast fan (the Dashboard's data, D31)
 │   ├── option_chains.py       ChainService: chains by named source, every

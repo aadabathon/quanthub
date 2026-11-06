@@ -250,8 +250,14 @@ module name stays `regime_model.py`.
 **Status:** in three parts.
 - **Q3a: landed 2026-11-05 (D80).** Research takes a moving cash rate, and
   saves recorded runs: decisions made elsewhere, with their input series.
-- **Q3b:** the harness, derived for review first.
-- **Q3c:** the family-wise shift test and the saved run.
+- **Q3b:** approved 2026-11-05 (D81), the derivation in
+  `models/regime_evidence.py`'s docstring.
+- **Q3c: landed 2026-11-05 (D81).**
+  - **The result:** on French and your Shiller data, the protocol keeps no
+    input.
+  - **ECY** clears the whole-window bar (adjusted p 0.009), but its α
+    since 2021 is −0.10% ± 0.77%.
+  - **The kept model** is vol targeting.
 
 The inclusion bar (decision 6) is a family-wise p of 0.05.
 - The walk-forward harness, the baselines, the ledger and the family-wise

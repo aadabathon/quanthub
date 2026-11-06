@@ -724,6 +724,25 @@ def test_ctrl_k_fetches_ken_french_on_the_worker(qt_app, monkeypatch):
     wait_for(app, lambda: calls == [True])
 
 
+def test_ctrl_k_runs_the_regime_evidence_on_the_worker(qt_app, monkeypatch):
+    # REGIME_MODEL Q3c (D81): the run is replaced (it takes minutes and needs
+    # stored series); the wiring is real, and it gets the app's services.
+    import threading
+
+    import quant_hub.gui.main_window as main_window
+    app, window = qt_app
+    called = []
+
+    def fake(external, research):
+        called.append((external is window._core.external_data,
+                       research is window._core.research,
+                       threading.current_thread() is not threading.main_thread()))
+        raise ValueError("no stored series in tests")
+    monkeypatch.setattr(main_window, "run_evidence", fake)
+    window._top.search._commands["Run the regime evidence"]()
+    wait_for(app, lambda: called == [(True, True, True)])
+
+
 def test_ctrl_k_fetches_fred_and_syncs_the_indices_on_the_worker(qt_app, monkeypatch):
     # HEDGE U2 (D69): no network in tests; the wiring is real.
     app, window = qt_app
