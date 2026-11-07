@@ -651,9 +651,10 @@ The order after the 2026-11-03 decisions:
    three parts. ~~Q3a~~ landed 2026-11-05 (D80): Research earns a moving
    cash rate and saves recorded runs. ~~Q3b–Q3c~~ landed 2026-11-05
    (D81): the evidence run, 57 β paths and 36 tail forecasts under the
-   family-wise shift test. It keeps no input: ECY clears the bar over the
-   century but not since its 2020 paper. Q4, the rules, needs decisions 4,
-   5 and 9.
+   family-wise shift test. It kept no input: ECY clears the bar over the
+   century but not since its 2020 paper. On 2026-11-06 (D82), decision 6
+   was amended after the result, and ECY is kept. Q4, the rules, is next;
+   it needs decisions 4, 5 and 9.
 
 Also approved, to be placed in this order later:
 - HORIZON H0–H1, a low-scope stdlib server

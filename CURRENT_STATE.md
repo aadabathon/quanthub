@@ -1,7 +1,17 @@
 # CURRENT_STATE.md
 
 **Update this file whenever meaningful work lands.** Last updated:
-**2026-11-05**: REGIME_MODEL Q3b–Q3c (D81): the evidence run, Ctrl+K "Run
+**2026-11-06**: D82: decision 6 amended after the result, and ECY is kept.
+- **The new rule:** after its paper, the 95% interval need only reach
+  positive α. The code keeps both rules, and each run records what each
+  keeps.
+- **The kept model:** μ̂ from ECY, with GARCH's σ̂.
+  - **At f = ½ with no leverage, 1926–2026:** CAGR 8.5% against the
+    market's 9.8%, and a worst drawdown of −38% against −84%.
+  - **β today:** 0.45.
+- **Next:** Q4's derivation, which needs decisions 4, 5 and 9.
+
+Also **2026-11-05**: REGIME_MODEL Q3b–Q3c (D81): the evidence run, Ctrl+K "Run
 the regime evidence".
 - **What it tests:** October's 31 rules, ported exactly, plus Q3's 26
   paths, under the family-wise circular-shift test, and 36 tail

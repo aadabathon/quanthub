@@ -287,6 +287,23 @@ Tests (with the code)
 - **The port is exact.** On the scripts' own files, all 31 paths match bit
   for bit, and all 31 t's to two decimals.
 - **The tests:** the noise check runs 100 seeds, not 200.
+
+**Decision 6, amended (2026-11-06, D82).** The 2026-11-05 run kept no
+input.
+- **What happened under rule 1:** ECY's difference path cleared the bar
+  (adjusted p 0.009), but its α since 2021 was −0.10% ± 0.77%, not
+  positive.
+- **The owner chose rule 2:** after publication, the 95% interval must
+  only *reach* positive α (α + 1.96 SE > 0). Six years can't tell a
+  surviving half-effect from none, and this asks only that the data not
+  rule one out.
+- **It was chosen after seeing the result,** so the code keeps both rules
+  (``KEEP_RULES``). Each run records what each keeps, and the evidence run
+  says which rule decided.
+- **The β paths don't change,** so the family is the same 57. The rule
+  changes which input is kept, not what was tried.
+- **The tail's condition is unchanged:** skill after publication has no
+  error to give it an interval.
 """
 
 from __future__ import annotations
@@ -306,6 +323,15 @@ MIN_SHIFT_MONTHS = 12 * 5
 SEED = 20261105
 BAR = 0.05
 """Decision 6's family-wise p."""
+Z_95 = 1.959963984540054
+KEEP_RULES = {
+    1: "after its paper's year, α is positive (approved 2026-11-05, D81)",
+    2: "after its paper's year, the 95% interval reaches positive α: α + 1.96 SE > 0 "
+       "(chosen 2026-11-06 after D81's run kept nothing under rule 1; D82)",
+}
+"""Decision 6's after-publication condition, by version. Rule 2 was chosen
+after seeing rule 1's result, and the run reports what each keeps."""
+KEEP_RULE = 2
 GROWTH_F = 0.5
 GROWTH_CAP = 1.0
 """The provisional growth report's Kelly fraction and cap (section 2)."""
@@ -562,6 +588,19 @@ def crisis_drawdowns(returns: Mapping[str, pd.Series], total: pd.Series,
 def max_drawdown(returns: pd.Series) -> float:
     wealth = (1 + returns).cumprod()
     return float((wealth / wealth.cummax() - 1).min())
+
+
+def survives_publication(after: Mapping | None, rule: int = KEEP_RULE) -> bool:
+    """Decision 6's after-publication condition (``KEEP_RULES``). ``after``
+    holds α and its error after the paper's year; ``None`` means no
+    publication year, so the input is reported by era only."""
+    if rule not in KEEP_RULES:
+        raise ValueError(f"no keep rule {rule}; have {sorted(KEEP_RULES)}")
+    if after is None:
+        return True
+    if rule == 1:
+        return after["alpha"] > 0
+    return after["alpha"] + Z_95 * after["error"] > 0
 
 
 def after_year(year: int) -> str:
