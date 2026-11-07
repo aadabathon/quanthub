@@ -22,8 +22,10 @@ evidence keeps, and saves the evidence as a Research recorded run (Q3a).
 6. The tail: each input's own forecast and the pool, at each threshold,
    and the tail's shift test.
 7. **What's kept:**
-   - a μ̂ input whose Δ_j clears the bar (decision 6), and whose α stays
-     positive after its paper's year
+   - a μ̂ input whose Δ_j clears the bar (decision 6), and whose
+     after-publication α passes the current keep rule. Rule 2 (D82): its 95%
+     interval reaches positive α. The run also records what rule 1 (α > 0)
+     would keep.
    - a tail input whose forecast beats the base rate, clears the bar, and
      whose skill stays positive after its paper's year
 8. **The saved run:**
@@ -41,7 +43,7 @@ from __future__ import annotations
 import hashlib
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 import pandas as pd
@@ -53,6 +55,8 @@ from quant_hub.models.regime_evidence import (
     ERAS,
     GROWTH_CAP,
     GROWTH_F,
+    KEEP_RULE,
+    KEEP_RULES,
     PUBLISHED,
     SEED,
     SHIFTS,
@@ -67,6 +71,7 @@ from quant_hub.models.regime_evidence import (
     on_days,
     portfolio_returns,
     shift_test,
+    survives_publication,
     tail_shift_test,
     timing_alpha,
 )
@@ -113,6 +118,8 @@ class EvidenceRun:
     paths: pd.DataFrame          # the family's daily β paths
     run_id: str | None
     notes: tuple[str, ...]
+    kept_by_rule: dict[int, tuple[str, ...]] = field(default_factory=dict)
+    """μ̂'s kept inputs under each version of decision 6 (``KEEP_RULES``)."""
 
 
 def _digest(path: pd.Series) -> str:
@@ -222,10 +229,13 @@ def run_evidence(external: ExternalDataService, research: ResearchService | None
                                                              forecasts[name].benchmark)
         ledger.append(entry)
 
-    kept_mean = tuple(
-        name for name in names
-        if (row := next(e for e in ledger if e["id"] == f"Δ {name}"))["adjusted"] <= BAR
-        and (row["after_publication"] is None or row["after_publication"]["alpha"] > 0))
+    differences_by_input = {name: next(e for e in ledger if e["id"] == f"Δ {name}")
+                            for name in names}
+    kept_by_rule = {rule: tuple(name for name, row in differences_by_input.items()
+                                if row["adjusted"] <= BAR
+                                and survives_publication(row["after_publication"], rule))
+                    for rule in KEEP_RULES}
+    kept_mean = kept_by_rule[KEEP_RULE]
     tail_rows = {}
     for key in tail.names:
         source, _threshold = key.rsplit(" @", 1)
@@ -267,6 +277,9 @@ def run_evidence(external: ExternalDataService, research: ResearchService | None
                               f"(f = {GROWTH_F}, β ≤ {GROWTH_CAP})",
                      "ledger_name": LEDGER, "ledger": ledger, "kept_mean": list(kept_mean),
                      "kept_tail": list(kept_tail),
+                     "keep_rule": {"version": KEEP_RULE, "text": KEEP_RULES[KEEP_RULE],
+                                   "kept_by_rule": {str(rule): list(kept)
+                                                    for rule, kept in kept_by_rule.items()}},
                      "family": {"paths": len(test.names), "draws": test.draws, "seed": seed,
                                 "p_family": test.p_family, "best": test.names[
                                     int(np.argmax(test.t))], "first": first.isoformat(),
@@ -280,7 +293,7 @@ def run_evidence(external: ExternalDataService, research: ResearchService | None
     progress(f"Regime evidence: done. Kept for μ̂: {', '.join(kept_mean) or 'none'}; "
              f"for the tail: {', '.join(kept_tail) or 'none'}.")
     return EvidenceRun(test, tail, tuple(ledger), kept_mean, kept_tail, paths, run_id,
-                       tuple(notes))
+                       tuple(notes), kept_by_rule)
 
 
 def _ts(value, default: pd.Timestamp) -> pd.Timestamp:

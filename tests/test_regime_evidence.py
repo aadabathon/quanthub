@@ -9,11 +9,14 @@ import pandas as pd
 import pytest
 
 from quant_hub.models.regime_evidence import (
+    KEEP_RULE,
+    KEEP_RULES,
     crisis_drawdowns,
     growth_gain,
     growth_rule,
     portfolio_returns,
     shift_test,
+    survives_publication,
     tail_shift_test,
     timing_alpha,
     timing_t,
@@ -160,6 +163,20 @@ def test_a_worthless_forecast_on_a_drifting_base_rate_isnt_skilled():
     assert test.row("hugging")["p"] > 0.2
 
 
+def test_the_after_publication_rules_and_their_history():
+    # D82: rule 2 asks only that the 95% interval reach positive α. ECY's
+    # numbers on 2026-11-05: rule 1 drops it, rule 2 keeps it.
+    ecy = {"alpha": -0.0010, "error": 0.0077}
+    assert not survives_publication(ecy, rule=1)
+    assert survives_publication(ecy, rule=2)
+    assert not survives_publication({"alpha": -0.02, "error": 0.005}, rule=2)
+    assert survives_publication(None, rule=1) and survives_publication(None, rule=2)
+    assert KEEP_RULE == 2 and set(KEEP_RULES) == {1, 2}
+    assert "after D81's run" in KEEP_RULES[2]                # chosen after the result
+    with pytest.raises(ValueError, match="keep rule"):
+        survives_publication(ecy, rule=3)
+
+
 # ------------------------------------------------------------ the reports
 
 def test_the_growth_rule_and_its_report():
@@ -241,9 +258,13 @@ def test_the_evidence_run_end_to_end(tmp_path):
         assert all(e["adjusted"] >= e["p"] for e in rules)
         assert len([e for e in run.ledger if e["kind"] == "tail"]) == 9 * 4
         assert set(run.kept_mean) <= set(run.paths.columns.str.removeprefix("Δ "))
+        assert run.kept_mean == run.kept_by_rule[KEEP_RULE]
+        assert set(run.kept_by_rule[1]) <= set(run.kept_by_rule[2])   # rule 2 only loosens
         reopened = research.reopen(run.run_id)
         details = reopened.payload["details"]
         assert details["ledger_name"] == "regime" and details["family"]["paths"] == 57
+        assert details["keep_rule"]["version"] == 2
+        assert set(details["keep_rule"]["kept_by_rule"]) == {"1", "2"}
         assert len(details["ledger"]) == len(run.ledger)
         assert reopened.result.targets.max().max() <= 1.0 + 1e-12   # provisional, unlevered
         np.testing.assert_array_equal(reopened.result.cash, bills.reindex(total.index).iloc[1:])

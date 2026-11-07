@@ -3738,3 +3738,67 @@ to two decimals, from ECY × vol's 4.85 down to the dip rule's −4.63.
 **Not run on your store:** it gets the outside-series tables when PRs #22
 on merge. Then fetch French, import Shiller, and run Ctrl+K "Run the
 regime evidence".
+
+## D82 — Decision 6 amended after the result: ECY is kept (2026-11-06)
+
+D81's run kept no input. ECY's difference path cleared the family-wise
+bar over 1937–2026 (adjusted p 0.009, α +5.3% ± 1.6%). But the approved
+rule also wanted a positive α after its 2020 paper, and since 2021 it was
+−0.10% ± 0.77%.
+
+**The owner's three options** (2026-11-06): accept the verdict, loosen the
+rule, or pause. They chose to loosen it.
+
+**Decision 6, version 2.** After the paper's year, the 95% interval must
+only *reach* positive α: α + 1.96·SE > 0.
+- **ECY:** −0.10% + 1.96 × 0.77% = +1.41%, so it's kept.
+- **The reasoning:** six years can't tell a surviving half-effect, which
+  is what McLean & Pontiff expect, from none. Rule 2 asks only that the
+  data not rule survival out.
+- **The whole-window bar is unchanged:** adjusted p ≤ 0.05 across the 57
+  paths.
+
+**This was chosen after seeing the result,** and the record says so:
+- **The code keeps both rules** (`KEEP_RULES` in `models/regime_evidence.py`),
+  and `KEEP_RULE` is 2.
+- **Each run records what each rule keeps:**
+  - rule 1: nothing
+  - rule 2: ECY
+- **The evidence run's details** hold the rule's version and its text,
+  which says it was chosen after D81.
+- **The family doesn't change:** it's still the 57 paths. ECY alone (S
+  ECY) and its difference path were both in it. The rule changes what's
+  kept, not what was tried.
+- **The tail's condition is unchanged:** after-publication skill has no
+  error to make an interval from. Nothing in the tail clears the family
+  bar anyway.
+
+**The kept model, re-run on French and the owner's Shiller CSV.** μ̂ comes
+from ECY alone, with GARCH's σ̂. The provisional rule runs at f = ½ with no
+leverage, and the saved run charges 2 bp a trade. These are research
+readings until Q4 makes the rule.
+- **Return and risk, 1926–2026:** CAGR 8.5% against the market's 9.8%,
+  vol 9.2%, Sharpe 0.61, and a worst drawdown of −38% against −84%. It's
+  in cash until its first forecast in July 1937.
+- **Exposure:** average β 0.68 since 1937, and turnover 3.2× a year.
+- **Today:** β 0.45 on 2026-09-29, with ECY in its 17th percentile:
+  expensive.
+- **The same path's statistics** from D81:
+  - timing t 4.64, adjusted p 0.002
+  - growth over constant exposure +1.09% ± 0.61% a year
+  - μ̂'s R²_OS −12.6%
+  - It times well and forecasts the level poorly. The growth rule uses
+    the timing.
+
+**Tests (+1):**
+- **Both rules on ECY's own numbers:** rule 1 drops it and rule 2 keeps
+  it.
+- **No publication year** passes either rule.
+- **An unknown rule** is refused.
+- **End to end:** the run records both rules' keeps, and rule 2 only
+  loosens rule 1.
+
+**Next: Q4, the rules.** Its derivation comes first, for review. It needs
+decision 4 (D and p, and where the book's crash β comes from), decision 5
+(f) and decision 9 (the no-trade band). Their values go in your private
+REGIME.md.

@@ -257,7 +257,10 @@ module name stays `regime_model.py`.
     input.
   - **ECY** clears the whole-window bar (adjusted p 0.009), but its α
     since 2021 is −0.10% ± 0.77%.
-  - **The kept model** is vol targeting.
+- **Amended 2026-11-06 (D82):** decision 6's version 2 keeps ECY.
+  - **The kept model:** μ̂ from ECY, σ̂ from GARCH.
+  - **At f = ½ with no leverage:** a worst drawdown of −38% against the
+    market's −84%, and β 0.45 today.
 
 The inclusion bar (decision 6) is a family-wise p of 0.05.
 - The walk-forward harness, the baselines, the ledger and the family-wise
@@ -332,10 +335,12 @@ The inclusion bar (decision 6) is a family-wise p of 0.05.
    comes from A2's replay or from β alone.
 5. **The fraction f** for the growth term. Section 4's sizing cap could
    serve.
-6. **Settled 2026-11-05:** a family-wise p of 0.05, from the circular-shift
-   test across every variant ever tried. Results are reported after each
-   input's publication and by era, and an input stays only if it still
-   clears the bar after publication. The question was: **The inclusion
+6. **Settled 2026-11-05; amended 2026-11-06 (D82), after the result:** a
+   family-wise p of 0.05, from the circular-shift test across every variant
+   ever tried. Results are reported after each input's publication and by
+   era. Version 1 kept an input only if its α after publication was
+   positive. Version 2 asks only that the 95% interval reach positive α,
+   and the code keeps both rules. The question was: **The inclusion
    bar:** the family-wise p, and whether an input with no
    post-publication evidence can stay.
 7. **Where the card lives:** Review or LENS O.
