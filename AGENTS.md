@@ -1,0 +1,151 @@
+# AGENTS.md — working in this repository
+
+Read this first. [ARCHITECTURE.md](ARCHITECTURE.md) explains how the system
+works. Design decisions are cited by number (D17, D31, …) in the code: do
+not relitigate them silently.
+
+## The maintainer and how to work with them
+
+The maintainer intends to understand, maintain, and extend **every line** of
+this codebase themselves — the standing constraint is:
+
+- This is a long-term project, not a code-generation target. Optimize for
+  clean architecture, mathematical correctness, readability, testability, and
+  extensibility — never feature count.
+- Explain significant design decisions, threading choices, and mathematics
+  when introducing them. Derive nontrivial math before implementing it.
+- Work in small increments: a few files at a time, milestone-by-milestone,
+  with the maintainer's approval between milestones. No large refactors without an
+  explained justification first.
+- No new dependencies without an explanation of why. Currently allowed:
+  numpy, pandas, matplotlib, PySide6, pyqtgraph, qtawesome (the Qt GUI,
+  D31 — a heavy desktop app is accepted), ibapi (optional), pytest.
+  Local SQLite persistence via the standard-library `sqlite3` is allowed
+  and is the preferred persistence mechanism for historical market data
+  (D17). Explicitly banned for now: React/Electron, Flask/FastAPI, external
+  database infrastructure (PostgreSQL/MySQL/Redis/Dockerized/cloud DBs),
+  Docker, cloud infra, ML frameworks, DI frameworks.
+
+## Hard rules
+
+1. **No orders.** Quant Hub is read-only with respect to the brokerage.
+   - No module calls `placeOrder`, `cancelOrder` or `reqGlobalCancel`.
+     `tests/test_layering.py` enforces it, comments included.
+   - Do not add reconnect-automatically behavior anywhere.
+2. **Layering is enforced by `tests/test_layering.py`** — Qt libraries
+   appear only in `gui/` and `app.py` (and tkinter nowhere); `data/`
+   imports nothing from other layers and never ibapi; only `broker/` may
+   import ibapi; `models/` knows only `data/`; `storage/` knows only `data/`
+   and sqlite3; `importers/` and `providers/` (online data, the SEC) know
+   only `data/` and the stdlib (pandas too, for importers);
+   `visualization/` and `services/` never import the GUI. GUI
+   pages may call pure `models/` functions directly (no service wrapper
+   needed, D26). If your change fights the layering
+   test, your design is wrong, not the test.
+3. **Only the GUI thread touches widgets.** Background → GUI crossings go
+   through `events.py` (EventBus) or `tasks.py` (TaskRunner). Never call a
+   blocking service/broker method directly from a widget callback — submit it
+   to the TaskRunner.
+4. **Quant modules follow the GBM exemplar** (`quant_hub/data/synthetic.py`):
+   math documented in the module docstring (model, discretization,
+   assumptions, units), validated inputs, no unexplained constants, tests
+   including statistical validation against closed forms where possible.
+   The papers a `models/` module implements are in the literature canon
+   (`quant_hub/data/canon/`, their `lives_in`), with their DOIs checked;
+   `tests/test_literature.py` fails otherwise (D58).
+5. **Do not build ahead.** Placeholders are intentional. Build what the
+   current milestone asks and stop.
+
+## Commands
+
+```bash
+# from quanthub/  (Windows; the project runs on Python 3.12)
+py -3.12 -m pip install -e ".[dev,ibkr]"   # once; [ibkr] optional
+py -3.12 -m pytest -q                      # full suite, no GUI/network needed
+py -3.12 -m quant_hub                      # launch the app
+```
+
+On Windows, use the `py -3.12` launcher so the project's interpreter runs,
+not whichever `python` is first on the path.
+
+**GUI work (Qt, D31).** Build pages from `gui/components.py`, style
+through `role`/`variant` properties resolved in `gui/theme.py` (no colors
+or font sizes in pages), and render charts with the pyqtgraph widgets in
+`gui/charts.py`; see ARCHITECTURE.md's GUI conventions. Smoke tests run
+headless (`QT_QPA_PLATFORM=offscreen`, see `tests/test_gui_smoke.py`). For
+screenshots, build with `quant_hub.app.create_app()`, `show()`, pump
+`app.processEvents()`, then `window.grab().save(path)`. That captures the
+window itself, whatever is in front of it. pyqtgraph hover only fires with
+`mouseRateLimit=0` (set in the theme) and on real mouse-move events sent to
+the canvas viewport (`QTest.mouseMove` doesn't reach an inactive window).
+In pyqtgraph 0.14, enable `setClipToView`/`setDownsampling` on a curve only
+*after* adding it to a plot: an item created with `clipToView=True` crashes
+during `addItem` (the scene sees it before its ViewBox does). Screenshot and
+driver scripts should point `AppConfig(db_path=...)` at a copy of the store:
+pages save UI state on hide. More pyqtgraph traps: `PlotCurveItem` ignores a
+plot's log mode (transform x yourself; `PlotDataItem` handles it), and an
+`AxisItem.tickStrings` override must route `self.logMode` to
+`logTickStrings` itself. Outside a running event loop (tests, scripts),
+`deleteLater()` never fires: flush it with
+`QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)` or windows
+pile up. Scripts outside the project dir need `PYTHONPATH=...\quanthub`
+(the editable install is not on every interpreter path).
+
+Wrapped text in a `ScrollPage`'s main column squeezes the cards below it:
+the body opts out of height-for-width, so a wrapped label's real height
+isn't counted in the page minimum, and the layout takes the difference
+from a neighbour (D48). Put long wrapped text in the fixed-width side
+panel, or use a table or an elided subtitle. Even in the side panel, a
+wrapped `Note` gets the height of a guessed, wider line and can lose its
+last line: give it the width it will have (`Note(..., width=...)`) and it
+sets its own minimum height (D49). Check a new page's geometry (each
+card's height against its `minimumSizeHint`, each table's columns against
+its viewport) as well as its pixels. `DataTable.balance_columns` never
+shrinks a column below its natural width; pin long text columns with
+`fix_column` so they elide. A page's minimum width sets the window's:
+the sidebar plus the open pages, where a tab group needs its widest page
+and groups side by side add up. So keep every page within a 1280 px
+window, half of a 2560 px monitor. A smoke test checks this with Windows
+fonts. Data-dependent text in a row of controls goes in an `ElidedLabel`,
+or it widens the page as the data grows.
+
+Card grids (D56, `gui/card_grid.py`):
+- **A new card goes on the page's grid** with a stable name (it keys
+  the saved layout) and a default place. Side-panel cards use
+  `add_column(..., min_width=SIDE_PANEL_WIDTH)`. Renaming a card drops
+  its saved place.
+- **No fixed widths on cards.** The grid sizes them, so a card's width
+  comes from its columns, never `setFixedWidth`.
+- **Let the grid settle in tests.** It lays out once more after content
+  changes (one event-loop turn), so a test that measures or hovers right
+  after a render calls `_settle(app)` first.
+
+Docked pages (D55, `gui/workspace.py`):
+- **Shown is the workspace's call.** Qt parks a group's back tabs outside
+  the workspace instead of hiding them, so a back tab's `isVisible()` is
+  true. Ask `window._workspace.shown()`.
+- **Navigate with `show_page`.** It opens a closed page as a tab of the
+  active one, and it has run the page's `on_show` when it returns (once the
+  window is shown).
+- **Splits in tests.** Split a page that's alone or the front tab
+  (`splitDockWidget(left, right)` right after `show_page(right)`). Qt nests
+  a split of a back tab inside the tab group, which leaves a page that's
+  neither a tab nor beside the others. Offscreen, the screen is 800 px and
+  every page is wider, so the fit check turns any split into a tab. Tests
+  that need pages side by side give it a wide screen (`_wide_screen`).
+
+Qt WebEngine (the 3D surface, D32):
+- **Load order.** Import `QtWebEngineWidgets` before the `QApplication`
+  exists (`app.py` does, through the page imports).
+- **No draws while hidden.** Chromium stalls drawing in a hidden view, so
+  `Surface3D` only sends a figure while shown, and its loading cover sits
+  over the view instead of hiding it.
+- **Offscreen tests.** Offscreen WebGL is reliable only for a process's
+  first web view, and even then shader compiles sometimes fail. That's
+  why the real-draw test runs in a subprocess and skips on WebGL errors.
+- **Screenshots.** `window.grab()` does capture the web view.
+
+## Repo layout note
+
+Generated artifacts (`__pycache__/`, `*.pyc`, local DBs) are `.gitignore`d,
+untracked, and never project state. Commit only when the maintainer asks.

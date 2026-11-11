@@ -1,0 +1,159 @@
+"""Enforce the architectural layering by scanning import statements.
+
+The rules the whole design rests on:
+
+* ``data``     -- pure domain. No ibapi, no other quant_hub layer.
+* ``models``   -- pure quantitative models; may use ``data`` only.
+* ``services`` -- may use ``data``, ``storage``, and broker *interfaces*;
+                  never GUI or ibapi.
+* ``broker``   -- the only package allowed to import ibapi; never GUI/storage.
+* ``importers`` -- read files into ``data`` types (pandas + stdlib); no other
+                  layer. Services validate and store what they read.
+* ``providers`` -- online providers (the SEC): ``data`` types plus the
+                  stdlib; no other layer. Services store what they fetch.
+* ``storage``  -- sqlite3 + ``data`` only; never GUI, broker, or ibapi.
+* ``visualization`` -- matplotlib figures for scripts/notebooks; never GUI.
+* ``gui``      -- the Qt front end (D31): never ibapi, the concrete broker or
+                  chain adapter, the bar/chain stores or the file importers
+                  (it reads market data, option chains and imports through
+                  services).
+* Qt libraries (PySide6, pyqtgraph, qtawesome, qtpy) are imported only by
+  ``gui`` and the composition root ``app.py``; tkinter by nothing (retired).
+* Orders (hard rule 1, D52): ``placeOrder``, ``cancelOrder`` and
+  ``reqGlobalCancel`` are called only in ``broker/orders.py``, which only
+  ``services/execution.py`` and the composition root ``core.py`` import.
+  Neither module exists before E2, so today this asserts that no order
+  call exists anywhere.
+
+Source files are scanned as text (rather than imported) so the test needs no
+GUI display and cannot be fooled by import-time side effects.
+"""
+
+import re
+from pathlib import Path
+
+import quant_hub
+
+PACKAGE_ROOT = Path(quant_hub.__file__).parent
+
+# package (relative to quant_hub) -> forbidden import roots
+RULES = {
+    "data": ["ibapi", "quant_hub.gui", "quant_hub.broker", "quant_hub.services",
+             "quant_hub.visualization", "quant_hub.storage"],
+    "models": ["ibapi", "quant_hub.gui", "quant_hub.broker", "quant_hub.services",
+               "quant_hub.visualization", "quant_hub.storage"],
+    "services": ["ibapi", "quant_hub.gui", "quant_hub.visualization"],
+    "broker": ["quant_hub.gui", "quant_hub.visualization", "quant_hub.storage"],
+    # File importers read files into data/ types: pandas and stdlib only.
+    "importers": ["ibapi", "quant_hub.gui", "quant_hub.broker", "quant_hub.services",
+                  "quant_hub.storage", "quant_hub.models", "quant_hub.visualization"],
+    # Online providers: data/ types and the stdlib only (D47).
+    "providers": ["ibapi", "quant_hub.gui", "quant_hub.broker", "quant_hub.services",
+                  "quant_hub.storage", "quant_hub.models", "quant_hub.visualization",
+                  "quant_hub.importers"],
+    "storage": ["ibapi", "quant_hub.gui", "quant_hub.broker", "quant_hub.services",
+                "quant_hub.visualization"],
+    "visualization": ["ibapi", "quant_hub.gui", "quant_hub.broker", "quant_hub.services",
+                      "quant_hub.storage"],
+    "gui": ["ibapi", "quant_hub.importers", "quant_hub.broker.ibkr",
+            "quant_hub.broker.market_source",
+            "quant_hub.broker.option_chain", "quant_hub.storage.bar_store",
+            "quant_hub.storage.chain_store", "quant_hub.storage.position_store",
+            "quant_hub.providers", "quant_hub.storage.fundamentals_store",
+            "quant_hub.storage.valuation_store"],
+}
+
+QT_LIBRARIES = ("PySide6", "pyqtgraph", "qtawesome", "qtpy")
+
+# Hard rule 1 (D52): the one module that may place or cancel orders, and the
+# only modules that may import it.
+ORDER_MODULE = Path("broker") / "orders.py"
+ORDER_IMPORTERS = {Path("services") / "execution.py", Path("core.py")}
+_ORDER_CALL_RE = re.compile(r"\b(placeOrder|cancelOrder|reqGlobalCancel)\s*\(")
+_ORDER_IMPORT_RE = re.compile(
+    r"quant_hub\.broker\.orders\b"
+    r"|from\s+quant_hub\.broker\s+import\s+[^\n]*\borders\b"
+    r"|from\s+\.\s*import\s+[^\n]*\borders\b"
+    r"|from\s+\.orders\b")
+
+_IMPORT_RE = re.compile(
+    r"^\s*(?:from\s+([A-Za-z_][\w.]*)\s+import|import\s+([A-Za-z_][\w.]*))",
+    re.MULTILINE,
+)
+
+
+def imports_of(path: Path) -> set[str]:
+    text = path.read_text(encoding="utf-8")
+    found = set()
+    for match in _IMPORT_RE.finditer(text):
+        found.add(match.group(1) or match.group(2))
+    return found
+
+
+def test_layering_rules():
+    violations = []
+    for package, forbidden_roots in RULES.items():
+        for path in (PACKAGE_ROOT / package).rglob("*.py"):
+            for module in imports_of(path):
+                for root in forbidden_roots:
+                    if module == root or module.startswith(root + "."):
+                        violations.append(
+                            f"{path.relative_to(PACKAGE_ROOT)} imports {module}"
+                        )
+    assert not violations, "layering violations:\n" + "\n".join(violations)
+
+
+def test_only_broker_imports_ibapi():
+    offenders = []
+    for path in PACKAGE_ROOT.rglob("*.py"):
+        if "broker" in path.relative_to(PACKAGE_ROOT).parts:
+            continue
+        if any(m == "ibapi" or m.startswith("ibapi.") for m in imports_of(path)):
+            offenders.append(str(path.relative_to(PACKAGE_ROOT)))
+    assert not offenders, f"ibapi imported outside broker/: {offenders}"
+
+
+def test_only_gui_imports_qt():
+    offenders = []
+    for path in PACKAGE_ROOT.rglob("*.py"):
+        relative = path.relative_to(PACKAGE_ROOT)
+        if relative.parts[0] == "gui" or relative.name == "app.py":
+            continue
+        for module in imports_of(path):
+            if module.split(".")[0] in QT_LIBRARIES:
+                offenders.append(f"{relative} imports {module}")
+    assert not offenders, "Qt imported outside gui/:\n" + "\n".join(offenders)
+
+
+def test_nothing_imports_tkinter():
+    """The Tk front end was retired (D31); a stray import would pull it back."""
+    offenders = [str(path.relative_to(PACKAGE_ROOT)) for path in PACKAGE_ROOT.rglob("*.py")
+                 if any(m.split(".")[0] == "tkinter" for m in imports_of(path))]
+    assert not offenders, f"tkinter imported: {offenders}"
+
+
+def test_order_calls_exist_only_in_the_order_adapter():
+    """Hard rule 1 (D52): an order is placed or cancelled in one module, so
+    no other path can trade. Comments and docstrings count too: the rule is
+    that the call isn't spelled anywhere else."""
+    offenders = []
+    for path in PACKAGE_ROOT.rglob("*.py"):
+        relative = path.relative_to(PACKAGE_ROOT)
+        if relative == ORDER_MODULE:
+            continue
+        for match in _ORDER_CALL_RE.finditer(path.read_text(encoding="utf-8")):
+            offenders.append(f"{relative}: {match.group(1)}")
+    assert not offenders, "order calls outside broker/orders.py:\n" + "\n".join(offenders)
+
+
+def test_only_the_execution_service_imports_the_order_adapter():
+    """Hard rule 1 (D52): the GUI, the models and every other service reach
+    orders through ``services/execution.py``, which holds the checks."""
+    offenders = []
+    for path in PACKAGE_ROOT.rglob("*.py"):
+        relative = path.relative_to(PACKAGE_ROOT)
+        if relative in ORDER_IMPORTERS or relative == ORDER_MODULE:
+            continue
+        if _ORDER_IMPORT_RE.search(path.read_text(encoding="utf-8")):
+            offenders.append(str(relative))
+    assert not offenders, f"the order adapter imported outside the execution path: {offenders}"

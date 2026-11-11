@@ -1,0 +1,26 @@
+{
+  "strands": [
+    {"id": "random-prices", "name": "Random prices", "blurb": "How prices move: random walks, Brownian motion, stochastic calculus and the martingale view of fair prices."},
+    {"id": "derivatives", "name": "Derivatives & volatility", "blurb": "Pricing claims on a price: Black–Scholes, its smiles, stochastic and local volatility, and the numerics."},
+    {"id": "rates-credit", "name": "Rates & credit", "blurb": "The term structure of interest rates and the pricing of default."},
+    {"id": "portfolio", "name": "Portfolio choice", "blurb": "How much of what to hold: mean–variance, growth-optimal sizing, estimation error and risk budgets."},
+    {"id": "asset-pricing", "name": "Asset pricing & factors", "blurb": "Why expected returns differ: CAPM, APT, consumption models and the factor zoo."},
+    {"id": "efficiency", "name": "Efficiency & behavior", "blurb": "Can prices be forecast, and why people and arbitrageurs leave patterns behind."},
+    {"id": "econometrics", "name": "Econometrics & time series", "blurb": "Tools for dependent data: filters, ARCH/GARCH, regimes, cointegration and robust errors."},
+    {"id": "microstructure", "name": "Microstructure & execution", "blurb": "How trading actually happens: spreads, informed flow, price impact and optimal execution."},
+    {"id": "risk", "name": "Risk measurement", "blurb": "Measuring and testing tail risk: VaR, expected shortfall, extremes and systemic risk."},
+    {"id": "valuation", "name": "Valuation & corporate finance", "blurb": "What a firm is worth: discounted cash flows, capital structure and accounting signals."},
+    {"id": "methodology", "name": "Backtesting & methodology", "blurb": "How not to fool yourself: performance statistics, data snooping, overfitting and replication."},
+    {"id": "machine-learning", "name": "Machine learning", "blurb": "Flexible prediction meets finance: networks, trees, shrinkage, deep hedging and language models."}
+  ],
+  "eras": [
+    {"start": 1700, "end": 1899, "name": "Chance", "long": "Chance and utility"},
+    {"start": 1900, "end": 1951, "name": "Random walks", "long": "Random walks before finance"},
+    {"start": 1952, "end": 1972, "name": "Portfolios", "long": "Portfolios and efficient markets"},
+    {"start": 1973, "end": 1981, "name": "Options", "long": "The option-pricing revolution"},
+    {"start": 1982, "end": 1991, "name": "Volatility", "long": "Volatility and anomalies"},
+    {"start": 1992, "end": 2007, "name": "Factors", "long": "Factors, behavior and risk"},
+    {"start": 2008, "end": 2015, "name": "Crisis", "long": "Crisis, liquidity and doubt"},
+    {"start": 2016, "end": 2026, "name": "Replication & ML", "long": "Replication and machine learning"}
+  ]
+}
