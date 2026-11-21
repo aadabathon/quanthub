@@ -130,6 +130,19 @@
     "verified": {"via": "crossref", "checked": "2026-11-02", "matched": ["title", "first_author", "year"]}
   },
   {
+    "id": "romanowolf2005",
+    "title": "Stepwise Multiple Testing as Formalized Data Snooping",
+    "authors": ["Joseph P. Romano", "Michael Wolf"],
+    "year": 2005,
+    "venue": "Econometrica",
+    "doi": "10.1111/j.1468-0262.2005.00615.x",
+    "question": "When many strategies are tested at once, which can be called better than the benchmark without data snooping?",
+    "changed": "A stepwise test that controls the family-wise error rate and rejects more false nulls than the single-step reality check.",
+    "lives_in": [],
+    "links": [{"to": "white2000", "kind": "builds_on"}],
+    "verified": {"via": "crossref", "checked": "2026-11-05", "matched": ["title", "first_author", "year"]}
+  },
+  {
     "id": "opdyke2007",
     "title": "Comparing Sharpe ratios: So where are the p-values?",
     "authors": ["J. D. Opdyke"],
@@ -246,5 +259,18 @@
     "lives_in": [],
     "links": [{"to": "houxuezhang2020", "kind": "challenges"}, {"to": "harveyliuzhu2016", "kind": "challenges"}],
     "verified": {"via": "crossref", "checked": "2026-11-02", "matched": ["title", "first_author", "year"]}
+  },
+  {
+    "id": "shapley1953",
+    "title": "A Value for n-Person Games",
+    "authors": ["L. S. Shapley"],
+    "year": 1953,
+    "venue": "Contributions to the Theory of Games (AM-28), Volume II",
+    "doi": "10.1515/9781400881970-018",
+    "question": "How should a coalition's total be split fairly among the players who made it?",
+    "changed": "The unique split that is efficient, symmetric, gives a dummy nothing and adds across games: each player's average marginal contribution over every order of arrival.",
+    "lives_in": [],
+    "links": [],
+    "verified": {"via": "crossref", "checked": "2026-11-07", "matched": ["title", "first_author", "year"], "note": "Crossref lists the chapter as \"17. A Value for n-Person Games\", with its chapter number."}
   }
 ]

@@ -104,7 +104,8 @@ quant_hub/
 │   ├── sidebar.py / top_bar.py / status_bar.py   shell pieces (nav, Ctrl+K
 │   │                          search + IBKR control, status + log drawer)
 │   └── pages/                 base.py (Page, ScrollPage, Shell, debounce),
-│                              dashboard.py, markets.py, garch_lab.py,
+│                              dashboard.py, markets.py, returns.py (HRH),
+│                              data.py (D64), garch_lab.py,
 │                              simulator.py, options_lab/ (page, underlying,
 │                              pricer, strategy, monte_carlo), volatility_lab.py,
 │                              kalman_lab.py, markov_lab.py, valuation.py,
@@ -272,6 +273,32 @@ quant_hub/
                                plot_vol_heatmap
 ```
 
+## Added in v1.1
+
+New since 1.0, layer by layer. Each module's docstring has the detail.
+
+- `extensions.py` — installed extensions' pages and Ctrl+K commands: load, place, shut down (D86, D87)
+- `data/series.py` — SeriesMeta/FetchedSeries/StoredSeries: outside series as fetched, with unit, citation and vintage; fractions for returns (D60)
+- `data/holdings.py` — Holding/FundHoldings: one N-PORT report as filed; weights as fractions of net assets (D62)
+- `data/trading_calendar.py` — NYSE holidays by rule from 1998 (Easter, observed days, special closures); trading_days (D63)
+- `data/return_distribution.py` — HRH's math: period returns and windows, tails, the latest move's rank, A-D and JB on a non-overlapping sample, FD bins, the Q-Q band with fitted parameters (H1, D84)
+- `models/implied_variance.py` — model-free implied variance: the fitted smile's K_var (quoted range + wings), the VIX-style quote sum and its bid/ask band, constant- maturity tenors, forward variances (D75)
+- `models/variance_premium.py` — realized variance over NYSE trading-day windows, GARCH's expected total, the three premiums, ex-post series + Newey–West mean (D76)
+- `models/hedge.py` — hedges on the book: cash, streams, trend, vol targeting, rolled puts / spreads / collars at VIX·ρ·smile; the yardstick: crash windows by rule, cost, Δ log growth ± NW, convexity (U1)
+- `models/stress.py` — crash stress: a constant-β replay through French's market from 1926, its worst falls (A2, D67)
+- `models/whatif.py` — what-if vectors: parse, a transient snapshot, the builders, min variance / equal risk / equal weight / max Sharpe by softmax (A3, D72)
+- `services/external_data.py` — outside series: Ken French's files refreshed when a week old, each failure keeping its stored copy; Shiller CSV imports (D61); reads served offline (D60)
+- `services/fund_holdings.py` — ticker → latest N-PORT report: checked monthly, new filings kept beside old, offline (D62)
+- `services/security_ids.py` — held symbols' ISINs: stored, else IBKR's when connected (D66)
+- `services/chain_collector.py` — the watchlist's chains once a trading day after 09:45 NY, wide band, one symbol per task (D63)
+- `services/hedge.py` — hedges on stored data: the β proxy and a mix's book, today's shape (ρ, smile, spread), every candidate at every size, today's prices; offline (D70)
+- `importers/shiller_csv.py` — Shiller's ie_data Data sheet saved as CSV → monthly series by header label; Oct = 1871.1, provisional last month dropped (T1, D61)
+- `providers/ken_french.py` — Ken French's daily FF3, FF5 and momentum zips through the stdlib: client + pure parser, percent → fraction, terms in the docstring (D60)
+- `providers/fred.py` — FRED's API: VIXCLS, DTB3, DGS3MO as published; the key never logged, the credit line cited (D69)
+- `providers/sec_nport.py` — funds' N-PORT: the fund ticker map, the EDGAR Atom feed, primary_doc.xml → FundHoldings (D62)
+- `storage/series_store.py` — outside series as fetched: ext_series (meta, fetched_at, file SHA-256) + ext_values, replaced whole per fetch (schema v7, D60)
+- `storage/holdings_store.py` — fund ticker map + every N-PORT report date kept (schema v8, D62); held symbols' ISINs (v9, D66) (position_store: each import's file hash, v10, and delete after a backup, D74)
+
 ## Concurrency model
 
 Threads that exist: **GUI/main** (the Qt event loop), **task-worker** (one,
@@ -304,11 +331,15 @@ original Tk front end to Qt (D31).
 Dashboard  = workstation overview: store KPIs, market explorer, watchlist,
              GBM forecast sandbox, store table, research shortcuts
 Markets    = real market observations: explicit source, provenance columns
+Returns    = one stored security's return histogram (HRH): the latest move's
+             rank, tails, A-D and JB, a Q-Q view (D84, D85)
+Data       = what the store holds, by kind: outside series with a preview and
+             citation, fund holdings, chain snapshots, price history (D64)
 Simulator  = controlled stochastic experiments (the GBM/Monte Carlo lab)
 Options Lab= pricing/IV, multi-leg strategies, MC check over one MarketInputs
 GARCH Lab  = conditional-volatility fit: synthetic GARCH or explicit source history
 Vol Lab    = implied-vol surface from an OptionChain; GARCH/realized overlay;
-             heatmap or rotatable 3D surface (D32)
+             heatmap or rotatable 3D surface (D32); the variance premium (D77)
 Kalman Lab = local level / local linear trend on log prices: synthetic or source history
 Markov Lab = hidden volatility regimes in returns (Gaussian HMM, BIC over 1–3):
              synthetic worlds or source history

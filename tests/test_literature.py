@@ -13,6 +13,7 @@ NOT_FROM_A_PAPER = {
     "backtest.py": "daily accounting (R1)",
     "optimize.py": "a numerical minimizer, Nelder–Mead",
     "research_worlds.py": "synthetic controls with planted edges",
+    "stress.py": "a constant-β replay of stored history: daily accounting (A2)",
 }
 
 
@@ -35,7 +36,7 @@ def test_the_shipped_canon_loads_and_every_entry_is_checked_or_says_why(canon):
 
 
 def test_every_model_module_is_implemented_from_the_literature(canon):
-    """Coverage (LITERATURE_PLAN Lit-1): adding a model without its papers
+    """Coverage (Lit-1): adding a model without its papers
     fails here, and so does exempting a module the canon already covers."""
     covered = {path for p in canon.papers for path in p.lives_in}
     models = {p.name for p in (REPO / "quant_hub" / "models").glob("*.py") if p.name != "__init__.py"}

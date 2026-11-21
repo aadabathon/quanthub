@@ -95,7 +95,11 @@ def test_a_file_from_before_versioning_is_backed_up_then_adopted(tmp_path):
         (3, "2026-10-15T19:30:05", str(result.backup)),
         (4, "2026-10-15T19:30:05", str(result.backup)),
         (5, "2026-10-15T19:30:05", str(result.backup)),
-        (6, "2026-10-15T19:30:05", str(result.backup))]
+        (6, "2026-10-15T19:30:05", str(result.backup)),
+        (7, "2026-10-15T19:30:05", str(result.backup)),
+        (8, "2026-10-15T19:30:05", str(result.backup)),
+        (9, "2026-10-15T19:30:05", str(result.backup)),
+        (10, "2026-10-15T19:30:05", str(result.backup))]
     assert rows(db, "SELECT COUNT(*) FROM bars") == [(count,)]
     # Up to date now: the next start changes nothing and copies nothing.
     again = prepare_store(db, clock)
@@ -168,6 +172,70 @@ def test_version_1_gains_the_price_basis_with_every_bar_traded(tmp_path):
                             PriceBasis.ADJUSTED)
     assert back["close"].iloc[0] == pytest.approx(10.395)
     store.close()
+
+
+def test_version_6_gains_the_external_series_tables_shaped_like_a_new_files(tmp_path):
+    from quant_hub.storage.series_store import SeriesStore
+    old, new = tmp_path / "old.db", tmp_path / "new.db"
+    seeded_store(old, version=6)
+    result = prepare_store(old, clock)
+    assert (result.migrated_from, result.version) == (6, SCHEMA_VERSION) and result.backup.is_file()
+    prepare_store(new, clock)
+    SeriesStore(new).close()
+
+    def shapes(path):
+        conn = sqlite3.connect(str(path))
+        try:
+            return {t: [(r[1], r[2], r[3], r[5]) for r in conn.execute(f"PRAGMA table_info({t})")]
+                    for t in ("ext_series", "ext_values")}
+        finally:
+            conn.close()
+    assert shapes(old) == shapes(new) and all(shapes(old).values())
+
+
+def test_version_7_gains_the_fund_holdings_tables_shaped_like_a_new_files(tmp_path):
+    from quant_hub.storage.holdings_store import HoldingsStore
+    old, new = tmp_path / "old.db", tmp_path / "new.db"
+    seeded_store(old, version=7)
+    assert prepare_store(old, clock).migrated_from == 7
+    prepare_store(new, clock)
+    HoldingsStore(new).close()
+    tables = ("fund_tickers", "fund_filings", "fund_holdings")
+    shapes = [{t: rows(p, f"PRAGMA table_info({t})") for t in tables} for p in (old, new)]
+    assert shapes[0] == shapes[1] and all(shapes[0].values())
+
+
+def test_version_9_gains_snapshot_hashes_and_keeps_the_old_imports(tmp_path):
+    from quant_hub.storage.position_store import PositionStore
+    old, new = tmp_path / "old.db", tmp_path / "new.db"
+    seeded_store(old, version=9)
+    conn = sqlite3.connect(str(old))
+    with conn:
+        conn.execute("CREATE TABLE position_snapshots (id INTEGER PRIMARY KEY, source TEXT NOT "
+                     "NULL, name TEXT NOT NULL, as_of TEXT NOT NULL, imported_at TEXT NOT NULL)")
+        conn.execute("INSERT INTO position_snapshots VALUES (1, 'Generic', 'old.csv', "
+                     "'2026-10-01 16:00:00', '2026-10-02 09:00:00')")
+    conn.close()
+    result = prepare_store(old, clock)
+    assert (result.migrated_from, result.version) == (9, 10) and result.backup.is_file()
+    prepare_store(new, clock)
+    PositionStore(new).close()
+    shapes = [rows(p, "PRAGMA table_info(position_snapshots)") for p in (old, new)]
+    assert shapes[0] == shapes[1]
+    (summary,) = PositionStore(old).snapshots()
+    assert (summary.name, summary.sha256) == ("old.csv", "")
+
+
+def test_version_8_gains_the_security_ids_table_shaped_like_a_new_files(tmp_path):
+    from quant_hub.storage.holdings_store import HoldingsStore
+    old, new = tmp_path / "old.db", tmp_path / "new.db"
+    seeded_store(old, version=8)
+    result = prepare_store(old, clock)
+    assert (result.migrated_from, result.version) == (8, 10) and result.backup.is_file()
+    prepare_store(new, clock)
+    HoldingsStore(new).close()
+    shapes = [rows(p, "PRAGMA table_info(security_ids)") for p in (old, new)]
+    assert shapes[0] == shapes[1] and shapes[0]
 
 
 def test_a_migrated_file_has_the_same_tables_as_a_new_one(tmp_path):

@@ -124,6 +124,12 @@ class WorkstationService:
             ))
         return WorkstationOverview(series=tuple(snapshots))
 
+    def stored_series(self, bar_size: str | None = None) -> list[StoredSeriesSummary]:
+        """Every stored series, one row per basis, for pages that choose the
+        basis themselves (D38: return math reads adjusted prices). Only
+        ``bar_size`` when given."""
+        return [s for s in self._store.summary() if bar_size is None or s.bar_size == bar_size]
+
     def history(self, summary: StoredSeriesSummary, window: str) -> PriceHistory:
         frame = self._frame(summary, window)
         return PriceHistory(symbol=summary.symbol, source=summary.source, frame=frame,

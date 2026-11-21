@@ -189,3 +189,29 @@ def test_missing_or_negative_turnover_and_duplicate_dates_are_rejected():
         sharpe_estimate(r.set_axis([r.index[0]] * len(r)))
     with pytest.raises(ValueError, match="benchmark"):
         sharpe_estimate(r).probability_above(float("inf"))
+
+
+def test_a_cash_series_gives_the_same_statistics_as_its_constant_rate():
+    rng = np.random.default_rng(11)
+    returns = series(rng.normal(0.0005, 0.01, 300))
+    rate = 0.03
+    constant = series(np.full(300, (1 + rate) ** (1 / 252) - 1))
+    by_rate = performance_summary(returns, cash_rate=rate)
+    by_series = performance_summary(returns, cash=constant)
+    assert by_series.sharpe.sharpe == pytest.approx(by_rate.sharpe.sharpe, rel=1e-12)
+    assert by_series.sortino == pytest.approx(by_rate.sortino, rel=1e-12)
+    pd.testing.assert_series_equal(rolling_sharpe(returns, 21, cash=constant),
+                                   rolling_sharpe(returns, 21, cash_rate=rate))
+
+
+def test_a_moving_cash_series_is_subtracted_period_by_period():
+    rng = np.random.default_rng(12)
+    returns = series(rng.normal(0.0005, 0.01, 300))
+    bills = series(np.linspace(0.0, 0.0006, 300))
+    expected = sharpe_estimate(series(returns.to_numpy() - bills.to_numpy()))
+    assert sharpe_estimate(returns, cash=bills).sharpe == pytest.approx(expected.sharpe,
+                                                                         rel=1e-12)
+    with pytest.raises(ValueError, match="not both"):
+        sharpe_estimate(returns, cash_rate=0.02, cash=bills)
+    with pytest.raises(ValueError, match="dates"):
+        sharpe_estimate(returns, cash=bills.iloc[1:])

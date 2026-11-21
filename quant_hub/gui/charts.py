@@ -724,11 +724,19 @@ class StackedTimeSeries(QWidget):
 
 # --------------------------------------------------------------- histogram
 
+#: A log-count axis starts here, below one observation, so a bin of one
+#: shows as a bar (HRH, D85).
+_LOG_COUNT_FLOOR = 0.5
+
+
 class Histogram(QWidget):
-    """Density histogram with an optional normal-density overlay.
+    """Density histogram with an optional normal-density overlay, or
+    precomputed bins drawn as counts (``set_counts``, HRH).
 
     Presentation math only: binning (``np.histogram``) and the normal pdf
     drawn from supplied moments, exactly as ``visualization.charts`` does.
+    ``set_counts`` draws bins and expected counts computed elsewhere
+    (``data/return_distribution.py``) and does no arithmetic but log10.
 
     ``clip`` bounds the drawn range so one extreme value can't squeeze the
     rest into a few bars (V0). Values beyond it are counted in the readout,
@@ -752,10 +760,12 @@ class Histogram(QWidget):
         self._bin_fmt = bin_fmt
         self._markers: Sequence[tuple[Series, float]] = ()
         bottom = pg.AxisItem("bottom") if axis == "number" else _ValueAxis("bottom", axis)
-        self._plot = self._canvas.addPlot(axisItems={"bottom": bottom})
+        self._count_axis = _ValueAxis("right", "compact")
+        self._plot = self._canvas.addPlot(axisItems={"bottom": bottom, "right": self._count_axis})
         _view_only(self._plot)
         self._plot.vb.setDefaultPadding(0.02)
         self._plot.hideAxis("left")
+        self._plot.hideAxis("right")
         self._items: list[pg.GraphicsObject] = []
         self._edges = np.empty(0)
         self._density = np.empty(0)
@@ -764,6 +774,12 @@ class Histogram(QWidget):
         self._beyond = (np.empty(0), np.empty(0))     # below, above the clip range
         self._normal: tuple[float, float] | None = None
         self._normal_name = ""
+        # What a bar's highlight covers: its drawn top and the bars' base
+        # (densities from 0; counts from 0, or log10 counts from the floor).
+        self._heights = np.empty(0)
+        self._base = 0.0
+        self._expected: np.ndarray | None = None      # counts mode: the normal's
+        self._count_mode = False
         self._highlight = pg.BarGraphItem(x0=[0], x1=[0], height=[0],
                                           brush=_color(PALETTE.series_light, 0.95), pen=pg.mkPen(None))
         self._highlight.setVisible(False)
@@ -779,9 +795,8 @@ class Histogram(QWidget):
         name and ``fmt`` label it in the readout legend, not on the plot, so
         close markers (mean vs. expectation) never collide. ``clip``: the
         drawn range, ``(low, high)`` (class docstring)."""
-        for item in self._items:
-            self._plot.removeItem(item)
-        self._items = []
+        self._clear_items()
+        self._set_count_axis(False, log_y=False)
         values = np.asarray(values, dtype=float)
         values = values[np.isfinite(values)]
         shown = values
@@ -798,6 +813,7 @@ class Histogram(QWidget):
         self._counts = np.histogram(shown, bins=self._edges)[0]
         self._total = len(values)
         self._density = self._counts / (self._total * np.diff(self._edges))
+        self._heights, self._base, self._expected = self._density, 0.0, None
         self._normal, self._normal_name = normal, normal_name
         width = self._edges[1] - self._edges[0]
         gap = width * 0.08     # a hairline of surface between adjacent bars
@@ -825,15 +841,108 @@ class Histogram(QWidget):
         self._plot.setYRange(0, float(self._density.max()) * 1.12, padding=0)
         self._show_readout(None)
 
+    def set_counts(self, edges: np.ndarray, counts: np.ndarray, *,
+                   expected: np.ndarray | None = None, expected_name: str = "Normal",
+                   markers: Sequence[tuple[Series, float]] = (), log_y: bool = False,
+                   signed: bool = False, x_range: tuple[float, float] | None = None) -> None:
+        """Draw precomputed bins as counts on a right-hand count axis.
+
+        ``expected``: the reference's count per bin (the normal's), drawn as
+        a dashed line through the bin centres. ``log_y``: counts on a log
+        axis from ``_LOG_COUNT_FLOOR``, empty bins left out. ``signed``:
+        bins centred below zero in the loss color, the rest in the gain
+        color; the axis shows the sign too, so color is never the only
+        signal. ``markers`` as in ``set_data``. ``x_range`` widens the view,
+        to show a marker beyond the bins."""
+        edges = np.asarray(edges, dtype=float)
+        counts = np.asarray(counts, dtype=float)
+        if len(edges) != len(counts) + 1 or len(counts) == 0:
+            raise ValueError("need one more edge than counts, and at least one bin")
+        self._clear_items()
+        self._set_count_axis(True, log_y)
+        self._edges, self._counts, self._total = edges, counts, int(round(counts.sum()))
+        self._density = np.empty(0)
+        self._beyond = (np.empty(0), np.empty(0))
+        self._normal, self._normal_name = None, expected_name
+        self._expected = None if expected is None else np.asarray(expected, dtype=float)
+        if log_y:
+            self._base = math.log10(_LOG_COUNT_FLOOR)
+            with np.errstate(divide="ignore"):
+                self._heights = np.where(counts > 0, np.log10(counts), np.nan)
+        else:
+            self._base, self._heights = 0.0, counts
+        drawn = np.isfinite(self._heights)
+        gap = (edges[1] - edges[0]) * 0.08
+        centres = (edges[:-1] + edges[1:]) / 2
+        brushes = [_color(PALETTE.critical if signed and c < 0 else
+                          PALETTE.good if signed else PALETTE.series, 0.85)
+                   for c in centres[drawn]]
+        bars = pg.BarGraphItem(x0=edges[:-1][drawn] + gap / 2, x1=edges[1:][drawn] - gap / 2,
+                               y0=self._base, height=self._heights[drawn] - self._base,
+                               brushes=brushes, pen=pg.mkPen(None))
+        self._plot.addItem(bars)
+        self._items.append(bars)
+        top = float(np.nanmax(self._heights)) if drawn.any() else self._base + 1.0
+        if self._expected is not None:
+            if log_y:
+                floor = self._base - 1.0         # off the bottom, so the line runs out of view
+                with np.errstate(divide="ignore"):
+                    y = np.maximum(np.log10(np.maximum(self._expected, 1e-300)), floor)
+            else:
+                y = self._expected
+            top = max(top, float(np.max(y)))
+            curve = pg.PlotDataItem(centres, y, pen=pg.mkPen(PALETTE.text_secondary, width=1.5,
+                                                             style=Qt.DashLine))
+            self._plot.addItem(curve)
+            self._items.append(curve)
+        self._markers = markers
+        for style, x in markers:
+            line = pg.InfiniteLine(pos=x, angle=90, movable=False, pen=pg.mkPen(
+                style.color, width=style.width,
+                style=Qt.DashLine if style.dashed else Qt.SolidLine))
+            self._plot.addItem(line)
+            self._items.append(line)
+        low, high = x_range if x_range is not None else (edges[0], edges[-1])
+        self._plot.setXRange(low, high, padding=0.02)
+        if log_y:
+            self._plot.setYRange(self._base, top + 0.12, padding=0)
+        else:
+            self._plot.setYRange(0, top * 1.12, padding=0)
+        self._show_readout(None)
+
+    def _clear_items(self) -> None:
+        for item in self._items:
+            self._plot.removeItem(item)
+        self._items = []
+        self._highlight.setVisible(False)
+
+    def _set_count_axis(self, shown: bool, log_y: bool) -> None:
+        """The count axis's visibility and log labels. The flag is set on the
+        axis alone: ``AxisItem.setLogMode`` would also put the view in log
+        mode, and the bars here arrive already in log10."""
+        self._count_mode = shown
+        self._count_axis.logMode = log_y
+        self._count_axis.picture = None
+        self._count_axis.update()
+        if shown:
+            self._plot.showAxis("right")
+            self._count_axis.setWidth(40)
+        else:
+            self._plot.hideAxis("right")
+
     def _on_mouse_moved(self, pos: QPointF) -> None:
         if not len(self._edges) or not self._plot.sceneBoundingRect().contains(pos):
             self._on_leave()
             return
         x = self._plot.vb.mapSceneToView(pos).x()
-        i = int(np.clip(np.searchsorted(self._edges, x) - 1, 0, len(self._density) - 1))
-        self._highlight.setOpts(x0=[self._edges[i]], x1=[self._edges[i + 1]],
-                                height=[self._density[i]])
-        self._highlight.setVisible(True)
+        i = int(np.clip(np.searchsorted(self._edges, x) - 1, 0, len(self._edges) - 2))
+        height = self._heights[i]
+        if np.isfinite(height):
+            self._highlight.setOpts(x0=[self._edges[i]], x1=[self._edges[i + 1]],
+                                    y0=[self._base], height=[height - self._base])
+            self._highlight.setVisible(True)
+        else:
+            self._highlight.setVisible(False)
         self._show_readout(i)
 
     def _on_leave(self) -> None:
@@ -848,6 +957,9 @@ class Histogram(QWidget):
         if i is None:
             # With markers the legend needs the room; the card names the sample.
             parts = [] if self._markers else [f"{total:,} observations · hover a bar"]
+            if self._count_mode and self._expected is not None:
+                parts.append(f"<span style='color:{PALETTE.text_secondary}'>╍</span> "
+                             f"{self._normal_name}")
             below, above = self._beyond
             if len(below):
                 parts.append(f"<b style='{strong}'>{len(below)}</b> below the chart, lowest "
@@ -866,6 +978,15 @@ class Histogram(QWidget):
         lo, hi = self._edges[i], self._edges[i + 1]
         share = self._counts[i] / total if total else 0.0
         lo_text, hi_text = self._bin_fmt.format(lo), self._bin_fmt.format(hi)
+        if self._count_mode:
+            expected = ("" if self._expected is None else
+                        f"{sep}{self._normal_name.lower()} expects "
+                        f"<b style='{strong}'>{self._expected[i]:,.1f}</b>")
+            self._readout.setText(
+                f"<b style='{strong}'>[{lo_text}, {hi_text})</b>{sep}"
+                f"<b style='{strong}'>{int(self._counts[i]):,}</b> of {total:,} "
+                f"({share:.1%}){expected}")
+            return
         self._readout.setText(
             f"<b style='{strong}'>[{lo_text}, {hi_text})</b>&nbsp;&nbsp;·&nbsp;&nbsp;"
             f"<b style='{strong}'>{int(self._counts[i]):,}</b> obs ({share:.1%})&nbsp;&nbsp;·&nbsp;&nbsp;"
@@ -891,6 +1012,8 @@ class Curve:
     line: bool = True           # False: points only
     readout: bool = True        # False: leave out of the hover readout
                                 # (sparse points that shouldn't be interpolated)
+    hollow: Sequence[bool] = ()  # per point: True draws its marker as an outline
+                                 # (a value that's mostly extrapolated)
 
 
 class CurveChart(QWidget):
@@ -900,11 +1023,13 @@ class CurveChart(QWidget):
 
     Extras: labelled vertical reference lines (spot, strike), a zero line,
     labelled points on the axis (breakevens), and a shaded band between two
-    y arrays (a confidence interval)."""
+    y arrays (a confidence interval), read out with ``band_fmt``."""
 
     def __init__(self, x_axis: str = "price", y_axis: str = "price", log_x: bool = False,
-                 x_name: str = "S", x_fmt: str = "{:,.2f}") -> None:
+                 x_name: str = "S", x_fmt: str = "{:,.2f}", band_fmt: str = "{:,.4f}") -> None:
+        """``band_fmt`` formats the band's bounds in the readout."""
         super().__init__()
+        self._band_fmt = band_fmt
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(SPACE_XS)
@@ -929,6 +1054,7 @@ class CurveChart(QWidget):
         self._items: list[pg.GraphicsObject] = []
         self._curves: Sequence[Curve] = ()
         self._band: tuple[np.ndarray, np.ndarray, np.ndarray, str] | None = None
+        self._band_fmt = "{:,.4f}"
         self._vline = pg.InfiniteLine(angle=90, pen=_crosshair_pen(), movable=False)
         self._vline.setVisible(False)
         self._plot.addItem(self._vline, ignoreBounds=True)
@@ -943,11 +1069,12 @@ class CurveChart(QWidget):
 
     def set_curves(self, curves: Sequence[Curve], *, vlines: Sequence[tuple[str, float]] = (),
                    zero_line: bool = False, points: Sequence[tuple[float, str]] = (),
-                   band: tuple[np.ndarray, np.ndarray, np.ndarray, str] | None = None) -> None:
+                   band: tuple[np.ndarray, np.ndarray, np.ndarray, str] | None = None,
+                   band_fmt: str = "{:,.4f}", band_color: str = PALETTE.series) -> None:
         for item in self._items:
             self._plot.removeItem(item)
         self._items = []
-        self._curves, self._band = curves, band
+        self._curves, self._band, self._band_fmt = curves, band, band_fmt
         if zero_line:
             self._add(pg.InfiniteLine(pos=0.0, angle=0, pen=pg.mkPen(PALETTE.border_strong)), True)
         if band is not None:
@@ -958,7 +1085,7 @@ class CurveChart(QWidget):
             hi_item = pg.PlotCurveItem(self._xv(bx), hi, pen=pg.mkPen(None))
             self._add(lo_item)
             self._add(hi_item)
-            self._add(pg.FillBetweenItem(lo_item, hi_item, brush=_color(PALETTE.series, 0.18)))
+            self._add(pg.FillBetweenItem(lo_item, hi_item, brush=_color(band_color, 0.18)))
         for curve in curves:
             if curve.fill == "zero":
                 self._add(pg.PlotDataItem(curve.x, curve.y, pen=pg.mkPen(None), fillLevel=0.0,
@@ -973,10 +1100,13 @@ class CurveChart(QWidget):
                     curve.color, width=curve.width,
                     style=Qt.DashLine if curve.dashed else Qt.SolidLine)))
             if curve.marker:
-                self._add(pg.ScatterPlotItem(self._xv(np.asarray(curve.x, dtype=float)), curve.y,
-                                             symbol=curve.marker, size=9,
-                                             brush=pg.mkBrush(curve.color),
-                                             pen=pg.mkPen(PALETTE.surface, width=1.5)))
+                hollow = list(curve.hollow) or [False] * len(curve.x)
+                self._add(pg.ScatterPlotItem(
+                    self._xv(np.asarray(curve.x, dtype=float)), curve.y,
+                    symbol=curve.marker, size=9,
+                    brush=[pg.mkBrush(PALETTE.surface if h else curve.color) for h in hollow],
+                    pen=[pg.mkPen(curve.color if h else PALETTE.surface, width=1.5)
+                         for h in hollow]))
         for name, x in vlines:
             self._add(pg.InfiniteLine(
                 pos=self._xv(x), angle=90, movable=False,
@@ -1048,8 +1178,9 @@ class CurveChart(QWidget):
                          f"<b style='{strong}'>{curve.fmt.format(y)}</b>")
         if self._band is not None:
             bx, lo, hi, name = self._band
-            parts.append(f"{name} <b style='{strong}'>{float(np.interp(x, bx, lo)):,.4f} – "
-                         f"{float(np.interp(x, bx, hi)):,.4f}</b>")
+            fmt = self._band_fmt
+            parts.append(f"{name} <b style='{strong}'>{fmt.format(float(np.interp(x, bx, lo)))}"
+                         f" – {fmt.format(float(np.interp(x, bx, hi)))}</b>")
         self._readout.setText(sep.join(parts))
 
     def clear(self) -> None:

@@ -55,6 +55,18 @@ this codebase themselves — the standing constraint is:
    `tests/test_literature.py` fails otherwise (D58).
 5. **Do not build ahead.** Placeholders are intentional. Build what the
    current milestone asks and stop.
+6. **Quant Hub is for anyone.** Nothing here encodes one person's
+   accounts, holdings, thesis or settings: that belongs in an extension
+   package, which adds its pages and Ctrl+K commands through
+   `extensions.py` (D86, D87).
+   - Quant Hub never imports an extension. `tests/test_layering.py`
+     allows only the standard library, `quant_hub` and the dependencies
+     declared in `pyproject.toml`.
+   - The suite runs with extensions off (`tests/conftest.py`), so it
+     tests what a fresh clone gets.
+   - Extensions receive the whole `Core`, with no frozen interface. A
+     change to `Core`, a service an extension may use, or the hook
+     itself can break one: say so in the PR.
 
 ## Commands
 

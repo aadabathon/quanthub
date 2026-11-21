@@ -19,6 +19,8 @@ from PySide6.QtWidgets import QApplication
 from quant_hub import __version__
 from quant_hub.config import AppConfig
 from quant_hub.core import Core, build_core
+from quant_hub.extensions import (extensions_wanted, load_extensions, merge_commands,
+                                  merge_pages, shut_down)
 from quant_hub.gui.app_icon import APP_USER_MODEL_ID, app_icon
 from quant_hub.gui.main_window import MainWindow, PageSections
 from quant_hub.gui.pages.dashboard import DashboardPage
@@ -27,8 +29,10 @@ from quant_hub.gui.pages.kalman_lab import KalmanLabPage
 from quant_hub.gui.pages.markets import MarketsPage
 from quant_hub.gui.pages.markov_lab import MarkovLabPage
 from quant_hub.gui.pages.options_lab import OptionsLabPage
+from quant_hub.gui.pages.data import DataPage
 from quant_hub.gui.pages.research import ResearchPage
 from quant_hub.gui.pages.portfolio import PortfolioPage
+from quant_hub.gui.pages.returns import ReturnHistogramPage
 from quant_hub.gui.pages.simulator import SimulatorPage
 from quant_hub.gui.pages.valuation import ValuationPage
 from quant_hub.gui.pages.volatility_lab import VolatilityLabPage
@@ -41,6 +45,8 @@ def _sections(core: Core) -> PageSections:
         shell, core.workstation, core.file_import, core.tasks, core.state_store, core.config))
     markets = ("Markets", "ph.chart-bar", lambda shell: MarketsPage(
         shell, core.market_service, core.workstation, core.tasks, core.state_store))
+    returns = ("Return histogram", "mdi6.chart-histogram", lambda _shell: ReturnHistogramPage(
+        core.workstation, core.tasks, core.state_store))
     garch = ("GARCH Lab", "ph.activity", lambda _shell: GARCHLabPage(
         core.market_service, core.tasks, core.state_store))
     simulator = ("Simulator", "ph.trend-up", lambda _shell: SimulatorPage(
@@ -57,12 +63,19 @@ def _sections(core: Core) -> PageSections:
         core.portfolio, core.market_service, core.tasks, core.state_store, core.accounts))
     valuation = ("Valuation", "ph.scales", lambda _shell: ValuationPage(
         core.valuation, core.portfolio, core.tasks, core.state_store))
+    data = ("Data", "ph.database", lambda shell: DataPage(
+        shell, core.external_data, core.fund_holdings, core.chains, core.chain_collector,
+        core.workstation, core.tasks, core.state_store))
     research = ("Research", "ph.file-text", lambda _shell: ResearchPage(
         core.research, core.market_service, core.tasks, core.state_store))
     return [
-        (None, [dashboard, markets, portfolio, valuation, simulator, options]),
+        (None, [dashboard, markets, returns, data, portfolio, valuation, simulator, options]),
         ("Research", [garch, vol_lab, kalman, markov, research]),
     ]
+
+
+#: Terminal mnemonics Ctrl+K also finds a page by (Godel's command names).
+PAGE_ALIASES = {"HRH": "Return histogram"}
 
 
 def create_app(config: AppConfig | None = None,
@@ -74,8 +87,19 @@ def create_app(config: AppConfig | None = None,
     app.setWindowIcon(app_icon())
     apply_theme(app)
     core = build_core(config)
+    # Installed extensions add their pages and commands (D86, D87). One that
+    # fails is logged and skipped: an extension never stops the app.
+    extensions, problems = (load_extensions(core) if extensions_wanted(core.config)
+                            else ([], []))
+    sections, placement = merge_pages(_sections(core), extensions)
+    commands, taken = merge_commands(extensions)
+    for problem in [*problems, *placement, *taken]:
+        _logger.warning("extension %s", problem)
+    for extension in extensions:
+        _logger.info("extension %s: %d page(s), %d command(s)", extension.name,
+                     len(extension.pages), len(extension.commands))
 
-    window = MainWindow(core, _sections(core))
+    window = MainWindow(core, sections, PAGE_ALIASES, commands)
     # Qt recreates an already-visible native window when its first
     # WebEngine widget is attached. Prepare that page while still hidden
     # so the window uses the right graphics surface from its first frame.
@@ -99,6 +123,8 @@ def create_app(config: AppConfig | None = None,
         except Exception:
             _logger.exception("error saving page state at shutdown")
         core.shutdown()
+        # After the worker has stopped, so no job is using what they close.
+        shut_down(extensions)
 
     app.aboutToQuit.connect(on_quit)
     _logger.info("Quant Hub v%s ready — %s", __version__,

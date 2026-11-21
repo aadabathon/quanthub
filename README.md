@@ -13,7 +13,9 @@ tested against the closed forms.
   - **Options Lab:** Black–Scholes–Merton, implied vol, multi-leg
     strategies and a Monte Carlo check.
   - **Volatility Lab:** SVI/SSVI implied-vol surfaces with arbitrage
-    checks, as a heatmap or a rotatable 3D surface.
+    checks, as a heatmap or a rotatable 3D surface, and the variance
+    risk premium: model-free implied variance against GARCH's forecast
+    and the variance delivered.
   - **Kalman Lab:** a hidden price level (and trend) filtered from noisy
     closes, with the smoother and maximum-likelihood fits.
   - **Markov Lab:** Gaussian regimes, filtered against hindsight states,
@@ -22,16 +24,26 @@ tested against the closed forms.
   - six daily strategies with rolling training and refits
   - explicit costs and risk sizing, against matched benchmarks
   - sweeps with the deflated Sharpe ratio
-  - exact saved inputs and decisions
+  - exact saved inputs and decisions, with a cash rate that moves day by
+    day (French's bills) for century-long tests
+  - recorded runs: decisions made outside Research, kept with the same
+    evidence as its own
   - a local paper library with PDFs, notes and links to experiments
 - **Portfolio:** imported positions with option-aware risk:
   - historical and Gaussian VaR and expected shortfall
   - risk contributions and Kelly with its uncertainty
   - growth by sleeve, and α/β regressions
+- **Return histogram:** one stored security's daily, weekly or monthly
+  returns against a normal, with the latest move's percentile, the
+  tails and a Q-Q view. Ctrl+K finds it as `HRH` too.
 - **Valuation:** a discounted cash flow from a company's SEC filings.
 - **Market data:** daily history is validated and kept in a local SQLite
   store through a coverage-aware cache. Data comes from CSV imports or,
   optionally, Interactive Brokers.
+- **Free data, kept locally:** Ken French's factors, FRED's series, your
+  copy of Shiller's monthly data, funds' holdings from SEC N-PORT, and a
+  daily option-chain snapshot. The **Data** page shows what's stored,
+  where it came from and how fresh it is.
 
 The synthetic labs know the true process, so they show the truth and the
 estimate side by side. **Quant Hub never places orders.** Brokerage access
@@ -131,7 +143,10 @@ The first run writes `~/.quant_hub/settings.toml`, a commented file of the
 defaults. Edit it and restart. It sets:
 - where the market-data store lives
 - whether and how to reach Interactive Brokers
-- your SEC identity, for Valuation
+- your SEC identity, for Valuation and fund holdings
+- your free FRED key, for the VIX and bill history
+- which option chains to snapshot each trading day
+- whether installed extensions add their pages
 
 **Don't use IBKR?** Set `enabled = false` under `[ibkr]`, and its controls
 and sources disappear. The app is complete on synthetic data without it.
@@ -143,6 +158,26 @@ and that setting keeps its default.
 **The store is versioned.** Before an update changes its schema, the app
 copies the whole database into `~/.quant_hub/backups/`. It never deletes
 those copies itself.
+
+## Free data
+
+Each source's terms were read before it was added, and each series is
+stored as fetched, with its citation and the file's SHA-256. The Data
+page lists them, and Ctrl+K fetches each one on the worker thread:
+
+| Source | What | How |
+|---|---|---|
+| Ken French's data library | daily Fama–French factors and momentum, from 1926 | **Fetch Ken French factors**; refetched when a week old |
+| FRED | the VIX (`VIXCLS`), 3-month bills and the 3-month Treasury | **Fetch FRED series**, with a free key in `[fred] key` |
+| Robert Shiller's data | monthly S&P price, dividends, earnings, CPI, the 10-year yield and CAPE, from 1871 | download `ie_data.xls`, save its Data sheet as CSV, then **Import Shiller CSV…** |
+| SEC N-PORT | a fund's full holdings as filed | **Fetch fund holdings…**, with `[sec] identity` |
+| Interactive Brokers | a snapshot of each option chain in `[collect] chains` | once a trading day, when TWS connects after the open |
+
+**On the terms:** FRED asks for its credit line ("This product uses the
+FRED® API but is not endorsed or certified by the Federal Reserve Bank of
+St. Louis"), and its third-party series are for personal use. Cboe's
+terms don't allow storing its VIX file, so the VIX comes from FRED.
+Shiller's data is read from your own download and never redistributed.
 
 ## Importing data
 
@@ -215,6 +250,11 @@ CASH,1250,,,Brokerage
 
 - Options are `ROOT YYMMDD C|P STRIKE`, contracts negative when short.
 - Imports are kept as dated snapshots.
+- **A file imported twice is caught before it's stored,** by its hash.
+  The page names the earlier import and asks: a second copy of an older
+  file would become the newest snapshot, and the change would read as
+  trades that never happened.
+- **Deleting a snapshot backs the store up first.**
 - Before any import, the page shows a $100,000 example portfolio.
 
 ## Valuation
@@ -367,6 +407,26 @@ accounts needs IBKR's current 10.x API, which isn't on PyPI.
 The broker code reads both versions. It checks the installed `error()`
 signature, because 10.33 inserted a timestamp before the error code.
 
+## Extending Quant Hub
+
+Another package can add pages and Ctrl+K commands without editing Quant
+Hub. It declares an entry point in its `pyproject.toml`:
+
+```toml
+[project.entry-points."quant_hub.extensions"]
+mine = "my_package.app:contribute"
+```
+
+At startup Quant Hub calls `contribute(core)` with its wired services, and
+gets back an `Extension`: the pages (each with a sidebar title, an icon,
+a section and the page it follows), the commands, and a `shutdown`. An
+editable install (`pip install -e`) is all the setup it needs. One that
+fails is logged and skipped, never stopping the app, and a title or
+command name already taken is refused. Quant Hub never imports an
+extension: `tests/test_layering.py` fails if it does.
+`[extensions] enabled = false`, or `QUANT_HUB_NO_EXTENSIONS=1` for one
+run, turns them off. `quant_hub/extensions.py` has the details.
+
 ## Quantitative code conventions
 
 `data/synthetic.py` (GBM) is the exemplar every model follows:
@@ -381,7 +441,7 @@ in the literature canon (`quant_hub/data/canon/`), with its DOI checked.
 
 ## Status
 
-Version 1.0 runs on Windows with Python 3.12. The suite needs no display
+Version 1.1 runs on Windows with Python 3.12. The suite needs no display
 and no network. Still to come:
 - portfolio optimizers
 - option strategy backtests

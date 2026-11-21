@@ -36,6 +36,15 @@ Versions:
 * **5** (W6, D48): saved valuations (``valuations``).
 * **6:** reserved. The step creates no table; a file reaching 6 is
   otherwise the same as at 5.
+* **7** (D60): external series as fetched, and their values (``ext_series``,
+  ``ext_values``).
+* **8** (D62): funds' holdings as filed on N-PORT, and the fund ticker map
+  (``fund_tickers``, ``fund_filings``, ``fund_holdings``).
+* **9** (D66): held symbols' ISINs (``security_ids``), for the
+  look-through count.
+* **10** (D74): each positions snapshot's file hash
+  (``position_snapshots.sha256``), so a second import of the same file is
+  flagged before it's stored. Older snapshots get an empty hash.
 
 Steps are frozen: each one spells out its own SQL, never the stores'
 current schema, which keeps moving. A test holds a migrated file and a new
@@ -58,7 +67,7 @@ from quant_hub.storage.bar_store import StorageError
 
 _logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 10
 BACKUP_DIR = "backups"
 
 _TABLE = """
@@ -144,8 +153,41 @@ def _reserved(conn: sqlite3.Connection) -> None:
     """5 -> 6: reserved; no table changes."""
 
 
+def _series(conn: sqlite3.Connection) -> None:
+    """6 -> 7: external series and their values (D60)."""
+    from quant_hub.storage.series_store import V7_TABLES
+    for statement in V7_TABLES:
+        conn.execute(statement)
+
+
+def _holdings(conn: sqlite3.Connection) -> None:
+    """7 -> 8: funds' N-PORT holdings and the fund ticker map (D62)."""
+    from quant_hub.storage.holdings_store import V8_TABLES
+    for statement in V8_TABLES:
+        conn.execute(statement)
+
+
+def _security_ids(conn: sqlite3.Connection) -> None:
+    """8 -> 9: held symbols' ISINs (D66)."""
+    from quant_hub.storage.holdings_store import V9_TABLES
+    for statement in V9_TABLES:
+        conn.execute(statement)
+
+
+def _snapshot_hashes(conn: sqlite3.Connection) -> None:
+    """9 -> 10: a file hash per positions snapshot (D74). Frozen SQL; a file
+    that never opened the position store gains the column with the table."""
+    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    if "position_snapshots" not in tables:
+        return
+    columns = {r[1] for r in conn.execute("PRAGMA table_info(position_snapshots)")}
+    if "sha256" not in columns:
+        conn.execute("ALTER TABLE position_snapshots ADD COLUMN sha256 TEXT NOT NULL DEFAULT ''")
+
+
 _STEPS: dict[int, Callable[[sqlite3.Connection], None]] = {
     0: _adopt, 1: _price_basis, 2: _research, 3: _fundamentals, 4: _valuations, 5: _reserved,
+    6: _series, 7: _holdings, 8: _security_ids, 9: _snapshot_hashes,
 }
 
 
@@ -235,9 +277,17 @@ def _record(conn: sqlite3.Connection, version: int, at: datetime, backup: Path |
 
 def _backup(conn: sqlite3.Connection, path: Path, version: int, at: datetime) -> Path:
     """A consistent copy of the whole file, named for its version and time."""
+    return backup_file(conn, path, f"v{version}", at)
+
+
+def backup_file(conn: sqlite3.Connection, path: Path, label: str, at: datetime) -> Path:
+    """A consistent copy of the whole file through ``conn`` (SQLite's backup
+    API, safe while it's open), in ``backups/`` beside it, named for
+    ``label`` and the time. D36's backups, used by migrations and by any
+    destructive action you take (A4's snapshot delete)."""
     folder = path.parent / BACKUP_DIR
     folder.mkdir(exist_ok=True)
-    stem = f"{path.stem}.v{version}.{at:%Y%m%d-%H%M%S}"
+    stem = f"{path.stem}.{label}.{at:%Y%m%d-%H%M%S}"
     target = folder / f"{stem}{path.suffix}"
     counter = 1
     while target.exists():

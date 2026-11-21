@@ -17,6 +17,11 @@ file is easy to find and edit. What a user can set (D34):
   to say who is asking, a name and an email (its fair-access policy). Only
   the Valuation page's company data needs it (W5, D47); empty, the page
   says how to set it.
+* ``[extensions] enabled``: installed packages that add pages are found at
+  startup (``extensions.py``, D86). Turned off, the app runs without them.
+* ``[collect] chains``: symbols whose option chain is snapshotted once a
+  trading day, when TWS connects after the open (D63). Empty, nothing is
+  collected.
 
 A bad file never stops the app. Each problem (a syntax error, an unknown
 section or key, a wrong type) is reported, and that setting keeps its
@@ -27,6 +32,7 @@ file.
 from __future__ import annotations
 
 import os
+import re
 import tomllib
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -73,6 +79,13 @@ class AppConfig:
 
     # The SEC's required User-Agent, "Name email@example.com" (D47).
     sec_identity: str = ""
+    fred_key: str = ""                 # [fred] key: FRED's API (HEDGE U2, D69); never logged
+
+    # Installed packages that add pages, found at startup (D86).
+    extensions_enabled: bool = True
+
+    # Symbols whose chain is snapshotted once a trading day (D63).
+    collect_chains: tuple[str, ...] = ()
 
     default_symbol: str = "SPY"
 
@@ -109,6 +122,21 @@ client_id = 17
 # The SEC asks programs that download its filings to say who is asking:
 # your name and email. Needed only for the Valuation page's company data.
 # identity = "Your Name you@example.com"
+
+[fred]
+# FRED's API needs a free key (fredaccount.stlouisfed.org): 32 letters and
+# digits. It brings the VIX and T-bill history. Keep it out of any repository.
+# key = "…"
+
+[extensions]
+# Installed packages can add pages to Quant Hub. Set enabled = false to run
+# without them.
+enabled = true
+
+[collect]
+# Option chains snapshotted once a trading day, the first time TWS connects
+# after the open, with a wide strike band. Each takes about a minute.
+# chains = ["SPX", "SPY"]
 """
 
 
@@ -143,9 +171,21 @@ def _client_id(value: Any, _base: Path) -> int:
     return value
 
 
+def _symbols(value: Any, _base: Path) -> tuple[str, ...]:
+    if not isinstance(value, list) or not all(isinstance(v, str) and v.strip() for v in value):
+        raise ValueError('must be a list of symbols in quotes, e.g. ["SPX", "SPY"]')
+    return tuple(dict.fromkeys(v.strip().upper() for v in value))
+
+
 def _identity(value: Any, _base: Path) -> str:
     if not isinstance(value, str) or "@" not in value or not value.strip():
         raise ValueError('must be your name and email in quotes, e.g. "Jane Doe jane@example.com"')
+    return value.strip()
+
+
+def _fred_key(value: Any, _base: Path) -> str:
+    if not isinstance(value, str) or not re.fullmatch(r"[a-z0-9]{32}", value.strip()):
+        raise ValueError("must be your FRED API key in quotes: 32 lower-case letters and digits")
     return value.strip()
 
 
@@ -155,6 +195,9 @@ _SETTINGS = {
     "ibkr": {"enabled": ("ibkr_enabled", _boolean), "host": ("ibkr_host", _host),
              "port": ("ibkr_port", _port), "client_id": ("ibkr_client_id", _client_id)},
     "sec": {"identity": ("sec_identity", _identity)},
+    "fred": {"key": ("fred_key", _fred_key)},
+    "extensions": {"enabled": ("extensions_enabled", _boolean)},
+    "collect": {"chains": ("collect_chains", _symbols)},
 }
 
 

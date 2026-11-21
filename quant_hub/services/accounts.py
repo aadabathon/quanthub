@@ -1,8 +1,8 @@
 """Accounts from the broker: positions and balances, as a snapshot (E1).
 
 ``AccountService.snapshot`` reads what the IBKR login can see: its
-accounts, its positions and each account's balances. It only reads:
-Quant Hub places no orders. It turns them into the broker-agnostic
+accounts, its positions and each account's balances. It only reads, and
+never places an order. It turns them into the broker-agnostic
 ``PositionSnapshot`` that the Portfolio page already reads
 (``data/positions.py``):
 

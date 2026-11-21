@@ -81,6 +81,9 @@ def test_ibkr_turned_off_leaves_no_controls_or_sources(tmp_path):
         assert lab._source.current() == "synthetic"     # its saved default was ibkr
         assert core.accounts is None
         assert not hasattr(window.show_page("Portfolio"), "_broker_button")   # E1
+        # A1 part 2: the ISIN bridge asks nothing of a broker that's off.
+        assert core.security_ids.isins(["AAA"]) == ({}, {"AAA": "IBKR is off in settings"})
+        assert "Sync index history from IBKR" not in window._top.search._commands   # U2
     finally:
         _close(app, window)
 
@@ -366,7 +369,7 @@ def test_the_layout_round_trips_through_the_store(tmp_path, monkeypatch):
     app, window = _open(db)
     try:
         _side_by_side(app, window, "Dashboard", "Markets")
-        window.show_page("Valuation")                        # a tab in front of Markets
+        window.show_page("Valuation")                     # a tab in front of Markets
         _settle(app)
         assert window._workspace.shown() == ["Dashboard", "Valuation"]
     finally:
@@ -558,6 +561,30 @@ def test_research_runs_saves_reopens_and_retains_the_whole_grid(qt_app):
     assert len(window._core.research.list_runs()) == 6
 
 
+def test_research_opens_a_run_recorded_outside_it(qt_app):
+    # Q3a: decisions made elsewhere, with a moving cash rate and
+    # the series behind them, open from the log without an experiment form.
+    from quant_hub.models.backtest import BacktestConfig
+    from tests.test_research import recorded_inputs
+    app, window = qt_app
+    market, beta, bills, signal = recorded_inputs()
+    run = window._core.research.record("Regime β · test", market, beta,
+                                       costs=BacktestConfig(half_spread_bps=1), cash=bills,
+                                       series={"signal": signal},
+                                       details={"model": "a planted signal"})
+    page = window.show_page("Research")
+    before = page._fields["lookback"].text()
+    page.open_run(run.id)
+    wait_for(app, lambda: not page._busy and page._run_result is not None)
+    assert page._run_result.payload["kind"] == "recorded"
+    assert page._fields["lookback"].text() == before          # the form is untouched
+    assert page._chart_stack.currentWidget() is page._chart
+    text = page._provenance.text()
+    assert "Recorded outside Research: a planted signal" in text
+    assert "signal (1999-01-04 →" in text and "stored cash series" in text
+    assert page._fits.rowCount() == 0 and page._trades.rowCount() > 0
+
+
 def test_research_library_imports_notes_and_links_to_experiments(qt_app, tmp_path):
     app, window = qt_app
     page = window.show_page("Research")
@@ -680,6 +707,116 @@ def test_command_search_navigates(qt_app):
     next(action for name, action in commands.items() if name.startswith("Chart AAA"))()
     assert window._active == "Dashboard"
     wait_for(app, lambda: dash._symbol_box.current() == "AAA")
+
+
+def test_ctrl_k_fetches_ken_french_on_the_worker(qt_app, monkeypatch):
+    app, window = qt_app
+    calls = []
+    # No network in tests: the service's fetch is replaced, the wiring is real.
+    monkeypatch.setattr(window._core.external_data, "refresh_french",
+                        lambda force=False: calls.append(force) or [])
+    window._top.search._commands["Fetch Ken French factors"]()
+    wait_for(app, lambda: calls == [True])
+
+
+
+def test_ctrl_k_fetches_fred_and_syncs_the_indices_on_the_worker(qt_app, monkeypatch):
+    # HEDGE U2 (D69): no network in tests; the wiring is real.
+    app, window = qt_app
+    fred = []
+    monkeypatch.setattr(window._core.external_data, "refresh_fred",
+                        lambda force=False: fred.append(force) or [])
+    window._top.search._commands["Fetch FRED series"]()
+    wait_for(app, lambda: fred == [True])
+    asked = []
+
+    def history(symbol, start, end, source, *, basis):
+        asked.append((symbol, start.year, source, basis.value))
+        frame = pd.DataFrame({"close": [100.0, 101.0]},
+                             index=pd.to_datetime(["1990-01-02", "1990-01-03"]))
+        return type("History", (), {"frame": frame})()
+    monkeypatch.setattr(window._core.market_service, "get_history", history)
+    window._top.search._commands["Sync index history from IBKR"]()
+    wait_for(app, lambda: len(asked) == 2)
+    assert asked == [("SPX", 1980, "ibkr", "traded"), ("VIX", 1980, "ibkr", "traded")]
+    page = window.show_page("Data")
+    wait_for(app, lambda: page._header._status.full_text().endswith("price histories"))
+    assert page._fred_note.isVisibleTo(page)                  # the tests set no [fred] key
+
+
+def test_ctrl_k_imports_a_shiller_csv_on_the_worker(qt_app, monkeypatch):
+    app, window = qt_app
+    paths = []
+    monkeypatch.setattr(window._core.external_data, "import_shiller", paths.append)
+    assert "Import Shiller CSV…" in window._top.search._commands
+    window.import_shiller("C:/somewhere/ie_data.csv")       # the dialog's answer, given
+    wait_for(app, lambda: paths == ["C:/somewhere/ie_data.csv"])
+
+
+def test_ctrl_k_fetches_fund_holdings_on_the_worker(qt_app, monkeypatch):
+    app, window = qt_app
+    asked = []
+    monkeypatch.setattr(window._core.fund_holdings, "holdings",
+                        lambda fund, refresh=False: asked.append((fund, refresh)))
+    assert "Fetch fund holdings…" in window._top.search._commands
+    window.fetch_fund_holdings("SPY")                    # the dialog's answer, given
+    wait_for(app, lambda: asked == [("SPY", True)])
+
+
+def test_connecting_starts_the_daily_chains_one_symbol_per_task(qt_app, monkeypatch):
+    from quant_hub.broker.base import ConnectionEvent, ConnectionState
+    app, window = qt_app
+    collector = window._core.chain_collector
+    collected = []
+    monkeypatch.setattr(collector, "_watchlist", ("SPX", "SPY"))
+    monkeypatch.setattr(collector, "due", lambda: ["SPX", "SPY"])
+    monkeypatch.setattr(collector, "collect", collected.append)
+    window._on_connection(ConnectionEvent(ConnectionState.DISCONNECTED))
+    assert not window._collecting
+    window._on_connection(ConnectionEvent(ConnectionState.CONNECTED))
+    wait_for(app, lambda: collected == ["SPX", "SPY"] and not window._collecting)
+    assert "Collect today's chains" in window._top.search._commands
+
+
+
+def test_the_data_page_lists_the_store_and_its_buttons_run_the_commands(qt_app, monkeypatch):
+    from datetime import datetime
+
+    from PySide6.QtWidgets import QPushButton
+
+    from quant_hub.data.series import FetchedSeries, SeriesMeta
+    from tests.test_chain_store import chain
+    app, window = qt_app
+    core = window._core
+    meta = SeriesMeta("french", "ff3.mkt_rf", "Market minus risk-free", "fraction", "daily",
+                      "Courtesy of Kenneth R. French.")
+    core.series_store.save([FetchedSeries(meta, ("2026-10-01", "2026-10-02"), (0.01, -0.02))],
+                           datetime(2026, 11, 3, 9), "sha")
+    core.chain_store.save(chain("SPY"))
+    page = window.show_page("Data")
+    wait_for(app, lambda: page._series_rows and page._bars.rowCount() == 2)
+    assert page._series.item(0, 1).text() == "ff3.mkt_rf"
+    assert page._chain_table.item(0, 0).text() == "SPY"
+    assert page._holdings.rowCount() == 0 and page._empty_hints[page._holdings].isVisibleTo(page)
+    assert not page._empty_hints[page._series].isVisibleTo(page)
+    assert page._identity_note.isVisibleTo(page)              # the tests set no [sec] identity
+    assert "1 outside series" in page._header._status.full_text()
+
+    page._series.selectRow(0)
+    wait_for(app, lambda: page._preview_stack.currentIndex() == 1)
+    assert page._citation._text.text() == "Courtesy of Kenneth R. French."
+    plotted = page._preview_chart._panels[0].series[0].values
+    assert plotted[-1] == pytest.approx(np.log(1.01) + np.log(0.98))   # Σ ln(1 + r)
+
+    # The buttons run the Ctrl+K commands themselves (Shell.run).
+    calls = []
+    monkeypatch.setattr(core.external_data, "refresh_french",
+                        lambda force=False: calls.append(force) or [])
+    fetch = next(b for b in page.findChildren(QPushButton) if b.text() == "Fetch Ken French")
+    fetch.click()
+    wait_for(app, lambda: calls == [True])
+    with pytest.raises(KeyError, match="no command named"):
+        window._run_command("Nothing like this")
 
 
 # ----------------------------------------------------------------- GARCH Lab
@@ -1245,6 +1382,89 @@ def test_markets_unavailable_reason_and_stored_history(qt_app):
     assert markets._chart_button.isVisibleTo(markets)
 
 
+# --------------------------------------------------------- Return histogram
+
+def _hrh(app, window):
+    page = window.show_page("Return histogram")
+    wait_for(app, lambda: page._run is not None)
+    return page
+
+
+def test_return_histogram_renders_a_stored_series(qt_app):
+    app, window = qt_app
+    page = _hrh(app, window)
+    d = page._run.distribution
+    assert page._series_field.select._menu.actions()[0].text() == "AAA"
+    assert page._series_field.current() in ("AAA", "BBB")
+    assert f"{d.n:,} daily simple returns" in page._header._status.full_text()
+    # The fixture stores traded bars only, so Adjusted falls back and says so.
+    assert "adjusted prices not stored, so traded" in page._chart_card.subtitle.full_text()
+    assert page._chart_stack.currentWidget() is page._histogram
+    assert int(page._histogram._counts.sum()) == d.n
+    assert page._stats.value_text("tested") == f"{d.test_n:,}"
+    assert page._stats.value_text("verdict").endswith("(JB)")
+    assert page._latest_count.value_text() == f"{d.latest.count:,} of {d.n:,}"
+    assert page._tails.value_text("t1").startswith(f"{d.tails[0].observed:,} · ")
+    assert not page._tests_note.isVisibleTo(page)
+
+
+def test_return_histogram_settings_rerender(qt_app):
+    from quant_hub.data.return_distribution import Frequency, ReturnKind
+    app, window = qt_app
+    page = _hrh(app, window)
+    page._frequency.select.set_current("Weekly")
+    wait_for(app, lambda: page._run.distribution.frequency is Frequency.WEEK)
+    page._horizon.set_text("2")
+    page._horizon.committed.emit()
+    page._kind.select.set_current("Log")
+    wait_for(app, lambda: page._run.distribution.horizon == 2
+             and page._run.distribution.kind is ReturnKind.LOG)
+    assert page._stats.value_text("tested").endswith("non-overlapping")
+    page._on_view("Q-Q")
+    assert page._chart_stack.currentWidget() is page._qq
+    assert not page._log_button.isEnabled()
+    page._on_view("Histogram")
+    page._log_button.setChecked(False)
+    assert page._chart_stack.currentWidget() is page._histogram
+    assert page._histogram._base == 0.0                       # linear counts now
+
+
+def test_return_histogram_flags_a_bad_horizon_and_a_short_test_sample(qt_app):
+    app, window = qt_app
+    page = _hrh(app, window)
+    page._horizon.set_text("0")
+    page._analyze()
+    assert page._horizon.edit.property("invalid")
+    assert "at least 1" in page._header._status.full_text()
+    page._horizon.set_text("1")
+    page._frequency.select.set_current("Monthly")
+    page._window.select.set_current("6M")
+    wait_for(app, lambda: page._tests_note.isVisibleTo(page))
+    assert "need at least 8" in page._tests_note._text.text()
+    assert page._stats.value_text("verdict") == "—"
+
+
+def test_hrh_is_in_the_command_search(qt_app):
+    app, window = qt_app
+    window._top.search._commands["HRH: go to Return histogram"]()
+    assert window._active == "Return histogram"
+
+
+def test_histogram_counts_on_a_log_axis_read_out_the_normal(qt_app):
+    import numpy as np
+    from quant_hub.gui.charts import Histogram
+    chart = Histogram(axis="percent", bin_fmt="{:+.2%}")
+    chart.set_counts(np.array([-0.02, -0.01, 0.0, 0.01, 0.02]), np.array([3, 0, 10, 1]),
+                     expected=np.array([2.5, 4.0, 4.0, 2.5]), log_y=True, signed=True)
+    assert np.isnan(chart._heights[1])                        # an empty bin isn't drawn
+    assert chart._heights[2] == 1.0                           # log10(10)
+    assert chart._count_axis.logMode and chart._plot.getAxis("right").isVisible()
+    chart._show_readout(0)
+    assert "3</b> of 14" in chart._readout.text() and "expects" in chart._readout.text()
+    chart.set_data(np.random.default_rng(1).normal(size=200))   # back to densities
+    assert not chart._count_mode and not chart._count_axis.logMode
+
+
 # -------------------------------------------------------------------- charts
 
 def test_stacked_chart_hover_moves_readout(qt_app):
@@ -1590,6 +1810,142 @@ def test_vol_lab_3d_toggle(qt_app):
     assert lab._surface_stack.currentWidget() is lab._surface
 
 
+def test_vol_lab_prices_a_synthetic_fits_variance(qt_app):
+    # VARIANCE I4: √K_var on the term structure, and the premium cards
+    # priced against the history the overlay loads, fit by fit (D15).
+    from dataclasses import replace
+
+    from quant_hub.gui.pages.volatility_lab import _NOT_LOADED, _Priced
+    app, window = qt_app
+    lab = _fitted_vol_lab(app, window)
+    names = [c.name for c in lab._term_chart._curves]
+    assert "√K_var (fit)" in names and lab._term_chart._band is not None
+    kvar = lab._term_chart._curves[names.index("√K_var (fit)")]
+    assert list(kvar.y) == [e.smile.vol for e in lab._variance.expiries]
+    assert not any(kvar.hollow)                       # ~20% from the wings at 21 strikes
+    lab._on_view("Term structure")
+    _hover(lab._term_chart._canvas, 0.5, 0.5)
+    readout = lab._term_chart._readout.text()
+    assert "√K_var (fit)" in readout and "Quote sum bid–ask" in readout
+    assert readout.count("%") >= 4                    # the band reads in percent too
+    assert lab._premium_stack.currentWidget() is lab._premium_empty
+    assert lab._premium_empty._title.text() == _NOT_LOADED[0]
+
+    lab._premium_load.click()                         # the overlay's source: synthetic SPY
+    wait_for(app, lambda: lab._premium is not None, timeout_s=30)
+    assert lab._premium_inputs == ("SPY", "synthetic", 1825)
+    view = lab._premium
+    assert lab._context is view.context is not None   # one GARCH: the chart's is the card's
+    assert "GARCH forecast · SPY" in [c.name for c in lab._term_chart._curves]
+    assert (view.symbol, view.realized_symbol) == ("SYNTH", "SPY")
+    assert lab._premium_stack.currentWidget() is lab._premium_body
+    assert lab._premium_table.rowCount() == len(lab._fit.slices) == 6
+    for key in ("kvar", "quotes"):
+        assert lab._premium_tiles[key].value_text().endswith("%")
+    for key in ("garch", "trailing"):
+        assert lab._premium_tiles[key].value_text().endswith("pts")
+    assert lab._history_stack.currentWidget() is lab._history_empty
+    assert "synthetic chain has no history" in lab._history_empty._body.text()
+
+    # A late result for a replaced fit is dropped.
+    lab._on_priced(_Priced(replace(lab._fit), None, "stale"))
+    assert lab._premium is view and lab._premium_stack.currentWidget() is lab._premium_body
+
+    # A refit is repriced against the same history, and blank until then.
+    before = lab._fit
+    lab._on_method("SSVI")
+    wait_for(app, lambda: lab._fit is not before and lab._premium is not None, timeout_s=30)
+    assert [e.implied.total for e in lab._premium.expiries] == [
+        e.smile.total for e in lab._variance.expiries]
+    assert lab._premium is not view and lab._context is lab._premium.context
+
+
+def test_vol_lab_prices_stored_chains_against_another_symbols_bars(tmp_path):
+    # SPX's stored chains, a snapshot a day, against SPY's stored bars (decision
+    # 3), offline: the newest snapshot on the page, and the history filled.
+    from dataclasses import replace
+    from datetime import date, datetime, time
+
+    from quant_hub.data.ranges import DateRange
+    from quant_hub.data.trading_calendar import trading_days
+    from quant_hub.models.svi import SSVISurface
+    from quant_hub.models.vol_surface import SyntheticChainSpec, synthetic_chain
+    from quant_hub.storage.chain_store import ChainStore
+
+    db = tmp_path / "market_data.db"
+    bars = BarStore(db)
+    dates = pd.bdate_range("2024-01-02", "2025-12-31")
+    closes = 450 * np.exp(np.cumsum(np.random.default_rng(3).normal(0, 0.009, len(dates))))
+    frame = pd.DataFrame({"open": closes, "high": closes, "low": closes, "close": closes,
+                          "volume": np.full(len(dates), 1e6)}, index=dates)
+    bars.insert_bars(InstrumentKey("SPY"), "ibkr", "1 day", frame)
+    bars.add_coverage(InstrumentKey("SPY"), "ibkr", "1 day", DateRange(dates[0], dates[-1]))
+    bars.close()
+    chains = ChainStore(db)
+    surface = SSVISurface(v0=0.16**2, v_inf=0.18**2, kappa=2.0, rho=-0.7, eta=1.0)
+    days = trading_days(date(2025, 6, 2), date(2025, 9, 30))
+    for i, day in enumerate(days):
+        spec = SyntheticChainSpec(spot=6000, seed=i, k_range_sd=(-6, 3), strikes_per_expiry=31)
+        chain = synthetic_chain(surface, spec, as_of=datetime.combine(day, time(10)))
+        chains.save(replace(chain, symbol="SPX", source="ibkr"))
+    chains.close()
+
+    app, window = create_app(AppConfig(db_path=db), argv=["test"])
+    window.show()
+    try:
+        lab = window._pages["Volatility Lab"]          # built at launch (D55), not shown yet
+        lab._on_mode("Market chain")
+        lab._chain_source.select.set_current("stored")
+        lab._fields["chain_symbol"].set_text("SPX")
+        lab._source.set_current("ibkr")
+        lab._symbol.set_text("SPY")
+        lab._lookback.set_text("730")
+        window.show_page("Volatility Lab")             # fits the newest stored SPX chain
+        wait_for(app, lambda: lab._fit is not None, timeout_s=30)
+        assert lab._snapshot is not None and lab._fit.chain.as_of.date() == days[-1]
+        lab._premium_load.click()
+        wait_for(app, lambda: lab._premium is not None, timeout_s=60)
+        view = lab._premium
+        assert (view.symbol, view.realized_symbol, view.source) == ("SPX", "SPY", "ibkr")
+        assert view.days_with_snapshots == len(days)
+        # The overlay is as of the chain's day, not the bars' December end.
+        assert lab._context is view.context
+        assert lab._context.history_end.date() == days[-1]
+        assert "2025-09-30" in lab._context_label.text()
+        assert any("not connected to IBKR" in n for n in view.notes)
+        # The bars reach back past the longest expiry's trailing window.
+        assert view.expiries[-1].dte == 365
+        assert all(e.garch is not None and e.trailing is not None for e in view.expiries)
+        assert lab._premium_table.rowCount() == 6
+
+        # Every window has closed (the bars run to December), so the history
+        # is complete, with its mean, and today ranks among the earlier days.
+        assert len(view.ex_post.points) == len(days) and view.ex_post.pending == 0
+        assert lab._history_stack.currentWidget() is lab._history_body
+        assert len(lab._history_chart._panels) == 2
+        assert lab._history_tiles["mean"].value_text().endswith("pts")
+        assert lab._history_tiles["percentile"].value_text()[:-2].isdigit()
+        assert lab._history_tiles["windows"].value_text() == f"{len(days)} complete"
+        _hover(lab._history_chart._canvas, 0.5, 0.3)
+        assert "Realized after" in lab._history_chart._readout.text()
+    finally:
+        _close(app, window)
+
+
+def test_curve_chart_draws_hollow_points(qt_app):
+    # A point that's mostly extrapolated is an outline: the surface inside it.
+    import pyqtgraph as pg
+
+    from quant_hub.gui.charts import Curve, CurveChart
+    from quant_hub.gui.theme import PALETTE
+    chart = CurveChart()
+    chart.set_curves([Curve("K", np.array([7.0, 30.0]), np.array([0.2, 0.21]),
+                            PALETTE.series_2, marker="o", hollow=(True, False))])
+    (scatter,) = [i for i in chart._items if isinstance(i, pg.ScatterPlotItem)]
+    fills = [p.brush().color().name() for p in scatter.points()]
+    assert fills == [PALETTE.surface.lower(), PALETTE.series_2.lower()]
+
+
 _DRAW_3D = """
 import sys, time
 from pathlib import Path
@@ -1773,3 +2129,38 @@ def test_vol_lab_heavy_noise_still_renders(qt_app):
     wait_for(app, lambda: lab._fit is not first)
     assert lab._header._status.property("role") == "statusInfo"
     assert lab._table.rowCount() == len(lab._fit.slices)
+
+
+# -------------------------------------------------------- snapshot hygiene (A4)
+
+def test_portfolio_asks_before_a_reimport_and_deletes_after_a_backup(qt_app, tmp_path):
+    from book_fixtures import export
+    app, window = qt_app
+    page = window.show_page("Portfolio")
+    answers = []
+    page._confirm = lambda title, text: answers.append(text) or answers_yes.pop(0)
+    path = tmp_path / "positions.csv"
+    path.write_text(export("10/22/2026", {"AAA": 40, "BBB": 20}, 3000), encoding="utf-8")
+    page.import_files([path])
+    wait_for(app, lambda: len(page._snapshot_rows) == 1, timeout_s=60)
+
+    answers_yes = [False]                                     # no, at first
+    page.import_files([path])
+    wait_for(app, lambda: page._header._status.full_text().startswith("Not imported"),
+             timeout_s=60)
+    assert "was imported before as #" in answers[-1] and len(page._snapshot_rows) == 1
+
+    answers_yes = [True]                                      # then yes
+    page.import_files([path])
+    wait_for(app, lambda: len(page._snapshot_rows) == 2, timeout_s=60)
+
+    newest = page._snapshot_rows[0].id
+    page._snapshots.selectRow(0)
+    answers_yes = [True]
+    page._delete_snapshot()
+    wait_for(app, lambda: len(page._snapshot_rows) == 1, timeout_s=60)
+    kept = page._snapshots_card.subtitle.full_text()
+    assert f"Deleted snapshot #{newest}" in kept and "backed up to" in kept
+    assert "Delete snapshot #" in answers[-1]
+    backups = list((window._core.config.db_path.parent / "backups").glob("*before-deleting*"))
+    assert len(backups) == 1

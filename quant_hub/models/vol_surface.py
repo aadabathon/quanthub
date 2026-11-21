@@ -9,7 +9,8 @@ Synthetic quotes
 ----------------
 For each expiry, strikes are placed evenly in log-moneyness over
 :math:`k \in [-2.5, +1.5]\sqrt{\theta(T)}`, i.e. in ATM standard deviations,
-skewed toward puts like listed equity chains. Each quote is the
+skewed toward puts like listed equity chains. ``k_range_sd`` widens it, as
+a variance request does (VARIANCE decision 2: −6 to +3). Each quote is the
 out-of-the-money option (puts below the forward, calls at or above), since
 that is where the liquid, informative prices are. The true price
 :math:`p` comes from Black-Scholes at the surface's vol. The quote is
@@ -120,10 +121,13 @@ class SyntheticChainSpec:
     noise: float = 0.5
     seed: int | None = 7
     parity_pairs: int = 0
+    k_range_sd: tuple[float, float] = K_RANGE_SD
 
     def __post_init__(self) -> None:
         if self.parity_pairs < 0:
             raise ValueError("parity_pairs must be >= 0")
+        if not self.k_range_sd[0] < 0 < self.k_range_sd[1]:
+            raise ValueError("k_range_sd must straddle zero")
         if not self.expiries or any(not math.isfinite(d) or d <= 0 for d in self.expiries):
             raise ValueError("expiries must be positive day counts")
         if self.strikes_per_expiry < MIN_SLICE_QUOTES:
@@ -199,7 +203,8 @@ def synthetic_chain(surface: SSVISurface, spec: SyntheticChainSpec,
         years = dte / 365.0
         forward = spec.spot * math.exp((spec.rate - spec.dividend_yield) * years)
         sd = math.sqrt(surface.atm_total_variance(years))
-        k = np.linspace(K_RANGE_SD[0] * sd, K_RANGE_SD[1] * sd, spec.strikes_per_expiry)
+        k = np.linspace(spec.k_range_sd[0] * sd, spec.k_range_sd[1] * sd,
+                        spec.strikes_per_expiry)
         strikes = np.round(forward * np.exp(k), 2)
         vols = surface.slice(years).implied_vol(np.log(strikes / forward), years)
 

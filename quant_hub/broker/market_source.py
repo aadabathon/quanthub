@@ -12,7 +12,8 @@ from datetime import datetime
 import pandas as pd
 
 from quant_hub.broker.base import Broker
-from quant_hub.broker.types import ContractSpec, HistoricalBar
+from quant_hub.broker.option_chain import underlying_spec
+from quant_hub.broker.types import HistoricalBar
 from quant_hub.data.types import PriceBasis, PriceHistory, Quote
 
 #: IBKR reports historical volume for US stocks in lots of 100 shares
@@ -63,14 +64,22 @@ class IBKRSource:
         """Raw OHLCV bars in [start, end]; empty if the window has no sessions.
 
         Traded prices are IBKR's TRADES; adjusted ones its ADJUSTED_LAST (D38).
+
+        A listed index (SPX, VIX: ``option_chain.underlying_spec``) is
+        requested as an index contract (HEDGE U2, D69). Its level has no
+        dividends or splits to adjust, so both bases are TRADES, and it has
+        no volume: IBKR's −1 stays negative and is read as missing.
         """
         symbol = symbol.upper().strip()
+        spec = underlying_spec(symbol)
+        index = spec.sec_type == "IND"
         bars = self._broker.get_history(
-            ContractSpec(symbol=symbol), start, end, bar_size=bar_size,
-            what_to_show=_WHAT_TO_SHOW[basis],
+            spec, start, end, bar_size=bar_size,
+            what_to_show="TRADES" if index else _WHAT_TO_SHOW[basis],
         )
         frame = bars_to_frame(bars)
-        frame["volume"] *= VOLUME_LOT_SIZE  # broker lots -> shares
+        if not index:
+            frame["volume"] *= VOLUME_LOT_SIZE  # broker lots -> shares
         # The broker may over-fetch (durations round up, D11); trim to the window.
         return frame.loc[start:end]
 
@@ -87,7 +96,7 @@ class IBKRSource:
 
     def get_quote(self, symbol: str) -> Quote:
         symbol = symbol.upper().strip()
-        result = self._broker.get_market_quote(ContractSpec(symbol=symbol))
+        result = self._broker.get_market_quote(underlying_spec(symbol))
         return Quote(
             symbol=symbol,
             price=result.price,

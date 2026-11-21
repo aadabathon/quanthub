@@ -95,11 +95,13 @@ class Shell:
 
     ``navigate(name)`` raises a page and returns it (so a caller can act on
     it, e.g. select a symbol). ``publish_commands(owner, commands)`` replaces
-    ``owner``'s entries in the Ctrl+K search.
+    ``owner``'s entries in the Ctrl+K search. ``run(name)`` runs a Ctrl+K
+    command by name, so a page's button and the search do the same thing.
     """
 
     navigate: Callable[[str], "Page"]
     publish_commands: Callable[[str, Commands], None]
+    run: Callable[[str], None] = lambda _name: None
 
 
 class Page(QWidget):

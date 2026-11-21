@@ -7,6 +7,9 @@ Non-negotiables, in brief:
 
 - **No orders.** Brokerage access is read-only, and `tests/test_layering.py`
   fails on any order call. Never auto-reconnect.
+- **For anyone.** Nothing here encodes one person's accounts or choices;
+  that goes in an extension package (`extensions.py`, D86), which Quant
+  Hub never imports.
 - **Layering is enforced** by `tests/test_layering.py` — if a change fights
   it, the change is wrong. Only `broker/` imports ibapi; `data/` imports no
   other layer.

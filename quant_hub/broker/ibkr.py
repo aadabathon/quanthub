@@ -213,6 +213,15 @@ def summaries_from_rows(rows: Sequence[tuple[str, str, str, str]]) -> list[Accou
             for account, entry in by_account.items()]
 
 
+def isin_of(details: Any) -> str | None:
+    """The ISIN in a ``ContractDetails``' ``secIdList`` (TagValue pairs),
+    upper-cased, or None when it lists none."""
+    for item in getattr(details, "secIdList", None) or ():
+        if str(getattr(item, "tag", "")).upper() == "ISIN" and getattr(item, "value", ""):
+            return str(item.value).strip().upper()
+    return None
+
+
 def duration_string(start: datetime, end: datetime) -> str:
     """Convert a [start, end] window to an IBKR durationStr.
 
@@ -267,6 +276,7 @@ class _Pending:
         self.option = False  # an option quote: record bid/ask ticks of any value
         self.model_iv: float | None = None
         self.contracts: list[Any] = []  # ibapi Contract objects from contractDetails
+        self.details: list[Any] = []    # the ContractDetails they came in (secIdList)
         self.option_params: list[OptionParams] = []
         self.positions: list[BrokerPosition] = []
         self.summary_rows: list[tuple[str, str, str, str]] = []
@@ -626,6 +636,24 @@ class IBKRBroker:
             raise InvalidContractError(f"IBKR knows no {spec.sec_type} {spec.symbol}")
         return int(pending.contracts[0].conId)
 
+    def get_isin(self, spec: ContractSpec) -> str | None:
+        """The instrument's ISIN from its contract details (ALLOCATION A1's
+        bridge to N-PORT lines), or None when IBKR lists none. Read-only.
+
+        Raises ``InvalidContractError`` when IBKR knows no such contract, or
+        when the symbol matches contracts with different ISINs: an
+        ambiguous match is refused, never guessed."""
+        req_id, pending = self._register_request()
+        self._app.reqContractDetails(req_id, self._to_contract(spec))
+        self._await(req_id, pending, cancel=lambda _req_id: None)
+        if not pending.contracts:
+            raise InvalidContractError(f"IBKR knows no {spec.sec_type} {spec.symbol}")
+        isins = {isin_of(details) for details in pending.details} - {None}
+        if len(isins) > 1:
+            raise InvalidContractError(f"{spec.symbol} matches several ISINs: "
+                                       f"{', '.join(sorted(isins))}")
+        return next(iter(isins), None)
+
     def get_option_strikes(self, symbol: str, trading_class: str,
                            expiries: Sequence[date]) -> dict[date, tuple[float, ...]]:
         """The strikes actually listed for each expiry of one trading class.
@@ -896,6 +924,7 @@ class IBKRBroker:
             pending = self._pending.get(req_id)
         if pending is not None:
             pending.contracts.append(details.contract)
+            pending.details.append(details)
 
     def _on_option_params(self, req_id: int, exchange: str, trading_class: str,
                           multiplier: str, expirations: Any, strikes: Any) -> None:

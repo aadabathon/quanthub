@@ -151,7 +151,7 @@ What-if (read-only)
 -------------------
 :math:`g` is an exact quadratic in any sleeve's scale, so "this sleeve
 :math:`x\%` bigger" gives the exact change in growth and vol within the
-replay. Nothing is traded: Quant Hub places no orders.
+replay. Nothing is traded.
 
 Options: aggregate greeks and carry
 -----------------------------------

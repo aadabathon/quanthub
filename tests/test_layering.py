@@ -24,13 +24,24 @@ The rules the whole design rests on:
   ``services/execution.py`` and the composition root ``core.py`` import.
   Neither module exists before E2, so today this asserts that no order
   call exists anywhere.
+* Every import is the standard library, ``quant_hub`` itself, or a
+  dependency declared in ``pyproject.toml``. So Quant Hub never names an
+  extension (D86): an extension depends on it, never the reverse. And no
+  dependency arrives unannounced.
 
 Source files are scanned as text (rather than imported) so the test needs no
-GUI display and cannot be fooled by import-time side effects.
+GUI display and cannot be fooled by import-time side effects. The import
+allowlist parses them with ``ast`` instead, which doesn't import them either,
+so prose that happens to start with "import" doesn't count.
 """
 
+import ast
 import re
+import sys
+import tomllib
 from pathlib import Path
+
+import pytest
 
 import quant_hub
 
@@ -60,7 +71,8 @@ RULES = {
             "quant_hub.broker.option_chain", "quant_hub.storage.bar_store",
             "quant_hub.storage.chain_store", "quant_hub.storage.position_store",
             "quant_hub.providers", "quant_hub.storage.fundamentals_store",
-            "quant_hub.storage.valuation_store"],
+            "quant_hub.storage.valuation_store",
+            "quant_hub.storage.series_store", "quant_hub.storage.holdings_store"],
 }
 
 QT_LIBRARIES = ("PySide6", "pyqtgraph", "qtawesome", "qtpy")
@@ -157,3 +169,37 @@ def test_only_the_execution_service_imports_the_order_adapter():
         if _ORDER_IMPORT_RE.search(path.read_text(encoding="utf-8")):
             offenders.append(str(relative))
     assert not offenders, f"the order adapter imported outside the execution path: {offenders}"
+
+
+def _declared_packages() -> set[str]:
+    """The distribution names in pyproject.toml's dependencies, every
+    optional group included, lowercased. Each one here imports under its own
+    name (numpy, pandas, PySide6, ibapi, …)."""
+    pyproject = PACKAGE_ROOT.parent / "pyproject.toml"
+    if not pyproject.exists():
+        pytest.skip("pyproject.toml isn't beside the package (an installed copy)")
+    project = tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"]
+    requirements = [*project.get("dependencies", []),
+                    *(r for group in project.get("optional-dependencies", {}).values()
+                      for r in group)]
+    return {re.split(r"[\s<>=!~\[;]", r, maxsplit=1)[0].lower() for r in requirements}
+
+
+def test_imports_are_the_stdlib_quant_hub_or_declared_dependencies():
+    """D86: Quant Hub never names an extension, or a package it doesn't
+    declare. Relative imports are quant_hub's own."""
+    allowed = ({name.lower() for name in sys.stdlib_module_names}
+               | {"quant_hub"} | _declared_packages())
+    offenders = []
+    for path in PACKAGE_ROOT.rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                roots = [alias.name.split(".")[0] for alias in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                roots = [node.module.split(".")[0]]
+            else:
+                continue
+            offenders += [f"{path.relative_to(PACKAGE_ROOT)} imports {root}"
+                          for root in roots if root.lower() not in allowed]
+    assert not offenders, "undeclared imports:\n" + "\n".join(offenders)

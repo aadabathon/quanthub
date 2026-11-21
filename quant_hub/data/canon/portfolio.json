@@ -23,7 +23,7 @@
     "question": "Why diversify, and how much of each asset should you hold?",
     "changed": "Choose portfolios by mean and variance: covariances make diversification computable, and the efficient frontier is born.",
     "assumed": "Investors care only about the mean and variance of one-period returns; inputs are known.",
-    "lives_in": ["quant_hub/models/portfolio.py", "quant_hub/models/growth.py"],
+    "lives_in": ["quant_hub/models/portfolio.py", "quant_hub/models/growth.py", "quant_hub/models/whatif.py"],
     "links": [{"to": "bernoulli1738", "kind": "builds_on"}],
     "verified": {"via": "crossref", "checked": "2026-11-02", "matched": ["title", "first_author", "year"]}
   },
@@ -192,7 +192,7 @@
     "doi": "10.1093/rfs/hhm075",
     "question": "Do optimized portfolios beat equal weights out of sample?",
     "changed": "Fourteen models fail to beat 1/N consistently; estimation windows would need centuries to win.",
-    "lives_in": [],
+    "lives_in": ["quant_hub/models/whatif.py"],
     "links": [{"to": "markowitz1952", "kind": "challenges"}, {"to": "blacklitterman1992", "kind": "tests"}],
     "verified": {"via": "crossref", "checked": "2026-11-02", "matched": ["title", "first_author", "year"]}
   },
@@ -205,7 +205,7 @@
     "doi": "10.3905/jpm.2010.36.4.060",
     "question": "What portfolio gives every asset the same share of risk?",
     "changed": "Formalized risk parity: it sits between minimum variance and 1/N and needs no expected returns.",
-    "lives_in": [],
+    "lives_in": ["quant_hub/models/whatif.py"],
     "links": [{"to": "demiguelgarlappiuppal2009", "kind": "builds_on"}],
     "verified": {"via": "crossref", "checked": "2026-11-02", "matched": ["title", "first_author", "year"]}
   },
@@ -232,8 +232,34 @@
     "doi": "10.1111/jofi.12513",
     "question": "Should exposure fall when volatility rises?",
     "changed": "Scaling factors by inverse recent variance raises Sharpe ratios and alphas, because volatility moves more than expected return.",
-    "lives_in": [],
+    "lives_in": ["quant_hub/models/hedge.py"],
     "links": [{"to": "merton1969", "kind": "builds_on"}, {"to": "engle1982", "kind": "builds_on"}],
     "verified": {"via": "crossref", "checked": "2026-11-02", "matched": ["title", "first_author", "year"]}
+  },
+  {
+    "id": "magillconstantinides1976",
+    "title": "Portfolio selection with transactions costs",
+    "authors": ["Michael J. P. Magill", "George M. Constantinides"],
+    "year": 1976,
+    "venue": "Journal of Economic Theory",
+    "doi": "10.1016/0022-0531(76)90018-1",
+    "question": "How does a Merton investor trade when every trade costs a proportion of its size?",
+    "changed": "The investor stops rebalancing continuously: the holding is left alone inside a region around the frictionless target, and traded only at its edge.",
+    "lives_in": [],
+    "links": [{"to": "merton1969", "kind": "builds_on"}],
+    "verified": {"via": "crossref", "checked": "2026-11-07", "matched": ["title", "first_author", "year"]}
+  },
+  {
+    "id": "davisnorman1990",
+    "title": "Portfolio Selection with Transaction Costs",
+    "authors": ["M. H. A. Davis", "A. R. Norman"],
+    "year": 1990,
+    "venue": "Mathematics of Operations Research",
+    "doi": "10.1287/moor.15.4.676",
+    "question": "What exactly is the optimal no-trade region when trades pay proportional costs?",
+    "changed": "A rigorous solution: a wedge around the Merton line, with trades only at its boundary, as a singular control problem.",
+    "lives_in": [],
+    "links": [{"to": "magillconstantinides1976", "kind": "builds_on"}],
+    "verified": {"via": "crossref", "checked": "2026-11-07", "matched": ["title", "first_author", "year"]}
   }
 ]

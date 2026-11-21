@@ -48,11 +48,28 @@ client_id = 3
     assert config.quote_timeout_s == AppConfig().quote_timeout_s           # untouched defaults
 
 
+def test_the_fred_key(tmp_path):
+    key = "0123456789abcdef0123456789abcdef"
+    config, problems = load_config(write(tmp_path, f'[fred]\nkey = " {key} "\n'))
+    assert problems == [] and config.fred_key == key
+    config, problems = load_config(write(tmp_path, '[fred]\nkey = "ABC"\n'))
+    assert config.fred_key == "" and "key must be your FRED API key" in problems[0]
+
+
 def test_the_sec_identity(tmp_path):
     config, problems = load_config(write(tmp_path, '[sec]\nidentity = " Jane Doe jane@example.com "\n'))
     assert problems == [] and config.sec_identity == "Jane Doe jane@example.com"
     config, problems = load_config(write(tmp_path, '[sec]\nidentity = "Jane Doe"\n'))
     assert config.sec_identity == "" and "identity must be your name and email" in problems[0]
+
+
+def test_extensions_are_on_unless_turned_off(tmp_path):
+    config, problems = load_config(write(tmp_path, ""))
+    assert problems == [] and config.extensions_enabled
+    config, problems = load_config(write(tmp_path, "[extensions]\nenabled = false\n"))
+    assert problems == [] and not config.extensions_enabled
+    config, problems = load_config(write(tmp_path, '[extensions]\nenabled = "no"\n'))
+    assert config.extensions_enabled and "must be true or false" in problems[0]
 
 
 def test_home_is_expanded_in_the_store_path(tmp_path):
@@ -94,3 +111,10 @@ def test_the_environment_can_name_another_file(tmp_path, monkeypatch):
     assert default_settings_path() == tmp_path / "paper.toml"
     monkeypatch.delenv(SETTINGS_ENV)
     assert default_settings_path() == Path.home() / ".quant_hub" / "settings.toml"
+
+
+def test_the_chain_watchlist_is_a_list_of_symbols(tmp_path):
+    config, problems = load_config(write(tmp_path, '[collect]\nchains = ["spx", " SPY ", "spx"]\n'))
+    assert config.collect_chains == ("SPX", "SPY") and problems == []
+    config, problems = load_config(write(tmp_path, '[collect]\nchains = "SPX"\n'))
+    assert config.collect_chains == () and "list of symbols" in problems[0]

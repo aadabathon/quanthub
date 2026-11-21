@@ -79,6 +79,7 @@ class FakeBroker:
     def get_history(self, spec, start, end, bar_size="1 day", what_to_show="TRADES"):
         self.bar_sizes.append(bar_size)
         self.what_to_show.append(what_to_show)
+        self.specs = getattr(self, "specs", []) + [spec]
         return self.bars
 
 
@@ -115,6 +116,23 @@ class TestIBKRSourceFetchBars:
         source.fetch_bars("SPY", datetime(2024, 1, 1), datetime(2024, 1, 31), "1 day",
                           PriceBasis.ADJUSTED)
         assert broker.what_to_show == ["TRADES", "ADJUSTED_LAST"]
+
+    def test_a_listed_index_is_an_index_contract_with_traded_levels(self):
+        # HEDGE U2 (D69): SPX and VIX are indices; both bases read TRADES, and
+        # IBKR's −1 volume stays negative, for the bar check to read as missing.
+        from quant_hub.data.types import PriceBasis
+        bars = [HistoricalBar(datetime(2024, 1, 2), 4700, 4750, 4690, 4742.8, -1)]
+        broker = FakeBroker(bars)
+        source = IBKRSource(broker)
+        for symbol in ("spx", "VIX"):
+            frame = source.fetch_bars(symbol, datetime(2024, 1, 1), datetime(2024, 1, 31), "1 day",
+                                      PriceBasis.ADJUSTED)
+            assert frame["volume"].tolist() == [-1.0]
+        assert [(s.symbol, s.sec_type, s.exchange) for s in broker.specs] == [
+            ("SPX", "IND", "CBOE"), ("VIX", "IND", "CBOE")]
+        assert broker.what_to_show == ["TRADES", "TRADES"]
+        source.fetch_bars("SPY", datetime(2024, 1, 1), datetime(2024, 1, 31))
+        assert broker.specs[-1].sec_type == "STK"
 
     def test_empty_window_yields_empty_frame(self):
         source = IBKRSource(FakeBroker(self.BARS))
