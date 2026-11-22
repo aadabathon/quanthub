@@ -33,6 +33,14 @@ tested against the closed forms.
   - historical and Gaussian VaR and expected shortfall
   - risk contributions and Kelly with its uncertainty
   - growth by sleeve, and α/β regressions
+- **What-if:** weight vectors (typed, built from today's book, or the four
+  references: minimum variance, equal risk, equal weight and an in-sample
+  max Sharpe) through Portfolio's analysis side by side: β ± SE, vol, VaR,
+  ES, drawdown, a century of crashes replayed at each vector's β, effective
+  holdings and growth. Nothing trades.
+- **Hedge Lab:** puts, spreads, collars, trend, vol targeting and cash on
+  the book (a β proxy since 1926, or today's mix), each on one yardstick:
+  its cost in calm years against what it saved in every crash.
 - **Return histogram:** one stored security's daily, weekly or monthly
   returns against a normal, with the latest move's percentile, the
   tails and a Q-Q view. Ctrl+K finds it as `HRH` too.
@@ -424,6 +432,14 @@ editable install (`pip install -e`) is all the setup it needs. One that
 fails is logged and skipped, never stopping the app, and a title or
 command name already taken is refused. Quant Hub never imports an
 extension: `tests/test_layering.py` fails if it does.
+
+An extension can also supply **today's book**: what What-if and the Hedge
+Lab analyse, with its own history source, benchmark, lookback, rate,
+sleeves and core. Without one they read the newest Portfolio snapshot with
+Portfolio's settings. It can supply a **grader** too, which grades every
+What-if vector against its own rules and adds Fails and Warns to the
+comparison. `quant_hub/services/book.py` defines both.
+
 `[extensions] enabled = false`, or `QUANT_HUB_NO_EXTENSIONS=1` for one
 run, turns them off. `quant_hub/extensions.py` has the details.
 

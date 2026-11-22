@@ -2131,6 +2131,185 @@ def test_vol_lab_heavy_noise_still_renders(qt_app):
     assert lab._table.rowCount() == len(lab._fit.slices)
 
 
+# ----------------------------------------------------------------- Hedge Lab
+
+def _seed_hedge_series(core, vix=True):
+    """Made-up French market and bills for 1990–1996, and VIX if asked."""
+    from quant_hub.data.series import FetchedSeries, SeriesMeta
+    dates = pd.bdate_range("1990-01-02", "1996-12-31")
+    rng = np.random.default_rng(9)
+    excess = rng.normal(0.0003, 0.01, len(dates))
+    excess[600:660] -= 0.006                               # a slide
+
+    def series(source, name, values, unit="fraction"):
+        meta = SeriesMeta(source, name, name, unit, "daily", "made up")
+        return FetchedSeries(meta, tuple(d.strftime("%Y-%m-%d") for d in dates),
+                             tuple(float(v) for v in values))
+    fetched = [series("french", "ff3.mkt_rf", excess),
+               series("french", "ff3.rf", np.full(len(dates), 0.0002))]
+    if vix:
+        fetched.append(series("fred", "vixcls", np.full(len(dates), 18.0), unit="percent"))
+    core.series_store.save(fetched, pd.Timestamp("2026-11-04").to_pydatetime(), "h")
+
+
+def _run_hedges(app, page, beta="0.90"):
+    page._beta.set_text(beta)
+    page._run()
+    wait_for(app, lambda: page._outcome is not None, timeout_s=120)
+
+
+def test_the_hedge_lab_runs_every_hedge_and_shows_the_selected_one(qt_app):
+    app, window = qt_app
+    _seed_hedge_series(window._core)
+    page = window.show_page("Hedge Lab")
+    assert page._beta.text() == "1.00"                      # Quant Hub's book suggests no β
+    _run_hedges(app, page)
+    assert page._table.rowCount() == 16 * 3                  # decision 2's list at three sizes
+    assert not page._missing.isVisibleTo(page)
+    assert "flat smile, ρ = 1" in page._shape_note._text.text()   # no stored chain
+    put = next(i for i, r in enumerate(page._rows)
+               if r.candidate.name == "Put 10% OTM, 3 mo" and r.size == 1.0)
+    page._table.selectRow(put)
+    app.processEvents()
+    assert page._stats.value_text("rolls") != "—" and page._stats.value_text("today") != "—"
+    assert page._crashes.rowCount() >= 1 and page._crashes.item(0, 0).text().startswith("199")
+    assert "Put 10% OTM, 3 mo at 100%" in page._growth_card.subtitle.full_text()
+    cash = next(i for i, r in enumerate(page._rows) if r.candidate.name == "Cash")
+    page._table.selectRow(cash)
+    app.processEvents()
+    assert page._stats.value_text("rolls") == "—"           # not an option program
+
+
+def test_the_hedge_lab_names_what_its_option_hedges_are_missing(qt_app):
+    app, window = qt_app
+    _seed_hedge_series(window._core, vix=False)
+    page = window.show_page("Hedge Lab")
+    _run_hedges(app, page, beta="1.00")
+    assert page._table.rowCount() == 4 * 3                   # trend ×2, vol targeting, cash
+    assert page._missing.isVisibleTo(page)
+    assert "Fetch FRED series" in page._missing._text.text()
+    assert "Put 5% OTM, 1 mo" in page._missing._text.text()
+    page._beta.set_text("lots")
+    page._run()
+    assert page._header._status.full_text().startswith("β")  # the field names itself
+
+
+def test_the_hedge_lab_runs_todays_mix_from_the_book(qt_app, tmp_path):
+    # D89: today's mix is core.book's: the newest Portfolio snapshot with
+    # Portfolio's settings.
+    from book_fixtures import bars, export
+    app, window = qt_app
+    core = window._core
+    _seed_hedge_series(core)
+    bars(core.store, end=pd.Timestamp.today().normalize())
+    core.state_store.save("portfolio", {"source": "file", "benchmark": "SPY",
+                                        "lookback": "730", "rate": "4.0"})
+    path = tmp_path / "positions.csv"
+    path.write_text(export("10/22/2026", {"AAA": 40, "BBB": 20, "CCC": 10}, 3000),
+                    encoding="utf-8")
+    core.portfolio.import_positions(path)
+    page = window.show_page("Hedge Lab")
+    page._book.select.set_current("Today's mix")
+    _run_hedges(app, page, beta="1.00")
+    assert page._table.rowCount() > 0
+    assert not page._header._status.property("role") == "statusError"
+
+
+# -------------------------------------------------------------------- What-if
+
+def _whatif_book(core, tmp_path, **settings):
+    """Made-up bars under "file" ending today, one imported export, and the
+    Portfolio settings record pointing at them."""
+    from book_fixtures import bars, export
+    bars(core.store, end=pd.Timestamp.today().normalize())
+    core.state_store.save("portfolio", {"source": "file", "benchmark": "SPY",
+                                        "lookback": "730", "rate": "4.0", **settings})
+    path = tmp_path / "positions.csv"
+    path.write_text(export("10/22/2026", {"AAA": 40, "BBB": 20, "CCC": 10}, 3000),
+                    encoding="utf-8")
+    core.portfolio.import_positions(path)
+
+
+def test_the_whatif_page_builds_compares_and_saves_vectors(qt_app, tmp_path):
+    app, window = qt_app
+    _whatif_book(window._core, tmp_path)
+    page = window.show_page("What-if")
+    wait_for(app, lambda: page._ctx is not None, timeout_s=60)
+    assert list(page._vectors) == ["Today"] and page._context_note.isVisibleTo(page)
+    assert "newest snapshot on Portfolio" in page._context_note._text.text()
+
+    for builder, value in (("Index and cash", "70"), ("Picks netted into the core", "0.90"),
+                           ("Today, picks to a total", "15")):
+        page._builder.select.set_current(builder)
+        page._on_builder(builder)
+        assert page._params[builder].isVisibleTo(page)
+        page._params[builder].set_text(value)
+        page._build()
+    page._name.set_text("Barbell")
+    page._editor.setPlainText("SPY 50\nBBB 10")
+    page._add_typed()
+    assert list(page._vectors) == ["Today", "SPY 70%", "Netted at β 0.90", "Picks at 15%",
+                                   "Barbell"]
+    page._list.selectRow(3)
+    page._remove()
+    assert "Picks at 15%" not in page._vectors
+
+    page._editor.setPlainText("SPY sixty")
+    page._add_typed()
+    assert page._header._status.full_text().startswith("line 1")      # refused, by line
+
+    page._builder.select.set_current("The four references")
+    page._build()
+    wait_for(app, lambda: len(page._vectors) == 8, timeout_s=60)
+    page._compare()
+    wait_for(app, lambda: page._last is not None, timeout_s=120)
+    # No grader in Quant Hub alone: the Fails and Warns rows aren't shown.
+    assert page._table.columnCount() == 1 + 8 and page._table.rowCount() == 9
+    labels = [page._table.item(r, 0).text() for r in range(page._table.rowCount())]
+    assert labels[0] == "β ± SE" and "Fails" not in labels
+    assert page._sharpe_note.isVisibleTo(page) and page._notes.isVisibleTo(page)
+    assert "Fetch Ken French factors" in page._notes._text.text()     # why crash stress is blank
+    assert page._risk.columnCount() == 1 + 8
+
+    page._name.set_text("Barbell")
+    page._editor.setPlainText("SPY 50\nBBB 10")
+    page._save_set()
+    wait_for(app, lambda: page._sets.current() == "Barbell", timeout_s=30)
+    del page._vectors["Barbell"]
+    page._load_set()
+    assert page._vectors["Barbell"] == {"SPY": 0.5, "BBB": 0.1}
+    page._delete_set()
+    wait_for(app, lambda: page._sets.current() == "(no saved sets)", timeout_s=30)
+
+
+def test_the_whatif_page_says_what_todays_book_needs(qt_app, tmp_path):
+    app, window = qt_app
+    _whatif_book(window._core, tmp_path, lookback="two years")
+    page = window.show_page("What-if")
+    wait_for(app, lambda: not page._loading, timeout_s=30)
+    assert page._ctx is None
+    status = page._header._status.full_text()
+    assert "can't be read" in status and "Lookback" in status
+    page._compare()
+    assert page._header._status.full_text().startswith("Load today's book")
+
+
+def test_portfolio_and_the_book_read_one_settings_record(qt_app):
+    # D89: What-if and the Hedge Lab analyse the book as Portfolio does, so
+    # the page's fields, once saved, are the book's settings.
+    from quant_hub.services.book import portfolio_settings
+    app, window = qt_app
+    page = window.show_page("Portfolio")
+    page._benchmark.set_text("BBB")
+    page._lookback.set_text("365")
+    page._rate.set_text("5.5")
+    window.show_page("Markets")                             # a tab switch saves the page
+    core = window._core
+    settings = portfolio_settings(core.state_store, core.market_service.source_names)
+    assert (settings.benchmark, settings.lookback) == ("BBB", 365)
+    assert settings.rate == pytest.approx(0.055)
+
+
 # -------------------------------------------------------- snapshot hygiene (A4)
 
 def test_portfolio_asks_before_a_reimport_and_deletes_after_a_backup(qt_app, tmp_path):

@@ -1,5 +1,5 @@
-"""Extensions: pages and commands from other installed packages, found at
-startup (D86, D87).
+"""Extensions: pages, commands and today's book from other installed
+packages, found at startup (D86, D87, D89).
 
 Quant Hub can be extended without editing it. A package declares an entry
 point in the ``quant_hub.extensions`` group of its ``pyproject.toml``::
@@ -16,6 +16,16 @@ calls ``load_extensions`` after ``build_core``, then ``merge_pages`` and
 A command is a ``Callable[[], None]`` that Ctrl+K runs on the GUI thread,
 so anything slow submits itself to ``core.tasks``. A name the window
 already uses, or one an earlier extension took, is refused and reported.
+
+**Today's book** (D89, ``services/book.py``). An extension may also supply:
+- a ``book``, a ``BookSource``: What-if and the Hedge Lab then read today's
+  book from it, with its own settings, sleeves and core, instead of
+  ``core.book`` (the newest Portfolio snapshot with Portfolio's settings)
+- a ``grader``, a ``Grader``: What-if then grades every vector by it and
+  shows the fails and warns
+
+``merge_book`` picks them: the first extension to supply each keeps it, and
+any later one is refused and reported, as titles and commands are.
 
 The rules:
 
@@ -73,6 +83,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 if TYPE_CHECKING:
     from quant_hub.config import AppConfig
     from quant_hub.core import Core
+    from quant_hub.services.book import BookSource, Grader
 
 ENTRY_POINT_GROUP = "quant_hub.extensions"
 DISABLE_ENV = "QUANT_HUB_NO_EXTENSIONS"
@@ -119,6 +130,10 @@ class Extension:
     # Ctrl+K commands, name -> what to run (on the GUI thread; slow work
     # goes through core.tasks).
     commands: Mapping[str, Callable[[], None]] = field(default_factory=dict)
+    # Today's book for What-if and the Hedge Lab, and a grader for What-if's
+    # vectors (services/book.py's BookSource and Grader); None: Quant Hub's.
+    book: BookSource | None = None
+    grader: Grader | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.name, str) or not self.name.strip():
@@ -132,6 +147,12 @@ class Extension:
                 raise ValueError(f"extension {self.name!r}: a command needs a name")
             if not callable(run):
                 raise ValueError(f"extension {self.name!r}: command {command!r} isn't callable")
+        # Checked by shape, so this module needn't import the services.
+        if self.book is not None and not all(
+                callable(getattr(self.book, name, None)) for name in ("book", "latest_beta")):
+            raise ValueError(f"extension {self.name!r}: book needs book() and latest_beta()")
+        if self.grader is not None and not callable(getattr(self.grader, "grade", None)):
+            raise ValueError(f"extension {self.name!r}: grader needs grade()")
 
 
 class EntryPointLike(Protocol):
@@ -234,6 +255,29 @@ def merge_commands(extensions: Iterable[Extension]
                 continue
             merged[name], owner[name] = run, extension.name
     return merged, problems
+
+
+def merge_book(extensions: Iterable[Extension]
+               ) -> tuple[BookSource | None, Grader | None, list[str]]:
+    """The first extension's book and the first extension's grader (either
+    may be None: Quant Hub's book, no grader), and every one refused."""
+    book = grader = None
+    book_owner = grader_owner = ""
+    problems: list[str] = []
+    for extension in extensions:
+        if extension.book is not None:
+            if book is None:
+                book, book_owner = extension.book, extension.name
+            else:
+                problems.append(f"{extension.name}: today's book is already {book_owner}'s,"
+                                " so this one is skipped")
+        if extension.grader is not None:
+            if grader is None:
+                grader, grader_owner = extension.grader, extension.name
+            else:
+                problems.append(f"{extension.name}: the grader is already {grader_owner}'s,"
+                                " so this one is skipped")
+    return book, grader, problems
 
 
 def shut_down(extensions: Iterable[Extension]) -> None:
