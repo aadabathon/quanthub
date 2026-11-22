@@ -81,6 +81,14 @@ from quant_hub.models.growth import ADDS, COSTS, GrowthReport, what_if
 from quant_hub.models.portfolio import InfluentialDay
 from quant_hub.models.regression import Z95
 from quant_hub.services.accounts import AccountService
+from quant_hub.services.book import (
+    DEFAULT_BENCHMARK,
+    DEFAULT_LOOKBACK,
+    DEFAULT_RATE,
+    DEFAULT_SOURCE,
+    MIN_LOOKBACK,
+    PORTFOLIO_STATE_KEY,
+)
 from quant_hub.services.market_service import MarketService
 from quant_hub.services.portfolio import (
     PORTFOLIO_ROW,
@@ -95,7 +103,9 @@ from quant_hub.tasks import TaskRunner
 
 _logger = logging.getLogger(__name__)
 
-_STATE_KEY = "portfolio"
+# One record for the page and PortfolioBook, which What-if and the Hedge
+# Lab read today's book through (D89).
+_STATE_KEY = PORTFOLIO_STATE_KEY
 _IMPORTED, _EXAMPLE = "Imported", "Example"
 _ALL_ACCOUNTS = "All accounts"
 _LAGS = {"Off": 0, "1 day": 1}          # the Dimson lag of the benchmark
@@ -319,12 +329,14 @@ class PortfolioPage(ScrollPage):
         self._accounts.select.current_changed.connect(lambda _a: self._analyse())
         card.body.addWidget(self._accounts)
         names = self._market.source_names
-        default = saved.get("source", "ibkr")
+        default = saved.get("source", DEFAULT_SOURCE)
         self._source = SelectField("Prices from", names,
                                    default if default in names else names[0], _HALF)
-        self._benchmark = Field("Benchmark", saved.get("benchmark", "SPY"), _HALF, uppercase=True)
-        self._lookback = Field("Lookback (calendar days)", saved.get("lookback", "730"), _HALF)
-        self._rate = Field("Rate %", saved.get("rate", "4.0"), _HALF)
+        self._benchmark = Field("Benchmark", saved.get("benchmark", DEFAULT_BENCHMARK), _HALF,
+                                uppercase=True)
+        self._lookback = Field("Lookback (calendar days)",
+                               saved.get("lookback", DEFAULT_LOOKBACK), _HALF)
+        self._rate = Field("Rate %", saved.get("rate", DEFAULT_RATE), _HALF)
         lags = saved.get("lags", "Off")
         self._lags = SelectField("Lagged β", list(_LAGS), lags if lags in _LAGS else "Off", _HALF)
         self._lags.select.current_changed.connect(lambda _l: self._analyse())
@@ -540,7 +552,7 @@ class PortfolioPage(ScrollPage):
     # ------------------------------------------------------------- analyse
     def _analyse(self) -> None:
         try:
-            lookback = self._lookback.number(integer=True, minimum=120)
+            lookback = self._lookback.number(integer=True, minimum=MIN_LOOKBACK)
             rate = self._rate.number(scale=0.01)
             benchmark = self._benchmark.required_text()
             factors = tuple(dict.fromkeys(                   # pasted text isn't uppercased

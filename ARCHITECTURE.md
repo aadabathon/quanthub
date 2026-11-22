@@ -105,7 +105,8 @@ quant_hub/
 │   │                          search + IBKR control, status + log drawer)
 │   └── pages/                 base.py (Page, ScrollPage, Shell, debounce),
 │                              dashboard.py, markets.py, returns.py (HRH),
-│                              data.py (D64), garch_lab.py,
+│                              data.py (D64), whatif.py (D73), hedge_lab.py (D71),
+│                              garch_lab.py,
 │                              simulator.py, options_lab/ (page, underlying,
 │                              pricer, strategy, monte_carlo), volatility_lab.py,
 │                              kalman_lab.py, markov_lab.py, valuation.py,
@@ -273,11 +274,11 @@ quant_hub/
                                plot_vol_heatmap
 ```
 
-## Added in v1.1
+## Added since 1.0
 
-New since 1.0, layer by layer. Each module's docstring has the detail.
+Layer by layer. Each module's docstring has the detail.
 
-- `extensions.py` — installed extensions' pages and Ctrl+K commands: load, place, shut down (D86, D87)
+- `extensions.py` — installed extensions' pages and Ctrl+K commands: load, place, shut down (D86, D87); an extension's book and grader, the first of each kept (`merge_book`, D89)
 - `data/series.py` — SeriesMeta/FetchedSeries/StoredSeries: outside series as fetched, with unit, citation and vintage; fractions for returns (D60)
 - `data/holdings.py` — Holding/FundHoldings: one N-PORT report as filed; weights as fractions of net assets (D62)
 - `data/trading_calendar.py` — NYSE holidays by rule from 1998 (Easter, observed days, special closures); trading_days (D63)
@@ -291,6 +292,8 @@ New since 1.0, layer by layer. Each module's docstring has the detail.
 - `services/fund_holdings.py` — ticker → latest N-PORT report: checked monthly, new filings kept beside old, offline (D62)
 - `services/security_ids.py` — held symbols' ISINs: stored, else IBKR's when connected (D66)
 - `services/chain_collector.py` — the watchlist's chains once a trading day after 09:45 NY, wide band, one symbol per task (D63)
+- `services/book.py` — today's book for What-if and the Hedge Lab: `Book` (the analysed snapshot, its settings, sleeves and core), the `BookSource` and `Grader` protocols, `Grades`, and `PortfolioBook`: the newest Portfolio snapshot with the Portfolio page's own settings record, the example portfolio before any import (D89)
+- `services/whatif.py` — the What-if job: today's context from the book source, builders, references, each vector analysed, crash-replayed and (with a grader) graded; named sets (A3, D72, D89)
 - `services/hedge.py` — hedges on stored data: the β proxy and a mix's book, today's shape (ρ, smile, spread), every candidate at every size, today's prices; offline (D70)
 - `importers/shiller_csv.py` — Shiller's ie_data Data sheet saved as CSV → monthly series by header label; Oct = 1871.1, provisional last month dropped (T1, D61)
 - `providers/ken_french.py` — Ken French's daily FF3, FF5 and momentum zips through the stdlib: client + pure parser, percent → fraction, terms in the docstring (D60)
@@ -335,6 +338,12 @@ Returns    = one stored security's return histogram (HRH): the latest move's
              rank, tails, A-D and JB, a Q-Q view (D84, D85)
 Data       = what the store holds, by kind: outside series with a preview and
              citation, fund holdings, chain snapshots, price history (D64)
+What-if    = weight vectors (typed, built from today's book, or the four references)
+             through Portfolio's analysis side by side, with the crash replay and
+             risk shares; saved sets; nothing trades (A3, D72–D73, D89)
+Hedge Lab  = every hedge on the book (β proxy since 1926, or today's mix): the
+             frontier, growth and drawdown, the crash table, the selected hedge's
+             card with today's price (HEDGE U1–U4, D71, D89)
 Simulator  = controlled stochastic experiments (the GBM/Monte Carlo lab)
 Options Lab= pricing/IV, multi-leg strategies, MC check over one MarketInputs
 GARCH Lab  = conditional-volatility fit: synthetic GARCH or explicit source history

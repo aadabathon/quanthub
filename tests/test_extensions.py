@@ -1,5 +1,6 @@
-"""Extensions (D86, D87): loading, problems, placement, commands, the off
-switch, shutdown, and an extension's page and command reaching the window."""
+"""Extensions (D86, D87, D89): loading, problems, placement, commands, today's
+book and a grader, the off switch, shutdown, and an extension's page,
+command, book and grader reaching the window."""
 
 import os
 
@@ -13,6 +14,7 @@ from quant_hub.extensions import (
     PageSpec,
     extensions_wanted,
     load_extensions,
+    merge_book,
     merge_commands,
     merge_pages,
     shut_down,
@@ -162,6 +164,76 @@ class TestCommands:
             Extension("a", commands={" ": lambda: None})
         with pytest.raises(ValueError, match="isn't callable"):
             Extension("a", commands={"Run it": "not a function"})
+
+
+class Books:
+    """A stand-in BookSource: ``inner``'s book, and a β to suggest."""
+
+    def __init__(self, inner=None, beta=0.8):
+        self.inner, self.beta = inner, beta
+
+    def book(self, now=None):
+        return self.inner.book(now)
+
+    def latest_beta(self):
+        return self.beta
+
+
+class Grades1:
+    """A stand-in Grader: one fail per vector holding BBB, one warn each."""
+
+    def grade(self, view, snapshot, book):
+        from quant_hub.services.book import Grades
+        held = {p.symbol for p in snapshot.positions}
+        return Grades(fails=int("BBB" in held), warns=1, effective=2.0)
+
+
+class TestBook:
+    def test_the_first_book_and_the_first_grader_are_kept(self):
+        a, b, g = Books(), Books(), Grades1()
+        book, grader, problems = merge_book([Extension("a", book=a), Extension("b", book=b),
+                                             Extension("c", grader=g), Extension("d", grader=g)])
+        assert book is a and grader is g
+        assert problems == ["b: today's book is already a's, so this one is skipped",
+                            "d: the grader is already c's, so this one is skipped"]
+        assert merge_book([Extension("plain")]) == (None, None, [])
+
+    def test_a_book_and_a_grader_are_checked_by_shape(self):
+        with pytest.raises(ValueError, match="book needs book"):
+            Extension("a", book=object())
+        with pytest.raises(ValueError, match="grader needs grade"):
+            Extension("a", grader=object())
+
+
+def test_an_extensions_book_and_grader_reach_whatif_and_the_hedge_lab(tmp_path, monkeypatch):
+    """D89: the extension's book is What-if's and the Hedge Lab's, its β is
+    the Hedge Lab's start, and its grader adds What-if's Fails and Warns."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    pytest.importorskip("PySide6")
+    from quant_hub.app import create_app
+    from test_gui_smoke import _close, _whatif_book, wait_for
+
+    monkeypatch.delenv(DISABLE_ENV)
+    monkeypatch.setattr(ext, "_discover", lambda: [EntryPoint(
+        "stand-in", lambda core: Extension("stand-in", book=Books(core.book, 0.8),
+                                           grader=Grades1()))])
+    app, window = create_app(AppConfig(db_path=tmp_path / "s.db", ibkr_enabled=False),
+                             argv=["test"])
+    try:
+        window.show()
+        _whatif_book(window._core, tmp_path)
+        hedge = window.show_page("Hedge Lab")
+        wait_for(app, lambda: hedge._beta.text() == "0.80", timeout_s=30)
+        page = window.show_page("What-if")
+        wait_for(app, lambda: page._ctx is not None, timeout_s=60)
+        page._compare()
+        wait_for(app, lambda: page._last is not None, timeout_s=120)
+        labels = [page._table.item(r, 0).text() for r in range(page._table.rowCount())]
+        assert labels[-2:] == ["Fails", "Warns"] and page._table.rowCount() == 11
+        assert page._table.item(labels.index("Fails"), 1).text() == "1"
+        assert page._table.item(labels.index("Effective holdings"), 1).text() == "2.0"
+    finally:
+        _close(app, window)
 
 
 def test_shutdown_runs_every_one_even_after_a_failure():

@@ -20,6 +20,7 @@ from quant_hub.data.sources import SyntheticSource
 from quant_hub.events import EventBus, EventBusLogHandler
 from quant_hub.tasks import TaskRunner
 from quant_hub.services.accounts import AccountService
+from quant_hub.services.book import PortfolioBook
 from quant_hub.services.cached_source import CachedSource
 from quant_hub.services.chain_collector import ChainCollector
 from quant_hub.services.external_data import ExternalDataService
@@ -75,6 +76,9 @@ class Core:
     fund_holdings: FundHoldingsService
     security_ids: SecurityIdService
     hedge: HedgeService
+    # Today's book as Portfolio analyses it: What-if's and the Hedge Lab's,
+    # unless an extension supplies its own (D89).
+    book: PortfolioBook
     tasks: TaskRunner
     # Read-only IBKR accounts (E1); None when IBKR is off in settings.
     accounts: AccountService | None = None
@@ -206,5 +210,6 @@ def build_core(config: AppConfig | None = None) -> Core:
         holdings_store=holdings_store, fund_holdings=fund_holdings, security_ids=security_ids,
         # The hedge lab's job, on stored data only (HEDGE U3, D70).
         hedge=HedgeService(external_data, chains, store),
+        book=PortfolioBook(portfolio, market_service, state_store),
         accounts=AccountService(broker) if ibkr else None,
     )

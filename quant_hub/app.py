@@ -19,12 +19,13 @@ from PySide6.QtWidgets import QApplication
 from quant_hub import __version__
 from quant_hub.config import AppConfig
 from quant_hub.core import Core, build_core
-from quant_hub.extensions import (extensions_wanted, load_extensions, merge_commands,
-                                  merge_pages, shut_down)
+from quant_hub.extensions import (extensions_wanted, load_extensions, merge_book,
+                                  merge_commands, merge_pages, shut_down)
 from quant_hub.gui.app_icon import APP_USER_MODEL_ID, app_icon
 from quant_hub.gui.main_window import MainWindow, PageSections
 from quant_hub.gui.pages.dashboard import DashboardPage
 from quant_hub.gui.pages.garch_lab import GARCHLabPage
+from quant_hub.gui.pages.hedge_lab import HedgeLabPage
 from quant_hub.gui.pages.kalman_lab import KalmanLabPage
 from quant_hub.gui.pages.markets import MarketsPage
 from quant_hub.gui.pages.markov_lab import MarkovLabPage
@@ -36,11 +37,19 @@ from quant_hub.gui.pages.returns import ReturnHistogramPage
 from quant_hub.gui.pages.simulator import SimulatorPage
 from quant_hub.gui.pages.valuation import ValuationPage
 from quant_hub.gui.pages.volatility_lab import VolatilityLabPage
+from quant_hub.gui.pages.whatif import WhatIfPage
 from quant_hub.gui.theme import apply_theme
+from quant_hub.services.book import BookSource, Grader
+from quant_hub.services.whatif import WhatIfService
 
 _logger = logging.getLogger(__name__)
 
-def _sections(core: Core) -> PageSections:
+def _sections(core: Core, book: BookSource | None = None,
+              grader: Grader | None = None) -> PageSections:
+    """Quant Hub's pages. ``book`` and ``grader`` are an extension's, when
+    one supplies them (D89); What-if and the Hedge Lab read ``core.book``
+    otherwise, and What-if grades nothing."""
+    book = book if book is not None else core.book
     dashboard = ("Dashboard", "ph.house", lambda shell: DashboardPage(
         shell, core.workstation, core.file_import, core.tasks, core.state_store, core.config))
     markets = ("Markets", "ph.chart-bar", lambda shell: MarketsPage(
@@ -66,10 +75,16 @@ def _sections(core: Core) -> PageSections:
     data = ("Data", "ph.database", lambda shell: DataPage(
         shell, core.external_data, core.fund_holdings, core.chains, core.chain_collector,
         core.workstation, core.tasks, core.state_store))
+    whatif = ("What-if", "ph.git-diff", lambda _shell: WhatIfPage(
+        WhatIfService(core.portfolio, book, core.state_store, core.external_data, grader),
+        core.tasks, core.state_store))
+    hedge_lab = ("Hedge Lab", "ph.umbrella", lambda _shell: HedgeLabPage(
+        core.hedge, book, core.tasks, core.state_store))
     research = ("Research", "ph.file-text", lambda _shell: ResearchPage(
         core.research, core.market_service, core.tasks, core.state_store))
     return [
-        (None, [dashboard, markets, returns, data, portfolio, valuation, simulator, options]),
+        (None, [dashboard, markets, returns, data, portfolio, whatif, hedge_lab, valuation,
+                simulator, options]),
         ("Research", [garch, vol_lab, kalman, markov, research]),
     ]
 
@@ -87,13 +102,15 @@ def create_app(config: AppConfig | None = None,
     app.setWindowIcon(app_icon())
     apply_theme(app)
     core = build_core(config)
-    # Installed extensions add their pages and commands (D86, D87). One that
-    # fails is logged and skipped: an extension never stops the app.
+    # Installed extensions add their pages and commands, and may supply
+    # today's book and a grader (D86, D87, D89). One that fails is logged and
+    # skipped: an extension never stops the app.
     extensions, problems = (load_extensions(core) if extensions_wanted(core.config)
                             else ([], []))
-    sections, placement = merge_pages(_sections(core), extensions)
+    book, grader, refused = merge_book(extensions)
+    sections, placement = merge_pages(_sections(core, book, grader), extensions)
     commands, taken = merge_commands(extensions)
-    for problem in [*problems, *placement, *taken]:
+    for problem in [*problems, *refused, *placement, *taken]:
         _logger.warning("extension %s", problem)
     for extension in extensions:
         _logger.info("extension %s: %d page(s), %d command(s)", extension.name,
