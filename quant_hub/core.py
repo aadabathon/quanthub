@@ -219,6 +219,7 @@ def build_core(config: AppConfig | None = None) -> Core:
         # The hedge lab's job, on stored data only (HEDGE U3, D70).
         hedge=HedgeService(external_data, chains, store),
         book=PortfolioBook(portfolio, market_service, state_store),
-        activity_store=activity_store, activity=ActivityService(activity_store),
+        activity_store=activity_store,
+        activity=ActivityService(activity_store, position_store),
         accounts=AccountService(broker) if ibkr else None,
     )

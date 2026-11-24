@@ -84,5 +84,30 @@ def test_a_fidelity_download_names_the_wording_it_kept_as_other(service, tmp_pat
     from tests.test_activity_csv import FIDELITY
     (result,) = service.import_activity(write(tmp_path, "history.csv", FIDELITY.lstrip("﻿")))
     assert (result.summary.source, result.summary.added) == ("Fidelity", 7)
-    assert result.unrecognized[1] == "Electronic Funds Transfer Received (Cash)"
-    assert len(result.unrecognized) == 3
+    assert result.unrecognized[1] == "YOU BOUGHT US TREASURY NOTE (91282CAB7) (Cash)"
+    assert len(result.unrecognized) == 2
+
+
+def test_reconcile_uses_file_snapshots_one_per_day(tmp_path):
+    from datetime import datetime
+
+    from quant_hub.data.positions import Holding, Position, PositionSnapshot
+    from quant_hub.storage.position_store import PositionStore
+
+    def snapshot(day: int, shares: float, name: str) -> PositionSnapshot:
+        return PositionSnapshot((Position("AAA", Holding.EQUITY, shares, "Brokerage"),),
+                                datetime(2026, 3, day), "Generic", name)
+
+    store, positions = ActivityStore(":memory:"), PositionStore(":memory:")
+    service = ActivityService(store, positions)
+    service.import_activity(write(tmp_path, "march.csv", MARCH))     # +10 on the 2nd, -10 on the 20th
+    positions.save(snapshot(10, 10.0, "old.csv"), datetime(2026, 3, 10, 9), "aa")
+    positions.save(snapshot(10, 99.0, "wrong.csv"), datetime(2026, 3, 10, 8), "bb")  # older import
+    positions.save(snapshot(25, 0.0, "late.csv"), datetime(2026, 3, 25, 9), "cc")
+    positions.save(snapshot(26, 7.0, "live.csv"), datetime(2026, 3, 26, 9), "")      # not a file
+    result = service.reconcile()
+    assert result.reconciled and [i.end_name for i in result.intervals] == ["late.csv"]
+    assert result.intervals[0].start_name == "old.csv"
+    with pytest.raises(ValueError, match="no positions store"):
+        ActivityService(store).reconcile()
+    store.close(), positions.close()

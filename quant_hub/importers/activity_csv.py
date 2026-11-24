@@ -1,4 +1,4 @@
-"""Activity from CSV: a broker's transaction history (TR1, TR1b, D90, D91).
+"""Activity from CSV: a broker's transaction history (TR1, TR1b, TR2, D90–D92).
 
 This module reads a history file into a ``data.activity.ActivityFile``;
 nothing else (no prices fetched, no storage). A broker's own layout is
@@ -41,25 +41,48 @@ Date``, ``Action``, ``Amount ($)``, ...):
   as ``data.activity`` has them (a sale's quantity is negative);
 * the price rounded to the cent, which ``data.activity``'s tolerance allows
   for;
-* the kind is in the ``Action`` wording, which is kept as the description.
+* the kind is in the ``Action`` wording, which is kept as the description;
+* a security whose ``Symbol`` cell is empty (after a reverse split, say)
+  is named in the wording by its CUSIP in parentheses, which becomes the
+  symbol; crypto trades are worded in lower case (``You bought 0.01
+  BITCOIN at $...``).
 
-**The action map holds only wording seen in a real export:**
+**The action map holds only wording seen in a real export** (case doesn't
+matter; the first match in this order wins):
 
-=========================  ==========
-Action begins              kind
-=========================  ==========
-``YOU BOUGHT``             buy
-``YOU SOLD``               sell
-``REINVESTMENT``           reinvest
-``DIVIDEND RECEIVED``      dividend
-=========================  ==========
+===============================================  ===========================
+Action begins                                    kind
+===============================================  ===========================
+``YOU BOUGHT SHORT COVER``                       cover
+``YOU SOLD SHORT SALE``                          short
+``YOU BOUGHT OPENING TRANSACTION``               buy (an option, to open)
+``YOU BOUGHT``                                   buy
+``YOU SOLD``                                     sell
+``REINVESTMENT``                                 reinvest
+``DIVIDEND RECEIVED``, ``DIVIDEND CHARGED``      dividend (charged on a short)
+``EXPIRED``                                      expire
+``ELECTRONIC FUNDS TRANSFER RECEIVED``           deposit
+``ELECTRONIC FUNDS TRANSFER PAID``               withdrawal
+``CASH CONTRIBUTION``                            deposit (into an IRA)
+``TRANSFERRED TO``                               withdrawal (to another account)
+``OTHER CREDIT`` / ``OTHER DEBIT``               deposit / withdrawal
+``TRANSFER IN FROM`` / ``TRANSFER OUT TO``       deposit / withdrawal
+``EARLY DIST``                                   withdrawal (an IRA distribution)
+``MARGIN INTEREST``                              interest
+``FEE CHARGED``                                  fee
+``CORP INT ADJUSTMENT SHORT SALE BORROWING FEES``  fee
+``SHORT VS MARGIN MARK TO MARKET``               journal
+===============================================  ===========================
+
+A deposit or withdrawal between two of your own accounts is a flow for
+each account; the two legs cancel when the accounts are taken together.
 
 Anything else is read as ``other``: kept, shown
 (``ActivityFile.unrecognized``), and with no effect on P&L until an export
-shows what it is and the map grows. So are a buy or sell worded as more
-than a plain trade (``OPENING TRANSACTION``, ``CLOSING TRANSACTION``,
-``SHORT``: an option's opening sale, say, isn't a sale of shares held), a
-row whose ``Type`` is ``Short``, and a trade with accrued interest (a bond,
+shows what it is and the map grows. So is a plain ``YOU BOUGHT`` or ``YOU
+SOLD`` worded as more than a plain trade (``OPENING TRANSACTION``, ``CLOSING
+TRANSACTION``, ``SHORT``: an option's opening sale, say, isn't a sale of
+shares held) or typed ``Short``, and any trade with accrued interest (a bond,
 whose amount isn't q·p). That guard only ever widens ``other``; it never
 assigns a kind from wording no export has shown.
 
@@ -80,22 +103,44 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import IO
 
-from quant_hub.data.activity import ActivityFile, Kind, RowProblem, Transaction
+from quant_hub.data.activity import TRADES, ActivityFile, Kind, RowProblem, Transaction
 from quant_hub.data.positions import OptionContract
 from quant_hub.importers.positions_csv import parse_option_symbol
 
 _EMPTY = {"", "--", "n/a", "na"}
 _LAYOUT_HINT = "date,account,kind,symbol,quantity,price,commission,fees,amount"
 
-# Fidelity's action wording, each seen in a real export, and the kind it means.
+# Fidelity's action wording, each seen in a real export, and the kind it
+# means. The first prefix that matches wins, so the specific come first.
 _FIDELITY_ACTIONS = (
+    ("YOU BOUGHT SHORT COVER ", Kind.COVER),
+    ("YOU SOLD SHORT SALE ", Kind.SHORT),
+    ("YOU BOUGHT OPENING TRANSACTION ", Kind.BUY),
     ("YOU BOUGHT ", Kind.BUY),
     ("YOU SOLD ", Kind.SELL),
     ("REINVESTMENT ", Kind.REINVEST),
     ("DIVIDEND RECEIVED ", Kind.DIVIDEND),
+    ("DIVIDEND CHARGED ", Kind.DIVIDEND),
+    ("EXPIRED ", Kind.EXPIRE),
+    ("ELECTRONIC FUNDS TRANSFER RECEIVED", Kind.DEPOSIT),
+    ("ELECTRONIC FUNDS TRANSFER PAID", Kind.WITHDRAWAL),
+    ("CASH CONTRIBUTION", Kind.DEPOSIT),
+    ("TRANSFERRED TO ", Kind.WITHDRAWAL),
+    ("OTHER CREDIT ", Kind.DEPOSIT),
+    ("OTHER DEBIT ", Kind.WITHDRAWAL),
+    ("TRANSFER IN FROM ", Kind.DEPOSIT),
+    ("TRANSFER OUT TO ", Kind.WITHDRAWAL),
+    ("EARLY DIST", Kind.WITHDRAWAL),
+    ("MARGIN INTEREST", Kind.INTEREST),
+    ("FEE CHARGED ", Kind.FEE),
+    ("CORP INT ADJUSTMENT SHORT SALE BORROWING FEES", Kind.FEE),
+    ("SHORT VS MARGIN MARK TO MARKET", Kind.JOURNAL),
 )
-# A buy or sell worded as more than a plain trade stays "other" until seen.
+# A plain buy or sell worded as more than a plain trade stays "other" until seen.
+_PLAIN_TRADES = ("YOU BOUGHT ", "YOU SOLD ")
 _NOT_PLAIN = ("OPENING TRANSACTION", "CLOSING TRANSACTION", "SHORT ")
+# The holding-type tags at the end of an action, never a CUSIP.
+_TYPE_TAGS = {"CASH", "MARGIN", "SHORT"}
 
 
 class ActivityFileError(ValueError):
@@ -187,7 +232,7 @@ def _fidelity(record: dict[str, str]) -> Transaction:
     if amount is None:
         raise ValueError(f"{action or 'a row'}: no amount")
     accrued = _number(record.get("accrued interest ($)"), "accrued interest") or 0.0
-    symbol, option = _symbol(record.get("symbol", ""))
+    symbol, option = _symbol(record.get("symbol", "") or _cusip_in(action))
     settle = record.get("settlement date", "").strip()
     return Transaction(
         trade_date=_date(record.get("run date", "")),
@@ -208,15 +253,22 @@ def _fidelity(record: dict[str, str]) -> Transaction:
 def _fidelity_kind(action: str, holding_type: str, accrued: float) -> Kind:
     """The kind an action's wording means, or ``other`` (module docstring)."""
     wording = action.upper()
-    for prefix, kind in _FIDELITY_ACTIONS:
-        if not wording.startswith(prefix):
-            continue
-        if kind in (Kind.BUY, Kind.SELL) and (
-                wording[len(prefix):].startswith(_NOT_PLAIN)
-                or holding_type.strip().lower() == "short" or accrued != 0):
-            return Kind.OTHER
-        return kind
-    return Kind.OTHER
+    prefix, kind = next(((p, k) for p, k in _FIDELITY_ACTIONS if wording.startswith(p)),
+                        ("", Kind.OTHER))
+    if kind in TRADES and accrued != 0:
+        return Kind.OTHER
+    if prefix in _PLAIN_TRADES and (wording[len(prefix):].startswith(_NOT_PLAIN)
+                                    or holding_type.strip().lower() == "short"):
+        return Kind.OTHER
+    return kind
+
+
+def _cusip_in(action: str) -> str:
+    """The security named in parentheses in an action's wording, for a row
+    whose Symbol cell is empty: the first capitals-and-digits token that
+    isn't a holding-type tag, or "" if there's none."""
+    return next((token for token in re.findall(r"\(([A-Z0-9.]+)\)", action)
+                 if token not in _TYPE_TAGS), "")
 
 
 _LAYOUTS = (

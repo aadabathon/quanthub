@@ -143,12 +143,11 @@ class TestFidelity:
 
     def test_only_wording_seen_in_an_export_gets_a_kind(self, file):
         assert [t.kind for t in file.transactions] == [
-            Kind.OTHER, Kind.OTHER, Kind.REINVEST, Kind.DIVIDEND, Kind.SELL, Kind.BUY, Kind.OTHER]
+            Kind.OTHER, Kind.DEPOSIT, Kind.REINVEST, Kind.DIVIDEND, Kind.SELL, Kind.BUY, Kind.OTHER]
 
     def test_the_rest_is_kept_as_other_and_named(self, file):
         assert file.unrecognized == (
             "YOU SOLD OPENING TRANSACTION CALL (AAPL) APPLE INC JUN 19 26 $250 (100 SHS) (Margin)",
-            "Electronic Funds Transfer Received (Cash)",
             "YOU BOUGHT US TREASURY NOTE (91282CAB7) (Cash)")
 
     def test_a_buy(self, file):
@@ -200,3 +199,97 @@ class TestFidelity:
         path = tmp_path / "history.csv"
         path.write_text(FIDELITY.lstrip("﻿"), encoding="utf-8-sig")
         assert read_activity_csv(path).source == "Fidelity"
+
+
+# Made up, one row per wording the map learned from a whole history (TR2).
+_HEADER = FIDELITY.splitlines()[2]
+FIDELITY_MORE = "\n".join([
+    "", "", _HEADER,
+    "03/20/2026,Individual,Z12345678,YOU SOLD SHORT SALE ACME WIDGETS INC COM (AAA) (Short),AAA,"
+    'ACME WIDGETS INC COM,Short,25.01,-10,"","","","250.09",03/23/2026',
+    "03/25/2026,Individual,Z12345678,DIVIDEND CHARGED ACME WIDGETS INC COM (AAA) (Short),AAA,"
+    'ACME WIDGETS INC COM,Short,"",0,"","","","-1.2",',
+    "03/27/2026,Individual,Z12345678,YOU BOUGHT SHORT COVER ACME WIDGETS INC COM (AAA) (Short),"
+    'AAA,ACME WIDGETS INC COM,Short,20,6,"","","","-120",03/30/2026',
+    "03/27/2026,Individual,Z12345678,SHORT VS MARGIN MARK TO MARKET (Margin),,No Description,"
+    'Margin,"",0,"","","","-12.5",',
+    "03/27/2026,Individual,Z12345678,SHORT VS MARGIN MARK TO MARKET (Short),,No Description,"
+    'Short,"",0,"","","","12.5",',
+    "03/30/2026,Individual,Z12345678,YOU BOUGHT SHORT COVER RISK LIQUIDATION ACME WIDGETS INC COM "
+    '(AAA) (Short),AAA,ACME WIDGETS INC COM,Short,30,4,"","","","-120",03/31/2026',
+    "04/01/2026,Individual,Z12345678,CORP INT ADJUSTMENT SHORT SALE BORROWING FEES (Cash),"
+    '000000AA0,No Description,Cash,"",0,"","","","-0.4",',
+    "04/01/2026,Individual,Z12345678,MARGIN INTEREST as of 2026-03-31 (Margin),,No Description,"
+    'Margin,"",0,"","","","-2.1",',
+    "04/02/2026,Individual,Z12345678,FEE CHARGED BETA DEPOSITARY ADS (BBB) (Margin),BBB,"
+    'BETA DEPOSITARY ADS,Margin,"",0,"","","","-0.05",',
+    "04/06/2026,Individual,Z12345678,YOU BOUGHT OPENING TRANSACTION PUT (AAA) ACME WIDGETS APR 17 "
+    "26 $5 (100 SHS) (Cash), -AAA260417P5,PUT (AAA) ACME WIDGETS APR 17 26 $5 (100 SHS),Cash,"
+    '0.03,2,"","","","-6.31",04/07/2026',
+    "04/08/2026,Individual,Z12345678,YOU BOUGHT GAMMA CORP COM 1 FOR 20 R/S... (000000AB1) (Cash),,"
+    'GAMMA CORP COM 1 FOR 20 R/S...,Cash,0.5,100,"","","","-50",04/09/2026',
+    "04/10/2026,Individual,Z12345678,Electronic Funds Transfer Paid (Cash),,No Description,Cash,"
+    '"",0,"","","","-200",',
+    "04/10/2026,Individual,Z12345678,TRANSFERRED TO VS 111-111111-1 CURRENT CONTRIBUTION (Cash),,"
+    'No Description,Cash,"",0,"","","","-100",',
+    "04/10/2026,ROTH IRA,X87654321,CASH CONTRIBUTION CURRENT YEAR (Cash),,No Description,Cash,"
+    '"",0,"","","","100",',
+    "04/13/2026,ROTH IRA,X87654321,EARLY DIST NO EXCEPT EARLY DST/NO EXCP REF0000 /WEB (Cash),,"
+    'No Description,Cash,"",0,"","","","-40",',
+    "04/14/2026,Individual,Z12345678,OTHER DEBIT transfer to Fidelity Crypto a/c (Cash),,"
+    'No Description,Cash,"",0,"","","","-60",',
+    "04/14/2026,Fidelity Crypto,Y00000000,Transfer in from brokerage a/c,,No Description,CASH,"
+    '"",0.00000000,"","","","60",04/14/2026',
+    "04/15/2026,Fidelity Crypto,Y00000000,You bought 0.001 LITECOIN at $60.00,LTC/USD,LITECOIN,"
+    'CASH,60,0.001,"","","","-0.06",04/15/2026',
+    "04/16/2026,Fidelity Crypto,Y00000000,Transfer out to brokerage a/c,,No Description,CASH,"
+    '"",0.00000000,"","","","-59.94",04/16/2026',
+    "04/16/2026,Individual,Z12345678,OTHER CREDIT transfer from Fidelity Crypto a/c (Cash),,"
+    'No Description,Cash,"",0,"","","","59.94",',
+    "04/20/2026,Individual,Z12345678,EXPIRED PUT (AAA) ACME WIDGETS APR 17 26 $5 as of 2026-04-17 "
+    "PUT (AAA) ACME WIDGETS APR 17 26 $5 (100 SHS) (Cash), -AAA260417P5,PUT (AAA) ACME WIDGETS "
+    'APR 17 26 $5 (100 SHS),Cash,"",-2,"","","","0.00",',
+    "",
+]) + "\n"
+
+
+class TestFidelityWholeHistory:
+    @pytest.fixture
+    def file(self):
+        return read(FIDELITY_MORE)
+
+    def test_every_wording_a_whole_history_showed_has_its_kind(self, file):
+        assert file.problems == () and file.unrecognized == ()
+        assert [t.kind for t in file.transactions] == [
+            Kind.SHORT, Kind.DIVIDEND, Kind.COVER, Kind.JOURNAL, Kind.JOURNAL, Kind.COVER,
+            Kind.FEE, Kind.INTEREST, Kind.FEE, Kind.BUY, Kind.BUY, Kind.WITHDRAWAL,
+            Kind.WITHDRAWAL, Kind.DEPOSIT, Kind.WITHDRAWAL, Kind.WITHDRAWAL, Kind.DEPOSIT,
+            Kind.BUY, Kind.WITHDRAWAL, Kind.DEPOSIT, Kind.EXPIRE]
+
+    def test_a_short_and_its_covers(self, file):
+        short, _, cover, _, _, forced = file.transactions[:6]
+        assert (short.quantity, short.amount) == (-10.0, 250.09)
+        assert (cover.quantity, forced.quantity) == (6.0, 4.0)
+        assert "RISK LIQUIDATION" in forced.description         # a forced cover, kept in words
+
+    def test_a_days_journals_cancel(self, file):
+        journals = [t for t in file.transactions if t.kind is Kind.JOURNAL]
+        assert sum(t.amount for t in journals) == 0 and all(t.quantity == 0 for t in journals)
+
+    def test_an_option_bought_to_open_and_its_expiry(self, file):
+        opened, expired = file.transactions[9], file.transactions[-1]
+        assert opened.symbol == expired.symbol == "AAA260417P5"
+        assert (opened.quantity, expired.quantity, expired.amount) == (2.0, -2.0, 0.0)
+
+    def test_a_trade_with_no_symbol_is_named_by_its_cusip(self, file):
+        assert file.transactions[10].symbol == "000000AB1"
+
+    def test_money_between_your_own_accounts_leaves_one_and_enters_the_other(self, file):
+        out, into = file.transactions[12], file.transactions[13]
+        assert (out.account, out.amount, into.account, into.amount) == (
+            "Individual", -100.0, "ROTH IRA", 100.0)
+
+    def test_a_crypto_trade_worded_in_lower_case(self, file):
+        coin = file.transactions[17]
+        assert (coin.kind, coin.symbol, coin.quantity, coin.amount) == (
+            Kind.BUY, "LTC/USD", 0.001, -0.06)
