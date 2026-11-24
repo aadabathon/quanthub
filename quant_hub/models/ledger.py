@@ -140,6 +140,8 @@ class Reconciliation:
     last_day: date | None
     opening: tuple[HoldingGap, ...]   # unexplained at the first snapshot
     intervals: tuple[Interval, ...]
+    snapshots: int = 0                # how many were replayed
+    first_snapshot: date | None = None
 
     @property
     def reconciled(self) -> bool:
@@ -217,7 +219,8 @@ def reconcile(transactions: Iterable[Transaction],
 
     trade_days = [t.trade_date for t in history]
     return Reconciliation(by_account, min(trade_days, default=None),
-                          max(trade_days, default=None), opening, tuple(intervals))
+                          max(trade_days, default=None), opening, tuple(intervals),
+                          len(ordered), days[0] if days else None)
 
 
 def _holdings(snapshot: PositionSnapshot, key) -> dict[tuple[str, str], float]:

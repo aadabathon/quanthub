@@ -37,6 +37,7 @@ from quant_hub.gui.pages.returns import ReturnHistogramPage
 from quant_hub.gui.pages.simulator import SimulatorPage
 from quant_hub.gui.pages.valuation import ValuationPage
 from quant_hub.gui.pages.volatility_lab import VolatilityLabPage
+from quant_hub.gui.pages.trades import TradesPage
 from quant_hub.gui.pages.whatif import WhatIfPage
 from quant_hub.gui.theme import apply_theme
 from quant_hub.services.book import BookSource, Grader
@@ -70,6 +71,8 @@ def _sections(core: Core, book: BookSource | None = None,
         core.market_service, core.tasks, core.state_store))
     portfolio = ("Portfolio", "ph.chart-pie-slice", lambda _shell: PortfolioPage(
         core.portfolio, core.market_service, core.tasks, core.state_store, core.accounts))
+    trades = ("Trades", "ph.receipt", lambda _shell: TradesPage(
+        core.activity, core.tasks, core.state_store))
     valuation = ("Valuation", "ph.scales", lambda _shell: ValuationPage(
         core.valuation, core.portfolio, core.tasks, core.state_store))
     data = ("Data", "ph.database", lambda shell: DataPage(
@@ -83,8 +86,8 @@ def _sections(core: Core, book: BookSource | None = None,
     research = ("Research", "ph.file-text", lambda _shell: ResearchPage(
         core.research, core.market_service, core.tasks, core.state_store))
     return [
-        (None, [dashboard, markets, returns, data, portfolio, whatif, hedge_lab, valuation,
-                simulator, options]),
+        (None, [dashboard, markets, returns, data, portfolio, trades, whatif, hedge_lab,
+                valuation, simulator, options]),
         ("Research", [garch, vol_lab, kalman, markov, research]),
     ]
 
