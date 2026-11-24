@@ -5,7 +5,8 @@
 Builds the core from your settings (no window), takes one snapshot of the
 book with every voice's claims (``services/desk.py``), stores it, writes
 its JSON beside the store (``<store folder>/desk/``), and prints where.
-The source defaults to IBKR when it's on in settings (stored bars serve
+The source defaults to Massive when ``[massive] key`` is set (daily bars
+without TWS, D97), else IBKR when it's on in settings (stored bars serve
 when TWS isn't running), else imported files.
 
 Meant for a daily scheduled run after the close, so every voice's record
@@ -23,11 +24,13 @@ from quant_hub.core import build_core
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m quant_hub.snapshot",
                                      description="Take today's desk snapshot.")
-    parser.add_argument("--source", help="price source: ibkr or file (default: ibkr if on)")
+    parser.add_argument("--source", help="price source: massive, ibkr or file (default: "
+                                         "massive if keyed, else ibkr if on)")
     args = parser.parse_args(argv)
     core = build_core()
     try:
-        source = args.source or ("ibkr" if core.config.ibkr_enabled else "file")
+        source = args.source or ("massive" if core.config.massive_key
+                                 else "ibkr" if core.config.ibkr_enabled else "file")
         taken = core.desk.take(source)
         snapshot = taken.snapshot
         claims = sum(len(v.claims) for v in snapshot.voices)

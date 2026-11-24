@@ -180,12 +180,18 @@ page lists them, and Ctrl+K fetches each one on the worker thread:
 | Robert Shiller's data | monthly S&P price, dividends, earnings, CPI, the 10-year yield and CAPE, from 1871 | download `ie_data.xls`, save its Data sheet as CSV, then **Import Shiller CSV…** |
 | SEC N-PORT | a fund's full holdings as filed | **Fetch fund holdings…**, with `[sec] identity` |
 | Interactive Brokers | a snapshot of each option chain in `[collect] chains` | once a trading day, when TWS connects after the open |
+| Massive (formerly Polygon) | daily stock bars without TWS, two years back on the free plan | choose **massive** as a page's source, with a free key in `[massive] key` |
 
 **On the terms:** FRED asks for its credit line ("This product uses the
 FRED® API but is not endorsed or certified by the Federal Reserve Bank of
 St. Louis"), and its third-party series are for personal use. Cboe's
 terms don't allow storing its VIX file, so the VIX comes from FRED.
 Shiller's data is read from your own download and never redistributed.
+Massive's terms allow personal, non-commercial use, including storing the
+data. They don't allow redistributing it or using it to train an AI or
+machine-learning model, and stored copies must be deleted within 30 days
+if the license ends. Its bars are kept under their own source name, so
+they can be removed alone.
 
 ## Importing data
 

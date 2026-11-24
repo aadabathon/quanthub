@@ -136,7 +136,7 @@ def test_the_command_line_takes_one_snapshot(parts, monkeypatch, capsys):
     from quant_hub import snapshot as cli
 
     class Core:
-        config = type("Config", (), {"ibkr_enabled": False})()
+        config = type("Config", (), {"ibkr_enabled": False, "massive_key": ""})()
         desk = service(parts, {"AAA": "2026-11-20", "BBB": "2026-11-20"})
 
         def shutdown(self):
@@ -149,3 +149,23 @@ def test_the_command_line_takes_one_snapshot(parts, monkeypatch, capsys):
     assert cli.main([]) == 0 and core.closed
     out = capsys.readouterr().out
     assert "as of 2026-11-20 from" in out and "not priced: AAA261218P30 (an option)" in out
+
+
+def test_the_command_line_prefers_massive_when_keyed(parts, monkeypatch):
+    from quant_hub import snapshot as cli
+    sources = []
+
+    class Core:
+        config = type("Config", (), {"ibkr_enabled": True, "massive_key": "k" * 32})()
+        desk = service(parts, {"AAA": "2026-11-20", "BBB": "2026-11-20"})
+
+        def shutdown(self):
+            pass
+
+    core = Core()
+    monkeypatch.setattr(cli, "build_core", lambda: core)
+    monkeypatch.setattr(core.desk, "take", lambda source, _take=core.desk.take:
+                        (sources.append(source), _take("test", NOW))[1])
+    assert cli.main([]) == 0 and sources == ["massive"]
+    assert cli.main(["--source", "ibkr"]) == 0 and sources[-1] == "ibkr"
+
