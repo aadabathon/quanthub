@@ -20,6 +20,7 @@ from quant_hub.data.sources import SyntheticSource
 from quant_hub.events import EventBus, EventBusLogHandler
 from quant_hub.tasks import TaskRunner
 from quant_hub.services.accounts import AccountService
+from quant_hub.services.activity import ActivityService
 from quant_hub.services.book import PortfolioBook
 from quant_hub.services.cached_source import CachedSource
 from quant_hub.services.chain_collector import ChainCollector
@@ -35,6 +36,7 @@ from quant_hub.services.research import ResearchService
 from quant_hub.services.security_ids import SecurityIdService
 from quant_hub.services.valuation import ValuationService
 from quant_hub.services.workstation import WorkstationService
+from quant_hub.storage.activity_store import ActivityStore
 from quant_hub.storage.bar_store import BarStore
 from quant_hub.storage.chain_store import ChainStore
 from quant_hub.storage.fundamentals_store import FundamentalsStore
@@ -79,6 +81,9 @@ class Core:
     # Today's book as Portfolio analyses it: What-if's and the Hedge Lab's,
     # unless an extension supplies its own (D89).
     book: PortfolioBook
+    # A broker's transaction history, imported (TR1, D90).
+    activity_store: ActivityStore
+    activity: ActivityService
     tasks: TaskRunner
     # Read-only IBKR accounts (E1); None when IBKR is off in settings.
     accounts: AccountService | None = None
@@ -98,6 +103,7 @@ class Core:
             ("closing valuation store", self.valuation_store.close),
             ("closing series store", self.series_store.close),
             ("closing holdings store", self.holdings_store.close),
+            ("closing activity store", self.activity_store.close),
         ):
             try:
                 step()
@@ -196,6 +202,8 @@ def build_core(config: AppConfig | None = None) -> Core:
     security_ids = SecurityIdService(holdings_store, broker if ibkr else None)
     external_data = ExternalDataService(series_store, fred_key=config.fred_key)
     research = ResearchService(market_service, research_store)
+    # A broker's transaction history, same database (TR1, D90).
+    activity_store = ActivityStore(config.db_path)
     return Core(
         config=config, bus=bus, broker=broker, store=store, state_store=state_store,
         market_service=market_service, chain_store=chain_store, chains=chains,
@@ -211,5 +219,6 @@ def build_core(config: AppConfig | None = None) -> Core:
         # The hedge lab's job, on stored data only (HEDGE U3, D70).
         hedge=HedgeService(external_data, chains, store),
         book=PortfolioBook(portfolio, market_service, state_store),
+        activity_store=activity_store, activity=ActivityService(activity_store),
         accounts=AccountService(broker) if ibkr else None,
     )

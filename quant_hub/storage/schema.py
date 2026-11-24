@@ -45,6 +45,8 @@ Versions:
 * **10** (D74): each positions snapshot's file hash
   (``position_snapshots.sha256``), so a second import of the same file is
   flagged before it's stored. Older snapshots get an empty hash.
+* **11** (TR1, D90): imported activity, a broker's transaction history
+  (``activity_imports``, ``activity``).
 
 Steps are frozen: each one spells out its own SQL, never the stores'
 current schema, which keeps moving. A test holds a migrated file and a new
@@ -67,7 +69,7 @@ from quant_hub.storage.bar_store import StorageError
 
 _logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 BACKUP_DIR = "backups"
 
 _TABLE = """
@@ -185,9 +187,16 @@ def _snapshot_hashes(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE position_snapshots ADD COLUMN sha256 TEXT NOT NULL DEFAULT ''")
 
 
+def _activity(conn: sqlite3.Connection) -> None:
+    """10 -> 11: imported activity (D90)."""
+    from quant_hub.storage.activity_store import V11_TABLES
+    for statement in V11_TABLES:
+        conn.execute(statement)
+
+
 _STEPS: dict[int, Callable[[sqlite3.Connection], None]] = {
     0: _adopt, 1: _price_basis, 2: _research, 3: _fundamentals, 4: _valuations, 5: _reserved,
-    6: _series, 7: _holdings, 8: _security_ids, 9: _snapshot_hashes,
+    6: _series, 7: _holdings, 8: _security_ids, 9: _snapshot_hashes, 10: _activity,
 }
 
 
