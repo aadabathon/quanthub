@@ -1,4 +1,4 @@
-"""Activity from CSV (TR1): the generic layout."""
+"""Activity from CSV (TR1, TR1b): the generic layout and Fidelity's."""
 
 import io
 from datetime import date
@@ -96,3 +96,107 @@ class TestProblems:
         path = tmp_path / "history.csv"
         path.write_text("﻿date,kind,amount\n2026-03-01,deposit,10\n", encoding="utf-8")
         assert read_activity_csv(path).name == "history.csv"
+
+
+# Made up, in the layout of Fidelity's Activity & Orders history download:
+# two blank lines, the header, rows newest first, a blank line, a footer.
+FIDELITY = (
+    "﻿\n"
+    "\n"
+    "Run Date,Account,Account Number,Action,Symbol,Description,Type,Price ($),Quantity,"
+    "Commission ($),Fees ($),Accrued Interest ($),Amount ($),Settlement Date\n"
+    '04/02/2026,Individual,Z12345678,YOU SOLD OPENING TRANSACTION CALL (AAPL) APPLE INC JUN 19 '
+    '26 $250 (100 SHS) (Margin), -AAPL260619C250,CALL (AAPL) APPLE INC JUN 19 26 $250,Margin,'
+    '4.15,-1,"0.65","0.02","","414.33",04/03/2026\n'
+    '03/31/2026,Individual,Z12345678,Electronic Funds Transfer Received (Cash),,No Description,'
+    'Cash,"",0,"","","","500",\n'
+    "03/31/2026,ROTH IRA,X87654321,REINVESTMENT FIDELITY GOVERNMENT CASH RESERVES (FDRXX) "
+    '(Cash),FDRXX,FIDELITY GOVERNMENT CASH RESERVES,Cash,1,2.5,"","","","-2.50",\n'
+    "03/31/2026,ROTH IRA,X87654321,DIVIDEND RECEIVED FIDELITY GOVERNMENT CASH RESERVES (FDRXX) "
+    '(Cash),FDRXX,FIDELITY GOVERNMENT CASH RESERVES,Cash,"",0,"","","","2.50",\n'
+    "03/20/2026,Individual,Z12345678,YOU SOLD PENNY CO INC COM (PNYC) (Margin),PNYC,"
+    'PENNY CO INC COM,Margin,1.53,-400,"","","","610.4",03/23/2026\n'
+    "03/20/2026,Individual,Z12345678,YOU BOUGHT APPLE INC (AAPL) (Cash),AAPL,APPLE INC,Cash,"
+    '180,10,"","","","-1800",03/23/2026\n'
+    "03/16/2026,Individual,Z12345678,YOU BOUGHT US TREASURY NOTE (91282CAB7) (Cash),91282CAB7,"
+    'US TREASURY NOTE,Cash,99.5,1000,"","","4.10","-999.10",03/17/2026\n'
+    "\n"
+    '"Made-up disclaimer: a test fixture in the layout of a broker\'s history download."\n'
+    "\n"
+    '"A second disclaimer line, as the real download has several."\n'
+    "\n"
+    "1234567.1.0\n"
+    "\n"
+    "Date downloaded 04/02/2026 9:15 am\n"
+)
+FIDELITY_BUY = FIDELITY.splitlines()[8]
+
+
+class TestFidelity:
+    @pytest.fixture
+    def file(self):
+        return read(FIDELITY)
+
+    def test_recognized_by_its_header_and_the_footer_skipped(self, file):
+        assert (file.source, len(file.transactions), file.problems) == ("Fidelity", 7, ())
+        assert (file.first_date, file.last_date) == (date(2026, 3, 16), date(2026, 4, 2))
+
+    def test_only_wording_seen_in_an_export_gets_a_kind(self, file):
+        assert [t.kind for t in file.transactions] == [
+            Kind.OTHER, Kind.OTHER, Kind.REINVEST, Kind.DIVIDEND, Kind.SELL, Kind.BUY, Kind.OTHER]
+
+    def test_the_rest_is_kept_as_other_and_named(self, file):
+        assert file.unrecognized == (
+            "YOU SOLD OPENING TRANSACTION CALL (AAPL) APPLE INC JUN 19 26 $250 (100 SHS) (Margin)",
+            "Electronic Funds Transfer Received (Cash)",
+            "YOU BOUGHT US TREASURY NOTE (91282CAB7) (Cash)")
+
+    def test_a_buy(self, file):
+        buy = file.transactions[5]
+        assert (buy.account, buy.symbol, buy.quantity, buy.price, buy.amount, buy.trade_date,
+                buy.settle_date, buy.description) == (
+            "Individual", "AAPL", 10.0, 180.0, -1800.0, date(2026, 3, 20), date(2026, 3, 23),
+            "YOU BOUGHT APPLE INC (AAPL) (Cash)")
+
+    def test_a_price_rounded_to_the_cent_is_accepted(self, file):
+        sale = file.transactions[4]
+        assert (sale.quantity, sale.price, sale.amount) == (-400.0, 1.53, 610.4)
+        assert abs(sale.amount - sale.expected_amount) == pytest.approx(1.60)
+
+    def test_a_money_market_dividend_and_its_reinvestment(self, file):
+        reinvest, dividend = file.transactions[2:4]
+        assert (dividend.quantity, dividend.price, dividend.amount) == (0.0, None, 2.5)
+        assert (reinvest.quantity, reinvest.price, reinvest.amount) == (2.5, 1.0, -2.5)
+        assert reinvest.account == "ROTH IRA" and reinvest.settle_date is None
+
+    def test_an_options_row_keeps_its_contract_and_costs(self, file):
+        opening = file.transactions[0]
+        assert (opening.symbol, opening.option.strike, opening.commission, opening.fees,
+                opening.amount) == ("AAPL260619C250", 250.0, 0.65, 0.02, 414.33)
+
+    @pytest.mark.parametrize("change", [
+        ("(Cash),AAPL,APPLE INC,Cash,", "(Cash),AAPL,APPLE INC,Short,"),       # Type: Short
+        ("YOU BOUGHT APPLE", "YOU BOUGHT SHORT APPLE"),                        # a short's wording
+        ('"","","","-1800"', '"","","1.00","-1801"'),                         # accrued interest
+    ])
+    def test_a_trade_worded_or_typed_as_more_than_a_plain_trade_is_other(self, change):
+        old, new = change
+        row = FIDELITY_BUY.replace(old, new)
+        assert row != FIDELITY_BUY
+        file = read(FIDELITY.replace(FIDELITY_BUY, row))
+        assert file.transactions[5].kind is Kind.OTHER and file.problems == ()
+
+    def test_a_bad_row_is_reported_with_its_line(self):
+        file = read(FIDELITY.replace('"-1800",03/23', '"-1900",03/23'))
+        (problem,) = file.problems
+        assert problem.line == 9 and "doesn't match" in problem.message
+        assert len(file.transactions) == 6
+
+    def test_the_account_number_stands_in_for_a_missing_name(self):
+        file = read(FIDELITY.replace(FIDELITY_BUY, FIDELITY_BUY.replace(",Individual,", ",,")))
+        assert file.transactions[5].account == "Z12345678"
+
+    def test_a_download_on_disk(self, tmp_path):
+        path = tmp_path / "history.csv"
+        path.write_text(FIDELITY.lstrip("﻿"), encoding="utf-8-sig")
+        assert read_activity_csv(path).source == "Fidelity"

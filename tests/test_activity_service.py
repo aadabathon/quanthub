@@ -78,3 +78,11 @@ def test_several_files_at_once(service, tmp_path):
 def test_no_files_is_an_error(service):
     with pytest.raises(ActivityImportError, match="no files"):
         service.import_activity([])
+
+
+def test_a_fidelity_download_names_the_wording_it_kept_as_other(service, tmp_path):
+    from tests.test_activity_csv import FIDELITY
+    (result,) = service.import_activity(write(tmp_path, "history.csv", FIDELITY.lstrip("﻿")))
+    assert (result.summary.source, result.summary.added) == ("Fidelity", 7)
+    assert result.unrecognized[1] == "Electronic Funds Transfer Received (Cash)"
+    assert len(result.unrecognized) == 3
