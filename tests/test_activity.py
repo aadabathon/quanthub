@@ -34,21 +34,34 @@ class TestTrades:
         with pytest.raises(ValueError, match="× 100"):
             buy(symbol="AAPL260619C250", quantity=2.0, price=4.15, amount=-8.30, option=CALL)
 
-    @pytest.mark.parametrize("amount, ok", [(-18.02, True), (-17.98, True),
-                                            (-18.03, False), (-18.10, False)])
-    def test_a_cent_or_two_of_rounding_is_allowed(self, amount, ok):
-        # On a small trade the floor of $0.02 is the tolerance (1e-4 of $18 is less).
+    @pytest.mark.parametrize("amount, ok", [(-18.01, True), (-17.99, True),
+                                            (-18.02, False), (-18.10, False)])
+    def test_one_share_allows_a_cent_and_a_half(self, amount, ok):
+        # $0.01 for the amount's rounding, plus half a cent for the price's.
+        t = buy(quantity=1.0, price=18.0, amount=-18.0)
+        assert t.amount_tolerance == pytest.approx(0.015)
         if ok:
             buy(quantity=1.0, price=18.0, amount=amount)
         else:
             with pytest.raises(ValueError, match="doesn't match"):
                 buy(quantity=1.0, price=18.0, amount=amount)
 
-    def test_a_large_trade_allows_a_rounded_price(self):
-        # 1e-4 of $1.8M is $180: a price rounded to the cent on 10,000 shares.
-        buy(quantity=10_000.0, price=180.0, amount=-1_800_049.0)
+    def test_a_price_rounded_to_the_cent_on_a_cheap_stock(self):
+        # 400 shares at a true 1.526 post $610.40; the price column says 1.53.
+        t = buy(kind=Kind.SELL, quantity=-400.0, price=1.53, amount=610.40)
+        assert t.amount_tolerance == pytest.approx(2.01)
+        assert abs(t.amount - t.expected_amount) == pytest.approx(1.60)
         with pytest.raises(ValueError, match="doesn't match"):
-            buy(quantity=10_000.0, price=180.0, amount=-1_800_400.0)
+            buy(kind=Kind.SELL, quantity=-400.0, price=1.53, amount=609.00)
+
+    def test_the_tolerance_grows_with_shares_not_dollars(self):
+        buy(quantity=10_000.0, price=180.0, amount=-1_800_050.0)           # $50.01 allowed
+        with pytest.raises(ValueError, match="doesn't match"):
+            buy(quantity=10_000.0, price=180.0, amount=-1_800_051.0)
+
+    def test_an_options_tolerance_counts_its_shares(self):
+        t = buy(symbol="AAPL260619C250", quantity=2.0, price=4.15, amount=-830.0, option=CALL)
+        assert t.amount_tolerance == pytest.approx(1.01)          # 200 shares' half cents
 
     def test_a_reinvested_dividend_is_a_trade(self):
         t = Transaction(DAY, Kind.REINVEST, -12.5, symbol="VTI", quantity=0.05, price=250.0)

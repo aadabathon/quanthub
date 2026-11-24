@@ -1,10 +1,9 @@
-"""Activity from CSV: a broker's transaction history (TR1, D90).
+"""Activity from CSV: a broker's transaction history (TR1, TR1b, D90, D91).
 
 This module reads a history file into a ``data.activity.ActivityFile``;
-nothing else (no prices fetched, no storage). Brokers' own layouts are
-recognized by their header and come one at a time, each from a real export
-(Fidelity's is next, TR1b). Until then, any history can be written in the
-generic layout.
+nothing else (no prices fetched, no storage). A broker's own layout is
+recognized by its header, and each one is built from a real export. Any
+other history can be written in the generic layout.
 
 The generic layout
 ------------------
@@ -29,6 +28,41 @@ The generic layout
 * An option is written as in positions files, ``ROOT YYMMDD C|P STRIKE``
   run together (``AAPL260116C250``), with its price per share.
 
+Fidelity
+--------
+The Activity & Orders history download, recognized by its header (``Run
+Date``, ``Action``, ``Amount ($)``, ...):
+
+* two blank lines before the header; after the rows, a blank line,
+  disclaimers, and ``Date downloaded ...``, which are skipped;
+* newest first; one row per transaction, every account in one file, the
+  account by name (``Account``, its number when there's no name);
+* plain numbers (``-1800.00``), quoted, and ``""`` when empty; signs already
+  as ``data.activity`` has them (a sale's quantity is negative);
+* the price rounded to the cent, which ``data.activity``'s tolerance allows
+  for;
+* the kind is in the ``Action`` wording, which is kept as the description.
+
+**The action map holds only wording seen in a real export:**
+
+=========================  ==========
+Action begins              kind
+=========================  ==========
+``YOU BOUGHT``             buy
+``YOU SOLD``               sell
+``REINVESTMENT``           reinvest
+``DIVIDEND RECEIVED``      dividend
+=========================  ==========
+
+Anything else is read as ``other``: kept, shown
+(``ActivityFile.unrecognized``), and with no effect on P&L until an export
+shows what it is and the map grows. So are a buy or sell worded as more
+than a plain trade (``OPENING TRANSACTION``, ``CLOSING TRANSACTION``,
+``SHORT``: an option's opening sale, say, isn't a sale of shares held), a
+row whose ``Type`` is ``Short``, and a trade with accrued interest (a bond,
+whose amount isn't q·p). That guard only ever widens ``other``; it never
+assigns a kind from wording no export has shown.
+
 Every row is checked (``data.activity.Transaction``), and a row that fails
 is reported with its line and kept out; the rest of the file is still
 read. Whether a file with a bad row is stored at all is the caller's
@@ -40,21 +74,40 @@ from __future__ import annotations
 import csv
 import io
 import re
+from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 from typing import IO
 
 from quant_hub.data.activity import ActivityFile, Kind, RowProblem, Transaction
+from quant_hub.data.positions import OptionContract
 from quant_hub.importers.positions_csv import parse_option_symbol
 
 _EMPTY = {"", "--", "n/a", "na"}
-_REQUIRED = ("date", "kind", "amount")
-_GENERIC = "Generic"
 _LAYOUT_HINT = "date,account,kind,symbol,quantity,price,commission,fees,amount"
+
+# Fidelity's action wording, each seen in a real export, and the kind it means.
+_FIDELITY_ACTIONS = (
+    ("YOU BOUGHT ", Kind.BUY),
+    ("YOU SOLD ", Kind.SELL),
+    ("REINVESTMENT ", Kind.REINVEST),
+    ("DIVIDEND RECEIVED ", Kind.DIVIDEND),
+)
+# A buy or sell worded as more than a plain trade stays "other" until seen.
+_NOT_PLAIN = ("OPENING TRANSACTION", "CLOSING TRANSACTION", "SHORT ")
 
 
 class ActivityFileError(ValueError):
     """The file can't be read as activity; the message says why."""
+
+
+@dataclass(frozen=True)
+class _Layout:
+    name: str
+    columns: frozenset[str]           # the header names that identify it
+    read: Callable[[dict[str, str]], Transaction]
+    stops_at_blank: bool              # the rows end at the first blank line
 
 
 def read_activity_csv(source: str | Path | IO[str], name: str = "") -> ActivityFile:
@@ -71,14 +124,19 @@ def read_activity_csv(source: str | Path | IO[str], name: str = "") -> ActivityF
     else:
         text = source.read().lstrip("﻿")
     lines = text.splitlines()
-    header_at = next((i for i, line in enumerate(lines)
-                      if set(_REQUIRED) <= set(_cells(line))), None)
-    if header_at is None:
+    found = next(((i, layout) for i, line in enumerate(lines) for layout in _LAYOUTS
+                  if layout.columns <= set(_cells(line))), None)
+    if found is None:
         raise ActivityFileError(
-            f"no header row with {', '.join(_REQUIRED)} columns (the generic layout is "
-            f"{_LAYOUT_HINT})")
+            "no header row of a known layout: Fidelity's history download, or the generic "
+            f"layout ({_LAYOUT_HINT})")
+    header_at, layout = found
+    end = len(lines)
+    if layout.stops_at_blank:
+        end = next((i for i in range(header_at + 1, len(lines))
+                    if not lines[i].strip().strip(",").strip()), len(lines))
 
-    reader = csv.reader(io.StringIO("\n".join(lines[header_at:])))
+    reader = csv.reader(io.StringIO("\n".join(lines[header_at:end])))
     columns = [cell.strip().lower() for cell in next(reader)]
     transactions: list[Transaction] = []
     problems: list[RowProblem] = []
@@ -87,15 +145,15 @@ def read_activity_csv(source: str | Path | IO[str], name: str = "") -> ActivityF
             continue
         line = header_at + reader.line_num
         try:
-            transactions.append(_transaction(dict(zip(columns, row))))
+            transactions.append(layout.read(dict(zip(columns, row))))
         except ValueError as exc:
             problems.append(RowProblem(line, str(exc)))
     if not transactions and not problems:
         raise ActivityFileError("no transactions in the file")
-    return ActivityFile(tuple(transactions), _GENERIC, name, tuple(problems))
+    return ActivityFile(tuple(transactions), layout.name, name, tuple(problems))
 
 
-def _transaction(record: dict[str, str]) -> Transaction:
+def _generic(record: dict[str, str]) -> Transaction:
     kind_text = record.get("kind", "").strip().lower().replace(" ", "_")
     try:
         kind = Kind(kind_text)
@@ -105,10 +163,7 @@ def _transaction(record: dict[str, str]) -> Transaction:
     amount = _number(record.get("amount"), "amount")
     if amount is None:
         raise ValueError("no amount")
-    symbol = record.get("symbol", "").strip().upper()
-    option = parse_option_symbol(symbol) if symbol else None
-    if option is not None:
-        symbol = symbol.lstrip("-").strip()
+    symbol, option = _symbol(record.get("symbol", ""))
     settle = record.get("settle_date", "").strip()
     return Transaction(
         trade_date=_date(record.get("date", "")),
@@ -124,6 +179,58 @@ def _transaction(record: dict[str, str]) -> Transaction:
         description=record.get("description", "").strip(),
         option=option,
     )
+
+
+def _fidelity(record: dict[str, str]) -> Transaction:
+    action = " ".join(record.get("action", "").split())
+    amount = _number(record.get("amount ($)"), "amount")
+    if amount is None:
+        raise ValueError(f"{action or 'a row'}: no amount")
+    accrued = _number(record.get("accrued interest ($)"), "accrued interest") or 0.0
+    symbol, option = _symbol(record.get("symbol", ""))
+    settle = record.get("settlement date", "").strip()
+    return Transaction(
+        trade_date=_date(record.get("run date", "")),
+        kind=_fidelity_kind(action, record.get("type", ""), accrued),
+        amount=amount,
+        account=(record.get("account") or record.get("account number") or "").strip(),
+        symbol=symbol,
+        quantity=_number(record.get("quantity"), "quantity") or 0.0,
+        price=_number(record.get("price ($)"), "price"),
+        commission=_number(record.get("commission ($)"), "commission") or 0.0,
+        fees=_number(record.get("fees ($)"), "fees") or 0.0,
+        settle_date=_date(settle) if settle else None,
+        description=action,
+        option=option,
+    )
+
+
+def _fidelity_kind(action: str, holding_type: str, accrued: float) -> Kind:
+    """The kind an action's wording means, or ``other`` (module docstring)."""
+    wording = action.upper()
+    for prefix, kind in _FIDELITY_ACTIONS:
+        if not wording.startswith(prefix):
+            continue
+        if kind in (Kind.BUY, Kind.SELL) and (
+                wording[len(prefix):].startswith(_NOT_PLAIN)
+                or holding_type.strip().lower() == "short" or accrued != 0):
+            return Kind.OTHER
+        return kind
+    return Kind.OTHER
+
+
+_LAYOUTS = (
+    _Layout("Fidelity", frozenset({"run date", "action", "amount ($)"}), _fidelity, True),
+    _Layout("Generic", frozenset({"date", "kind", "amount"}), _generic, False),
+)
+
+
+def _symbol(text: str) -> tuple[str, OptionContract | None]:
+    """The symbol in capitals and its option contract if it is one
+    (``-AAPL260116C250`` is the contract ``AAPL260116C250``)."""
+    symbol = text.strip().upper()
+    option = parse_option_symbol(symbol) if symbol else None
+    return (symbol.lstrip("-").strip() if option else symbol), option
 
 
 def _cells(line: str) -> list[str]:

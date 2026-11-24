@@ -39,14 +39,21 @@ the fees. For a buy, q > 0 makes −q·p·m negative: the cash paid. For a
 sell, q < 0 makes it positive: the cash received. Commission and fees
 lower both, so one formula serves every trade.
 
-**The tolerance** on that equality is
+**The tolerance** on that equality comes from two roundings. The broker
+posts the amount rounded to the cent from the true fill price :math:`p^*`,
+and shows the price rounded to the cent or finer, so :math:`|p - p^*| \le
+\tfrac12` ¢. Then
 
-.. math::  |A - (-q\,p\,m - c - f)| \le \max(\$0.02,\ 10^{-4}|A|)
+.. math::  |A - (-q\,p\,m - c - f)| \le |q|\,m\,|p - p^*| + \tfrac12¢
+           \le \tfrac12¢\cdot|q|\,m + \tfrac12¢
 
-A broker rounds the amount to the cent and quotes the price to a few
-decimals, so q·p·m can be off from the posted amount by a cent or two, and
-by a little more on a large trade whose price was rounded. A column read
-wrong (price and amount swapped, a missing multiplier) misses by far more.
+and the check allows :math:`\$0.01 + \$0.005\cdot|q|\,m`: half a cent a
+share, plus a cent for the amount's rounding and float noise. On a cheap
+stock the price's rounding is most of it: 400 shares sold at a true 1.526
+post $610.40, but the price column says 1.53, so q·p is $612.00. The gap
+is $1.60 and the bound $2.01. A price shown to more decimals is closer to
+the truth, so the bound still holds. A column read wrong (a missing multiplier, a
+misplaced decimal point) misses by far more.
 
 A deposit or withdrawal is money crossing the account's edge, so its sign
 is its meaning: the returns as held (TR6) count it as a flow. A dividend's,
@@ -88,8 +95,8 @@ from enum import Enum
 
 from quant_hub.data.positions import OPTION_MULTIPLIER, OptionContract
 
-AMOUNT_TOLERANCE = 0.02       # dollars: a cent's rounding either side
-AMOUNT_RELATIVE = 1e-4        # of |A|: a rounded price on a large trade
+AMOUNT_TOLERANCE = 0.01       # dollars: the amount's own rounding, and float noise
+PER_SHARE_TOLERANCE = 0.005   # dollars a share: a price shown rounded to the cent
 
 
 class Kind(Enum):
@@ -185,7 +192,7 @@ class Transaction:
             if self.price is None:
                 return f"{name}: a trade needs its price"
             expected = self.expected_amount
-            if abs(a - expected) > max(AMOUNT_TOLERANCE, AMOUNT_RELATIVE * abs(a)):
+            if abs(a - expected) > self.amount_tolerance:
                 return (f"{name}: the amount {a:,.2f} doesn't match quantity × price"
                         f"{' × 100' if self.option else ''} − commission − fees = {expected:,.2f}")
         return ""
@@ -194,6 +201,12 @@ class Transaction:
     def multiplier(self) -> float:
         """100 for an option, 1 otherwise."""
         return OPTION_MULTIPLIER if self.option is not None else 1.0
+
+    @property
+    def amount_tolerance(self) -> float:
+        """How far a trade's amount may sit from −q·p·m − c − f: $0.01 plus
+        half a cent a share (module docstring)."""
+        return AMOUNT_TOLERANCE + PER_SHARE_TOLERANCE * abs(self.quantity) * self.multiplier
 
     @property
     def expected_amount(self) -> float:
@@ -236,6 +249,13 @@ class ActivityFile:
     @property
     def last_date(self) -> date | None:
         return max((t.trade_date for t in self.transactions), default=None)
+
+    @property
+    def unrecognized(self) -> tuple[str, ...]:
+        """The wording of each row read as ``other``, once each, in file
+        order: what a broker's layout doesn't map to a kind yet."""
+        return tuple(dict.fromkeys(t.description for t in self.transactions
+                                   if t.kind is Kind.OTHER))
 
 
 def occurrences(transactions: Sequence[Transaction]) -> list[int]:

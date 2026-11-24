@@ -11,6 +11,9 @@
   twice, add only transactions the store doesn't hold yet (the occurrence
   rule in ``data/activity.py``). Each file's result says how many of its
   rows were new, and whether that exact file was imported before.
+* **Unmapped wording is named.** A broker's action its layout doesn't map
+  yet is stored as ``other`` (``importers/activity_csv.py``), and each
+  file's result lists that wording, so it can be mapped from the export.
 
 Nothing here reads prices or touches a broker. What the history is used for
 (the replay against positions snapshots, lots, round trips) comes later
@@ -48,6 +51,7 @@ class FileImported:
 
     summary: ActivityImportSummary
     seen_before: bool              # the same file (by hash) was imported earlier
+    unrecognized: tuple[str, ...] = ()   # wording read as "other", once each
 
     @property
     def already_stored(self) -> int:
@@ -82,7 +86,7 @@ class ActivityService:
         for path, file in zip(paths, files):
             digest = hashlib.sha256(path.read_bytes()).hexdigest()
             seen = bool(self._store.with_hash(digest))
-            results.append(FileImported(self._store.save(file, digest), seen))
+            results.append(FileImported(self._store.save(file, digest), seen, file.unrecognized))
         return results
 
     def transactions(self, account: str | None = None, start: date | None = None,
