@@ -19,6 +19,7 @@ from quant_hub.broker.option_chain import IBKROptionChainSource
 from quant_hub.config import AppConfig, load_config
 from quant_hub.data.sources import SyntheticSource
 from quant_hub.events import EventBus, EventBusLogHandler
+from quant_hub.providers.massive import MassiveClient
 from quant_hub.tasks import TaskRunner
 from quant_hub.services.accounts import AccountService
 from quant_hub.services.activity import ActivityService
@@ -32,6 +33,7 @@ from quant_hub.services.fund_holdings import FundHoldingsService
 from quant_hub.services.hedge import HedgeService
 from quant_hub.services.fundamentals import FundamentalsService
 from quant_hub.services.market_service import MarketService
+from quant_hub.services.massive_source import MassiveSource
 from quant_hub.services.option_chains import ChainService
 from quant_hub.services.portfolio import PortfolioService
 from quant_hub.services.research import ResearchService
@@ -182,9 +184,12 @@ def build_core(config: AppConfig | None = None) -> Core:
     # imported. IBKR is optional: turned off in settings, it registers no
     # sources, and pages offer only the rest.
     ibkr = config.ibkr_enabled
+    # Massive's daily bars, cached the same way, when [massive] key is set (D97).
+    massive = ([CachedSource(MassiveSource(MassiveClient(config.massive_key)), store)]
+               if config.massive_key else [])
     market_service = MarketService(
         sources=[SyntheticSource(), FileSource(store),
-                 *([CachedSource(IBKRSource(broker), store)] if ibkr else [])],
+                 *([CachedSource(IBKRSource(broker), store)] if ibkr else []), *massive],
     )
     # Option chains: live providers by name (D34), every fetch saved as a
     # snapshot in the same database (D33), plus "stored" for saved ones.

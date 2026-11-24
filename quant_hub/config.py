@@ -80,6 +80,7 @@ class AppConfig:
     # The SEC's required User-Agent, "Name email@example.com" (D47).
     sec_identity: str = ""
     fred_key: str = ""                 # [fred] key: FRED's API (HEDGE U2, D69); never logged
+    massive_key: str = ""              # [massive] key: daily bars without TWS (D97); never logged
 
     # Installed packages that add pages, found at startup (D86).
     extensions_enabled: bool = True
@@ -189,6 +190,12 @@ def _fred_key(value: Any, _base: Path) -> str:
     return value.strip()
 
 
+def _massive_key(value: Any, _base: Path) -> str:
+    if not isinstance(value, str) or not value.strip() or " " in value.strip()             or len(value.strip()) < 16:
+        raise ValueError("must be your Massive API key in quotes (from massive.com)")
+    return value.strip()
+
+
 # [section] key -> (AppConfig field, parser)
 _SETTINGS = {
     "store": {"path": ("db_path", _path)},
@@ -196,6 +203,7 @@ _SETTINGS = {
              "port": ("ibkr_port", _port), "client_id": ("ibkr_client_id", _client_id)},
     "sec": {"identity": ("sec_identity", _identity)},
     "fred": {"key": ("fred_key", _fred_key)},
+    "massive": {"key": ("massive_key", _massive_key)},
     "extensions": {"enabled": ("extensions_enabled", _boolean)},
     "collect": {"chains": ("collect_chains", _symbols)},
 }
