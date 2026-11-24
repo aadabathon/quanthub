@@ -25,7 +25,7 @@ kind                               quantity      amount
 =================================  ============  =========================
 buy, cover, reinvest               q > 0         A = −q·p·m − c − f
 sell, short                        q < 0         A = −q·p·m − c − f
-dividend, interest, fee            q = 0         any
+dividend, interest, fee, journal   q = 0         any
 deposit                            q = 0         A > 0
 withdrawal                         q = 0         A < 0
 split                              q ≠ 0         A = 0
@@ -59,6 +59,12 @@ A deposit or withdrawal is money crossing the account's edge, so its sign
 is its meaning: the returns as held (TR6) count it as a flow. A dividend's,
 an interest payment's or a fee's sign isn't fixed (a dividend can be
 reversed, interest can be charged), so it isn't checked.
+
+A **journal** moves cash between an account's own cash types: a broker that
+keeps a short sale's proceeds apart marks the short to market each day,
+debiting one type and crediting the other. A day's journals net to zero
+within the account, so they change neither its cash nor its P&L; they're
+kept so the history is complete.
 
 Reading the same days twice
 ---------------------------
@@ -116,13 +122,15 @@ class Kind(Enum):
     EXPIRE = "expire"              # an option's own row when it expires,
     ASSIGN = "assign"              # is assigned,
     EXERCISE = "exercise"          # or is exercised
+    JOURNAL = "journal"            # cash between an account's own types; nets to zero
     OTHER = "other"                # kept and shown; no effect on P&L
 
 
 # Shares for cash at a price: the amount must match quantity times price.
 TRADES = frozenset({Kind.BUY, Kind.SELL, Kind.SHORT, Kind.COVER, Kind.REINVEST})
 # Cash only: no shares move.
-CASH_ONLY = frozenset({Kind.DIVIDEND, Kind.INTEREST, Kind.DEPOSIT, Kind.WITHDRAWAL, Kind.FEE})
+CASH_ONLY = frozenset({Kind.DIVIDEND, Kind.INTEREST, Kind.DEPOSIT, Kind.WITHDRAWAL, Kind.FEE,
+                       Kind.JOURNAL})
 # Shares move with no cash.
 NO_CASH = frozenset({Kind.SPLIT, Kind.TRANSFER_IN, Kind.TRANSFER_OUT})
 OPTION_EVENTS = frozenset({Kind.EXPIRE, Kind.ASSIGN, Kind.EXERCISE})
