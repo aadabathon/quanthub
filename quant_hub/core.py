@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 
 from quant_hub.broker.ibkr import IBKRBroker
 from quant_hub.broker.market_source import IBKRSource
@@ -22,6 +23,7 @@ from quant_hub.tasks import TaskRunner
 from quant_hub.services.accounts import AccountService
 from quant_hub.services.activity import ActivityService
 from quant_hub.services.book import PortfolioBook
+from quant_hub.services.desk import DeskService
 from quant_hub.services.cached_source import CachedSource
 from quant_hub.services.chain_collector import ChainCollector
 from quant_hub.services.external_data import ExternalDataService
@@ -39,6 +41,7 @@ from quant_hub.services.workstation import WorkstationService
 from quant_hub.storage.activity_store import ActivityStore
 from quant_hub.storage.bar_store import BarStore
 from quant_hub.storage.chain_store import ChainStore
+from quant_hub.storage.desk_store import DeskStore
 from quant_hub.storage.fundamentals_store import FundamentalsStore
 from quant_hub.storage.holdings_store import HoldingsStore
 from quant_hub.storage.position_store import PositionStore
@@ -84,6 +87,9 @@ class Core:
     # A broker's transaction history, imported (TR1, D90).
     activity_store: ActivityStore
     activity: ActivityService
+    # The desk: snapshots of every voice's claims, and decisions (D1, D96).
+    desk_store: DeskStore
+    desk: DeskService
     tasks: TaskRunner
     # Read-only IBKR accounts (E1); None when IBKR is off in settings.
     accounts: AccountService | None = None
@@ -104,6 +110,7 @@ class Core:
             ("closing series store", self.series_store.close),
             ("closing holdings store", self.holdings_store.close),
             ("closing activity store", self.activity_store.close),
+            ("closing desk store", self.desk_store.close),
         ):
             try:
                 step()
@@ -204,6 +211,11 @@ def build_core(config: AppConfig | None = None) -> Core:
     research = ResearchService(market_service, research_store)
     # A broker's transaction history, same database (TR1, D90).
     activity_store = ActivityStore(config.db_path)
+    activity = ActivityService(activity_store, position_store)
+    # The desk's snapshots and decisions, same database; JSON beside it (D96).
+    desk_store = DeskStore(config.db_path)
+    desk = DeskService(desk_store, market_service, activity,
+                       Path(config.db_path).parent / "desk")
     return Core(
         config=config, bus=bus, broker=broker, store=store, state_store=state_store,
         market_service=market_service, chain_store=chain_store, chains=chains,
@@ -219,7 +231,6 @@ def build_core(config: AppConfig | None = None) -> Core:
         # The hedge lab's job, on stored data only (HEDGE U3, D70).
         hedge=HedgeService(external_data, chains, store),
         book=PortfolioBook(portfolio, market_service, state_store),
-        activity_store=activity_store,
-        activity=ActivityService(activity_store, position_store),
+        activity_store=activity_store, activity=activity, desk_store=desk_store, desk=desk,
         accounts=AccountService(broker) if ibkr else None,
     )
