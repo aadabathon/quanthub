@@ -111,3 +111,22 @@ def test_reconcile_uses_file_snapshots_one_per_day(tmp_path):
     with pytest.raises(ValueError, match="no positions store"):
         ActivityService(store).reconcile()
     store.close(), positions.close()
+
+
+def test_round_trips_and_basis_from_the_stored_history(tmp_path):
+    from datetime import datetime
+
+    from quant_hub.data.positions import Holding, Position, PositionSnapshot
+    from quant_hub.storage.position_store import PositionStore
+
+    store, positions = ActivityStore(":memory:"), PositionStore(":memory:")
+    service = ActivityService(store, positions)
+    service.import_activity(write(tmp_path, "march.csv", MARCH))     # +10 at 10, -10 at 12
+    (trip,) = service.round_trips()
+    assert (trip.side, trip.closed is not None, trip.realized) == ("long", True, 20.0)
+    held = PositionSnapshot((Position("AAA", Holding.EQUITY, 10.0, "Brokerage", cost_basis=100.0),),
+                            datetime(2026, 3, 10), "Generic", "mid.csv")
+    positions.save(held, datetime(2026, 3, 10, 9), "aa")
+    (check,) = service.basis_checks()
+    assert check.fifo_matches and check.snapshot == "mid.csv"
+    store.close(), positions.close()

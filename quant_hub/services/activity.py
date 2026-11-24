@@ -1,4 +1,4 @@
-"""Activity: a broker's transaction history, imported, kept and checked (TR1, TR2, D90, D92).
+"""Activity: a broker's transaction history, imported, kept and checked (TR1–TR3, D90–D94).
 
 ``ActivityService.import_activity`` reads one or more history files
 (``importers/activity_csv.py``) and keeps their transactions
@@ -21,8 +21,12 @@ each day, since two snapshots of one day can't be told apart by the
 history. Snapshots that didn't come from a file (a broker's live accounts)
 are left out: their accounts aren't the history's.
 
-Nothing here reads prices or touches a broker. Lots and round trips come
-next (TR3) and read the history through ``transactions``.
+``round_trips`` and ``basis_checks`` match every sale to the purchase it
+closed (``models/lots.py``), FIFO, and check the open lots' cost against
+the same file snapshots' cost-basis column. A symbol those snapshots hold
+as cash is cash.
+
+Nothing here reads prices or touches a broker.
 
 Runs on the task-worker thread (file and database I/O).
 """
@@ -37,7 +41,9 @@ from pathlib import Path
 
 from quant_hub.data.activity import ActivityFile, Transaction
 from quant_hub.importers.activity_csv import ActivityFileError, read_activity_csv
+from quant_hub.data.positions import Holding, PositionSnapshot
 from quant_hub.models.ledger import Reconciliation, reconcile
+from quant_hub.models.lots import BasisCheck, RoundTrip, basis_checks, round_trips
 from quant_hub.storage.activity_store import ActivityImportSummary, ActivityStore
 from quant_hub.storage.position_store import PositionStore
 
@@ -109,11 +115,24 @@ class ActivityService:
     def reconcile(self) -> Reconciliation:
         """The history against the file snapshots, one per day, the newest
         import of each (module docstring)."""
+        return reconcile(self._store.transactions(), self._file_snapshots())
+
+    def round_trips(self) -> tuple[RoundTrip, ...]:
+        """Every round trip, FIFO, oldest first (``models/lots.py``)."""
+        snapshots = self._file_snapshots() if self._positions is not None else []
+        cash = {p.symbol for s in snapshots for p in s.positions if p.kind is Holding.CASH}
+        return round_trips(self._store.transactions(), cash)
+
+    def basis_checks(self) -> tuple[BasisCheck, ...]:
+        """FIFO and average cost against each file snapshot's cost basis."""
+        return basis_checks(self._store.transactions(), self._file_snapshots())
+
+    def _file_snapshots(self) -> list[PositionSnapshot]:
+        """The snapshots imported from files, the newest import of each day."""
         if self._positions is None:
             raise ValueError("no positions store to reconcile against")
         newest: dict[date, int] = {}
         for summary in self._positions.snapshots():          # newest import first
             if summary.sha256:
                 newest.setdefault(summary.as_of.date(), summary.id)
-        snapshots = [self._positions.load(i) for i in newest.values()]
-        return reconcile(self._store.transactions(), snapshots)
+        return [self._positions.load(i) for i in newest.values()]
