@@ -282,6 +282,7 @@ Layer by layer. Each module's docstring has the detail.
 - `data/series.py` — SeriesMeta/FetchedSeries/StoredSeries: outside series as fetched, with unit, citation and vintage; fractions for returns (D60)
 - `data/holdings.py` — Holding/FundHoldings: one N-PORT report as filed; weights as fractions of net assets (D62)
 - `data/trading_calendar.py` — NYSE holidays by rule from 1998 (Easter, observed days, special closures); trading_days (D63)
+- `data/activity.py` — Transaction/Kind/ActivityFile: one line of a broker's history (quantity = change in shares, amount = change in cash), each kind's rules, amount = −q·p·m − commission − fees within max($0.02, 10⁻⁴|A|); the key and occurrence numbers that let overlapping exports count a transaction once (TR1, D90)
 - `data/return_distribution.py` — HRH's math: period returns and windows, tails, the latest move's rank, A-D and JB on a non-overlapping sample, FD bins, the Q-Q band with fitted parameters (H1, D84)
 - `models/implied_variance.py` — model-free implied variance: the fitted smile's K_var (quoted range + wings), the VIX-style quote sum and its bid/ask band, constant- maturity tenors, forward variances (D75)
 - `models/variance_premium.py` — realized variance over NYSE trading-day windows, GARCH's expected total, the three premiums, ex-post series + Newey–West mean (D76)
@@ -294,13 +295,16 @@ Layer by layer. Each module's docstring has the detail.
 - `services/chain_collector.py` — the watchlist's chains once a trading day after 09:45 NY, wide band, one symbol per task (D63)
 - `services/book.py` — today's book for What-if and the Hedge Lab: `Book` (the analysed snapshot, its settings, sleeves and core), the `BookSource` and `Grader` protocols, `Grades`, and `PortfolioBook`: the newest Portfolio snapshot with the Portfolio page's own settings record, the example portfolio before any import (D89)
 - `services/whatif.py` — the What-if job: today's context from the book source, builders, references, each vector analysed, crash-replayed and (with a grader) graded; named sets (A3, D72, D89)
+- `services/activity.py` — activity imports: every file read first, then all stored or none, each bad row named with its file and line; what each file added, and whether it was imported before (TR1, D90)
 - `services/hedge.py` — hedges on stored data: the β proxy and a mix's book, today's shape (ρ, smile, spread), every candidate at every size, today's prices; offline (D70)
+- `importers/activity_csv.py` — activity CSV: the generic layout (date, account, kind, symbol, quantity, price, commission, fees, amount); brokers' layouts to come, each from a real export; a bad row reported with its line, the rest still read (TR1, D90)
 - `importers/shiller_csv.py` — Shiller's ie_data Data sheet saved as CSV → monthly series by header label; Oct = 1871.1, provisional last month dropped (T1, D61)
 - `providers/ken_french.py` — Ken French's daily FF3, FF5 and momentum zips through the stdlib: client + pure parser, percent → fraction, terms in the docstring (D60)
 - `providers/fred.py` — FRED's API: VIXCLS, DTB3, DGS3MO as published; the key never logged, the credit line cited (D69)
 - `providers/sec_nport.py` — funds' N-PORT: the fund ticker map, the EDGAR Atom feed, primary_doc.xml → FundHoldings (D62)
 - `storage/series_store.py` — outside series as fetched: ext_series (meta, fetched_at, file SHA-256) + ext_values, replaced whole per fetch (schema v7, D60)
 - `storage/holdings_store.py` — fund ticker map + every N-PORT report date kept (schema v8, D62); held symbols' ISINs (v9, D66) (position_store: each import's file hash, v10, and delete after a backup, D74)
+- `storage/activity_store.py` — activity_imports + activity, keyed by (row key, occurrence) with INSERT OR IGNORE, so each key keeps the most copies any one file held; read by date in file order (schema v11, D90). The table isn't `trades`: an extension may own that name in the same file
 
 ## Concurrency model
 

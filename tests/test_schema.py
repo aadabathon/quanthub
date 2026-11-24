@@ -99,7 +99,8 @@ def test_a_file_from_before_versioning_is_backed_up_then_adopted(tmp_path):
         (7, "2026-10-15T19:30:05", str(result.backup)),
         (8, "2026-10-15T19:30:05", str(result.backup)),
         (9, "2026-10-15T19:30:05", str(result.backup)),
-        (10, "2026-10-15T19:30:05", str(result.backup))]
+        (10, "2026-10-15T19:30:05", str(result.backup)),
+        (11, "2026-10-15T19:30:05", str(result.backup))]
     assert rows(db, "SELECT COUNT(*) FROM bars") == [(count,)]
     # Up to date now: the next start changes nothing and copies nothing.
     again = prepare_store(db, clock)
@@ -217,7 +218,8 @@ def test_version_9_gains_snapshot_hashes_and_keeps_the_old_imports(tmp_path):
                      "'2026-10-01 16:00:00', '2026-10-02 09:00:00')")
     conn.close()
     result = prepare_store(old, clock)
-    assert (result.migrated_from, result.version) == (9, 10) and result.backup.is_file()
+    assert (result.migrated_from, result.version) == (9, SCHEMA_VERSION)
+    assert result.backup.is_file()
     prepare_store(new, clock)
     PositionStore(new).close()
     shapes = [rows(p, "PRAGMA table_info(position_snapshots)") for p in (old, new)]
@@ -231,11 +233,28 @@ def test_version_8_gains_the_security_ids_table_shaped_like_a_new_files(tmp_path
     old, new = tmp_path / "old.db", tmp_path / "new.db"
     seeded_store(old, version=8)
     result = prepare_store(old, clock)
-    assert (result.migrated_from, result.version) == (8, 10) and result.backup.is_file()
+    assert (result.migrated_from, result.version) == (8, SCHEMA_VERSION)
+    assert result.backup.is_file()
     prepare_store(new, clock)
     HoldingsStore(new).close()
     shapes = [rows(p, "PRAGMA table_info(security_ids)") for p in (old, new)]
     assert shapes[0] == shapes[1] and shapes[0]
+
+
+def test_version_10_gains_the_activity_tables_shaped_like_a_new_files(tmp_path):
+    from quant_hub.storage.activity_store import ActivityStore
+    old, new = tmp_path / "old.db", tmp_path / "new.db"
+    seeded_store(old, version=10)
+    result = prepare_store(old, clock)
+    assert (result.migrated_from, result.version) == (10, 11) and result.backup.is_file()
+    prepare_store(new, clock)
+    ActivityStore(new).close()
+    sql = ("SELECT type, name, sql FROM sqlite_master WHERE name LIKE 'activity%' "
+           "ORDER BY name")
+    shapes = [rows(p, sql) for p in (old, new)]
+    assert shapes[0] == shapes[1]
+    assert [name for _, name, _ in shapes[0]] == ["activity", "activity_by_date",
+                                                  "activity_imports"]
 
 
 def test_a_migrated_file_has_the_same_tables_as_a_new_one(tmp_path):
