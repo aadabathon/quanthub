@@ -11,6 +11,7 @@ REPO = Path(quant_hub.__file__).parent.parent
 # Model modules with no paper of their own, and why.
 NOT_FROM_A_PAPER = {
     "backtest.py": "daily accounting (R1)",
+    "baseline.py": "the no-edge null: a driftless random walk at trailing volatility (D1)",
     "ledger.py": "a transaction history replayed against snapshots: bookkeeping (TR2)",
     "lots.py": "FIFO lots and round trips: bookkeeping (TR3)",
     "optimize.py": "a numerical minimizer, Nelder–Mead",

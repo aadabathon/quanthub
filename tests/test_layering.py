@@ -73,7 +73,7 @@ RULES = {
             "quant_hub.providers", "quant_hub.storage.fundamentals_store",
             "quant_hub.storage.valuation_store",
             "quant_hub.storage.series_store", "quant_hub.storage.holdings_store",
-            "quant_hub.storage.activity_store"],
+            "quant_hub.storage.activity_store", "quant_hub.storage.desk_store"],
 }
 
 QT_LIBRARIES = ("PySide6", "pyqtgraph", "qtawesome", "qtpy")

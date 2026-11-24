@@ -21,6 +21,13 @@ each day, since two snapshots of one day can't be told apart by the
 history. Snapshots that didn't come from a file (a broker's live accounts)
 are left out: their accounts aren't the history's.
 
+``current_holdings`` is the book as of the history's last day: the newest
+file snapshot, rolled forward by every transaction after its day (the
+export taken after its day's trades, the replay's tie-break), summed by
+symbol across accounts. Its cash is the snapshot's cash plus every amount
+since; the replay doesn't reconcile cash, so this cash is only as good as
+that.
+
 ``round_trips`` and ``basis_checks`` match every sale to the purchase it
 closed (``models/lots.py``), FIFO, and check the open lots' cost against
 the same file snapshots' cost-basis column. A symbol those snapshots hold
@@ -36,10 +43,10 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
-from quant_hub.data.activity import ActivityFile, Transaction
+from quant_hub.data.activity import ActivityFile, Kind, Transaction
 from quant_hub.importers.activity_csv import ActivityFileError, read_activity_csv
 from quant_hub.data.positions import Holding, PositionSnapshot
 from quant_hub.models.ledger import Reconciliation, reconcile
@@ -69,6 +76,18 @@ class FileImported:
     @property
     def already_stored(self) -> int:
         return self.summary.rows - self.summary.added
+
+
+@dataclass(frozen=True)
+class Holdings:
+    """The book rolled forward from an export (module docstring)."""
+
+    base: str                      # the export it starts from
+    base_day: date
+    through: date                  # the last day of history applied
+    units: dict[str, float]        # by symbol across accounts; options by contract
+    options: frozenset[str]
+    cash: float
 
 
 class ActivityService:
@@ -126,6 +145,37 @@ class ActivityService:
     def basis_checks(self) -> tuple[BasisCheck, ...]:
         """FIFO and average cost against each file snapshot's cost basis."""
         return basis_checks(self._store.transactions(), self._file_snapshots())
+
+    def current_holdings(self) -> Holdings:
+        """The newest export rolled forward by the history (module docstring)."""
+        snapshots = self._file_snapshots()
+        if not snapshots:
+            raise ValueError("no positions export imported on Portfolio to start from")
+        base = max(snapshots, key=lambda s: s.as_of)
+        base_day = base.as_of.date()
+        funds = {p.symbol for p in base.positions if p.kind is Holding.CASH}
+        units: dict[str, float] = {}
+        options = {p.symbol for p in base.positions if p.kind is Holding.OPTION}
+        cash = 0.0
+        for p in base.positions:
+            if p.kind is Holding.CASH:
+                cash += p.market_value or 0.0
+            else:
+                units[p.symbol] = units.get(p.symbol, 0.0) + p.quantity
+        through = base_day
+        for t in self._store.transactions(start=base_day + timedelta(days=1)):
+            if t.kind is Kind.OTHER:
+                continue
+            through = max(through, t.trade_date)
+            if t.quantity and t.symbol in funds:
+                continue                         # cash into cash
+            cash += t.amount
+            if t.quantity:
+                units[t.symbol] = units.get(t.symbol, 0.0) + t.quantity
+                if t.option is not None:
+                    options.add(t.symbol)
+        held = {s: q for s, q in units.items() if abs(q) > 1e-9}
+        return Holdings(base.name, base_day, through, held, frozenset(options & set(held)), cash)
 
     def _file_snapshots(self) -> list[PositionSnapshot]:
         """The snapshots imported from files, the newest import of each day."""
