@@ -105,7 +105,8 @@ quant_hub/
 │   │                          search + IBKR control, status + log drawer)
 │   └── pages/                 base.py (Page, ScrollPage, Shell, debounce),
 │                              dashboard.py, markets.py, returns.py (HRH),
-│                              data.py (D64), whatif.py (D73), hedge_lab.py (D71),
+│                              data.py (D64), trades.py (D95), whatif.py (D73),
+│                              hedge_lab.py (D71),
 │                              garch_lab.py,
 │                              simulator.py, options_lab/ (page, underlying,
 │                              pricer, strategy, monte_carlo), volatility_lab.py,
@@ -344,6 +345,9 @@ Returns    = one stored security's return histogram (HRH): the latest move's
              rank, tails, A-D and JB, a Q-Q view (D84, D85)
 Data       = what the store holds, by kind: outside series with a preview and
              citation, fund holdings, chain snapshots, price history (D64)
+Trades     = your broker's history imported (Fidelity's download or the generic
+             layout), replayed against every positions export, cost basis checked,
+             round trips and their FIFO pieces, every transaction (TR5a, D95)
 What-if    = weight vectors (typed, built from today's book, or the four references)
              through Portfolio's analysis side by side, with the crash replay and
              risk shares; saved sets; nothing trades (A3, D72–D73, D89)

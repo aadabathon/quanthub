@@ -2343,3 +2343,58 @@ def test_portfolio_asks_before_a_reimport_and_deletes_after_a_backup(qt_app, tmp
     assert "Delete snapshot #" in answers[-1]
     backups = list((window._core.config.db_path.parent / "backups").glob("*before-deleting*"))
     assert len(backups) == 1
+
+
+_HISTORY = ("date,account,kind,symbol,quantity,price,commission,fees,amount\n"
+            "2026-03-02,Brokerage,buy,AAA,10,10.00,0,0,-100.00\n"
+            "2026-03-05,Brokerage,sell,AAA,-6,12.00,0,0,72.00\n"
+            "2026-03-20,Brokerage,sell,AAA,-4,9.00,0,0,36.00\n"
+            "2026-03-25,Brokerage,buy,BBB,5,20.00,0,0,-100.00\n")
+
+
+def test_the_trades_page_imports_a_history_and_checks_it(qt_app, tmp_path):
+    from datetime import datetime
+
+    from quant_hub.data.positions import Holding, Position, PositionSnapshot
+    app, window = qt_app
+    page = window.show_page("Trades")
+    wait_for(app, lambda: page._header._status.full_text().startswith("No history"))
+    assert "Import your broker's activity" in page._import_note._text.text()
+    export = PositionSnapshot((Position("AAA", Holding.EQUITY, 4.0, "Brokerage", cost_basis=40.0),),
+                              datetime(2026, 3, 10), "Generic", "mid.csv")
+    window._core.position_store.save(export, datetime(2026, 3, 10, 9), "aa")
+    history = tmp_path / "history.csv"
+    history.write_text(_HISTORY, encoding="utf-8")
+    page.import_files([history])
+    wait_for(app, lambda: page._trips_table.rowCount() == 2)
+    assert page._trips_table.item(0, 0).text() == "BBB"                  # newest first, open
+    assert page._trips_table.item(0, 4).text() == "open"
+    assert page._trips_table.item(1, 7).text() == "+$8.00"               # 6×2 − 4×1
+    assert page._trips_table.selected_row() == 1          # the newest with closed pieces
+    assert page._pieces.rowCount() == 2
+    page._trips_table.selectRow(0)
+    app.processEvents()
+    assert "nothing closed yet; 5 still held" in page._pieces_card.subtitle.full_text()
+    page._trips_table.selectRow(1)
+    app.processEvents()
+    assert page._pieces.rowCount() == 2 and page._pieces.item(1, 6).text() == "−$4.00"
+    assert page._history.rowCount() == 4 and page._history.item(0, 3).text() == "BBB"
+    assert page._imports.rowCount() == 1 and page._imports.item(0, 4).text() == "4"
+    assert "history.csv: 4 new of 4" in page._import_note._text.text()
+    assert page._checked.value_text("exports") == "1"
+    assert page._checked.value_text("opening") == "0"
+    assert page._checked.value_text("fifo") == "1 of 1"
+    assert page._summary.value_text("realized") == "+$8.00"
+    assert "Every export is explained" in page._header._status.full_text()
+
+
+def test_the_trades_page_imports_nothing_from_a_bad_file(qt_app, tmp_path):
+    app, window = qt_app
+    page = window.show_page("Trades")
+    wait_for(app, lambda: page._header._status.full_text().startswith("No history"))
+    bad = tmp_path / "bad.csv"
+    bad.write_text(_HISTORY.replace("-100.00\n2026-03-05", "-5.00\n2026-03-05"), encoding="utf-8")
+    page.import_files([bad])
+    wait_for(app, lambda: "Nothing was imported" in page._import_note._text.text())
+    assert "bad.csv line 2" in page._import_note._text.text()
+    assert page._trips_table.rowCount() == 0 and page._import_button.isEnabled()
