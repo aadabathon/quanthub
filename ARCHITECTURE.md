@@ -105,7 +105,7 @@ quant_hub/
 │   │                          search + IBKR control, status + log drawer)
 │   └── pages/                 base.py (Page, ScrollPage, Shell, debounce),
 │                              dashboard.py, markets.py, returns.py (HRH),
-│                              data.py (D64), trades.py (D95), whatif.py (D73),
+│                              data.py (D64), trades.py (D95, timing D100), whatif.py (D73),
 │                              hedge_lab.py (D71),
 │                              garch_lab.py,
 │                              simulator.py, options_lab/ (page, underlying,
@@ -291,6 +291,7 @@ Layer by layer. Each module's docstring has the detail.
 - `models/hedge.py` — hedges on the book: cash, streams, trend, vol targeting, rolled puts / spreads / collars at VIX·ρ·smile; the yardstick: crash windows by rule, cost, Δ log growth ± NW, convexity (U1)
 - `models/stress.py` — crash stress: a constant-β replay through French's market from 1926, its worst falls (A2, D67)
 - `models/baseline.py` — the no-edge voice: today's book replayed on the past, a driftless random walk at its last 63 sessions' volatility; return quantiles, fall odds, realized-vol quantiles from the exact χ² (incomplete gamma, bisection); every voice is scored against it (D1, D96)
+- `models/timing.py` — how well each trade was timed: the exact P&L split (market, stock, entry fill, exit fill, costs), better days in a ±h window against the exact null (the arcsine law convolved, Sparre Andersen), n-fold for the aggregate p, markouts at 1/5/20 sessions net of β and an exact sign test, MFE/MAE/capture from the entry close (TR4, D100)
 - `models/voices.py` — the desk's first voices, each the baseline's claims with one assumption changed: garch (σ̂ from GARCH(1,1); proposes volatility-managed risk), regimes (a BIC-chosen HMM, simulated from today's state probabilities; the one voice with drift), bootstrap (the book's history resampled in blocks; no drift, no normal law) (D2, D99)
 - `models/ledger.py` — the history replayed against positions snapshots: each holding's residual between consecutive snapshots, same-day trades placed either way, opening gaps from the history's start, by account or by symbol when a snapshot names no accounts; cash shown, not judged (TR2, D92)
 - `models/lots.py` — FIFO lots from the history: pieces with their cash per unit (A/|q|, fees inside), P&L m(c_open + c_close), round trips flat to flat with income beside them, splits scaling lots, transfers of unknown cost; the open lots' FIFO and average-cost basis against a snapshot's cost-basis column (TR3, D94)

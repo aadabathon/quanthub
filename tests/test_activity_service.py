@@ -131,3 +131,35 @@ def test_round_trips_and_basis_from_the_stored_history(tmp_path):
     (check,) = service.basis_checks()
     assert check.fifo_matches and check.snapshot == "mid.csv"
     store.close(), positions.close()
+
+
+def test_timing_reads_bars_and_names_what_it_couldnt_get(service, tmp_path):
+    import numpy as np
+    import pandas as pd
+
+    from quant_hub.data.types import PriceHistory
+    from quant_hub.services.market_service import MarketService
+
+    class Source:
+        name = "test"
+
+        def get_history(self, symbol, start, end, basis):
+            if symbol not in ("AAA", "SPY"):
+                raise ValueError(f"no bars for {symbol}")
+            index = pd.bdate_range("2026-01-02", "2026-04-30")
+            closes = np.linspace(10, 12, len(index)) if symbol == "AAA" else \
+                np.linspace(400, 420, len(index))
+            return PriceHistory(symbol, "test", pd.DataFrame(
+                {"open": closes, "high": closes, "low": closes, "close": closes,
+                 "volume": np.full(len(index), 1e6)}, index=index), basis)
+
+        def get_quote(self, symbol):
+            raise NotImplementedError
+
+    service.import_activity(write(tmp_path, "march.csv", MARCH + "2026-03-24,Brokerage,buy,ZZZ,1,5.00,0,0,-5.00\n"))
+    report, missing = service.timing(MarketService([Source()]), "test")
+    assert "ZZZ" in missing and "AAA" not in missing
+    assert len(report.pieces) == 1 and report.pieces[0].entry_fill is not None
+    assert report.windows[(True, 5)].n == 1 and report.windows[(False, 5)].n == 1
+    with pytest.raises(ValueError, match="no history"):
+        ActivityService(ActivityStore(":memory:")).timing(MarketService([Source()]), "test")

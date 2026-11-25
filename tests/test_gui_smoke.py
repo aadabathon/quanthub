@@ -2398,3 +2398,34 @@ def test_the_trades_page_imports_nothing_from_a_bad_file(qt_app, tmp_path):
     wait_for(app, lambda: "Nothing was imported" in page._import_note._text.text())
     assert "bad.csv line 2" in page._import_note._text.text()
     assert page._trips_table.rowCount() == 0 and page._import_button.isEnabled()
+
+
+def test_the_trades_page_measures_timing_from_stored_bars(qt_app, tmp_path):
+    app, window = qt_app
+    page = window.show_page("Trades")
+    wait_for(app, lambda: page._header._status.full_text().startswith("No history"))
+    history = tmp_path / "history.csv"
+    history.write_text("date,account,kind,symbol,quantity,price,commission,fees,amount\n"
+                       "2025-03-03,Brokerage,buy,AAA,10,50.00,0,0,-500.00\n"
+                       "2025-04-01,Brokerage,sell,AAA,-10,50.00,0,0,500.00\n"
+                       "2025-05-01,Brokerage,buy,BBB,4,50.00,0,0,-200.00\n", encoding="utf-8")
+    page.import_files([history])
+    wait_for(app, lambda: page._trips_table.rowCount() == 2)
+    assert page._timing_source.current() == "ibkr"          # no Massive key in the test
+    assert page._trip_timing.value_text("t_in") == "—"      # nothing measured yet
+    dates = pd.bdate_range("2025-01-02", periods=300)       # served as imported files
+    closes = 50 * np.exp(np.cumsum(np.random.default_rng(2).normal(0, 0.012, len(dates))))
+    frame = pd.DataFrame({"open": closes, "high": closes * 1.01, "low": closes * 0.99,
+                          "close": closes, "volume": np.full(len(dates), 2e6)}, index=dates)
+    for symbol in ("AAA", "BBB"):
+        window._core.store.insert_bars(InstrumentKey(symbol), "file", "1 day", frame)
+    page._timing_source.select.set_current("file")
+    page.measure()
+    wait_for(app, lambda: page._header._status.full_text() == "Timing measured.", 30)
+    assert "/20 · p " in page._timing_stats.value_text("e10")
+    assert "/20 · p " in page._timing_stats.value_text("x10")
+    assert "/" in page._timing_stats.value_text("em1")
+    assert "SPY" in page._timing_note._text.text()          # no benchmark bars: named
+    page._trips_table.selectRow(1)                          # AAA, closed
+    app.processEvents()
+    assert page._trip_timing.value_text("t_in") != "—"

@@ -72,7 +72,7 @@ def _sections(core: Core, book: BookSource | None = None,
     portfolio = ("Portfolio", "ph.chart-pie-slice", lambda _shell: PortfolioPage(
         core.portfolio, core.market_service, core.tasks, core.state_store, core.accounts))
     trades = ("Trades", "ph.receipt", lambda _shell: TradesPage(
-        core.activity, core.tasks, core.state_store))
+        core.activity, core.market_service, core.tasks, core.state_store))
     valuation = ("Valuation", "ph.scales", lambda _shell: ValuationPage(
         core.valuation, core.portfolio, core.tasks, core.state_store))
     data = ("Data", "ph.database", lambda shell: DataPage(
