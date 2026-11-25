@@ -94,6 +94,13 @@ from quant_hub.models.garch import average_variance_forecast, fit_garch11, next_
 from quant_hub.models.markov import hmm_filter, select_regimes
 
 MIN_SESSIONS = 250              # about a year of the book's history
+# Each voice's canon papers (data/canon): its one assumption, and the
+# volatility management two of them propose.
+PAPERS = {
+    "garch": ("bollerslev1986", "moreiramuir2017"),
+    "regimes": ("hamilton1989", "moreiramuir2017"),
+    "bootstrap": ("politisromano1994",),
+}
 PATHS = 20_000
 SEED = 20261125
 BLOCK = 10                      # mean block length, sessions

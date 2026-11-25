@@ -52,6 +52,9 @@ import pandas as pd
 from quant_hub.data.desk import LEVELS, Book, Claim, Proposal, VoiceOutput
 
 NAME, VERSION = "baseline", "1"
+# The canon papers it rests on (data/canon): log prices diffuse (Osborne),
+# and properly anticipated prices carry no predictable drift (Samuelson).
+PAPERS = ("osborne1959", "samuelson1965proof")
 WINDOW = 63                     # sessions of history for σ̂
 HORIZONS = (5, 21, 63)
 FALLS = ((21, -0.10), (63, -0.20))

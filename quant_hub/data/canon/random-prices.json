@@ -62,7 +62,7 @@
     "question": "Which transformation of price behaves like a particle in Brownian motion?",
     "changed": "Showed log prices, not prices, diffuse: the log-normal model that fixes negative prices.",
     "assumed": "Gaussian log returns with constant variance.",
-    "lives_in": ["quant_hub/data/synthetic.py"],
+    "lives_in": ["quant_hub/data/synthetic.py", "quant_hub/models/baseline.py"],
     "links": [{"to": "bachelier1900", "kind": "corrects"}],
     "verified": {"via": "crossref", "checked": "2026-11-02", "matched": ["title", "first_author", "year"]}
   },

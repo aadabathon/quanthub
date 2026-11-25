@@ -1415,3 +1415,111 @@ class Heatmap(QWidget):
             f"<b style='{strong}'>{self._rows[r]}</b>{sep}{self._x_name} "
             f"<b style='{strong}'>{self._x_fmt.format(self._x[j])}</b>{sep}"
             f"{self._value_name} <b style='{strong}'>{self._value_fmt.format(self._values[r, j])}</b>")
+
+
+# ------------------------------------------------------------ quantile bands
+
+@dataclass(frozen=True)
+class BandRow:
+    """One row of ``QuantileBands``: quantiles at 5, 25, 50, 75 and 95%."""
+
+    name: str
+    quantiles: tuple[float, float, float, float, float]
+    color: str = PALETTE.series
+
+
+class QuantileBands(QWidget):
+    """Rows of quantile bands on one value axis, first row on top: a thin
+    line from the 5% to the 95% quantile, a thick bar over the middle half,
+    a tick at the median, and a line at zero. The desk's voices side by side
+    (D3). Hover a row to read its five values."""
+
+    _ROW_PX = 40
+
+    def __init__(self, x_axis: str = "money", value_text=lambda q: f"{q:,.0f}") -> None:
+        """``value_text`` writes a value for the readout."""
+        super().__init__()
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(SPACE_XS)
+        self._readout = _readout_label()
+        self._readout.setTextFormat(Qt.RichText)     # the resting line has no tags to detect
+        layout.addWidget(self._readout)
+        self._canvas = _Canvas()
+        self._canvas.setBackground(PALETTE.surface)
+        self._canvas.ci.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self._canvas, 1)
+        self._plot = self._canvas.addPlot(axisItems={"bottom": _ValueAxis("bottom", x_axis)})
+        _view_only(self._plot)
+        self._plot.vb.setDefaultPadding(0.04)
+        self._plot.invertY(True)
+        self._plot.getAxis("left").setWidth(84)
+        self._text = value_text
+        self._rows: Sequence[BandRow] = ()
+        self._items: list[pg.GraphicsObject] = []
+        self._hover = pg.LinearRegionItem(orientation="horizontal", movable=False,
+                                          brush=_color(PALETTE.text_secondary, 0.08),
+                                          pen=pg.mkPen(None))
+        self._hover.setVisible(False)
+        self._plot.addItem(self._hover, ignoreBounds=True)
+        self._canvas.scene().sigMouseMoved.connect(self._on_mouse_moved)
+        self._canvas.left.connect(self._on_leave)
+
+    def set_rows(self, rows: Sequence[BandRow]) -> None:
+        for item in self._items:
+            self._plot.removeItem(item)
+        self._items, self._rows = [], list(rows)
+        self.setMinimumHeight(64 + self._ROW_PX * max(len(self._rows), 1))
+        if not self._rows:
+            self._readout.setText("")
+            return
+        self._add(pg.InfiniteLine(pos=0.0, angle=90, pen=pg.mkPen(PALETTE.border_strong)), True)
+        for y, row in enumerate(self._rows):
+            q05, q25, q50, q75, q95 = row.quantiles
+            self._add(pg.PlotCurveItem([q05, q95], [y, y],
+                                       pen=pg.mkPen(_color(row.color, 0.75), width=2)))
+            self._add(pg.BarGraphItem(x0=[q25], width=[q75 - q25], y=[y], height=0.42,
+                                      brush=_color(row.color, 0.55), pen=pg.mkPen(row.color)))
+            self._add(pg.ScatterPlotItem([q50], [y], symbol="|", size=22,
+                                         pen=pg.mkPen(PALETTE.text, width=2.5)))
+        self._plot.getAxis("left").setTicks([[(i, r.name) for i, r in enumerate(self._rows)]])
+        low = min(min(r.quantiles[0], 0.0) for r in self._rows)
+        high = max(max(r.quantiles[-1], 0.0) for r in self._rows)
+        self._plot.setXRange(low, high, padding=0.06)
+        self._plot.setYRange(-0.6, len(self._rows) - 0.4, padding=0)
+        self._show_readout(None)
+
+    def _add(self, item, ignore_bounds: bool = False) -> None:
+        self._plot.addItem(item, ignoreBounds=ignore_bounds)
+        self._items.append(item)
+
+    def _on_mouse_moved(self, pos: QPointF) -> None:
+        if not self._rows or not self._plot.sceneBoundingRect().contains(pos):
+            self._on_leave()
+            return
+        y = self._plot.vb.mapSceneToView(pos).y()
+        i = int(np.clip(round(y), 0, len(self._rows) - 1))
+        self._hover.setRegion((i - 0.5, i + 0.5))
+        self._hover.setVisible(True)
+        self._show_readout(i)
+
+    def _on_leave(self) -> None:
+        self._hover.setVisible(False)
+        if self._rows:
+            self._show_readout(None)
+
+    def _show_readout(self, i: int | None) -> None:
+        strong = f"color:{PALETTE.text}"
+        sep = "&nbsp;&nbsp;·&nbsp;&nbsp;"
+        if i is None:
+            self._readout.setText(sep.join(["hover a row", "thin: 90% of outcomes",
+                                            "thick: the middle half", "tick: the median"]))
+            return
+        row = self._rows[i]
+        parts = [f"<span style='color:{row.color}'>━</span> <b style='{strong}'>{row.name}</b>"]
+        for name, q in zip(("5%", "25%", "median", "75%", "95%"), row.quantiles):
+            parts.append(f"{name} <b style='{strong}'>{self._text(q)}</b>")
+        self._readout.setText(sep.join(parts))
+
+    def clear(self) -> None:
+        self.set_rows([])

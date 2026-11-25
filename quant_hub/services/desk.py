@@ -24,6 +24,10 @@
 
 ``record`` stores a decision made on a stored snapshot.
 
+``view`` is what the Desk page shows (D3): a stored snapshot, its voices
+side by side in dollars (``models/comparison.py``), each holding's band,
+and each voice's papers from the canon (``PAPERS``).
+
 Runs on the task-worker thread, or from the command line
 (``python -m quant_hub.snapshot``).
 """
@@ -32,7 +36,7 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -42,17 +46,32 @@ import pandas as pd
 
 from quant_hub import __version__
 from quant_hub.data.desk import Book, Decision, Holding, Snapshot, VoiceOutput
+from quant_hub.data.literature import CanonPaper
+from quant_hub.models import baseline as baseline_model
+from quant_hub.models import voices as voice_models
 from quant_hub.models.baseline import WINDOW, baseline
+from quant_hub.models.comparison import Comparison, compare, holding_bands
 from quant_hub.models.voices import bootstrap, garch, regimes
 from quant_hub.services.activity import ActivityService
 from quant_hub.services.market_service import MarketService
-from quant_hub.storage.desk_store import DeskStore
+from quant_hub.storage.canon_store import load_canon
+from quant_hub.storage.desk_store import DeskStore, SnapshotSummary
 
 _logger = logging.getLogger(__name__)
 
 Voice = Callable[[Book, pd.DataFrame], VoiceOutput]
 VOICES: tuple[Voice, ...] = (baseline, garch, regimes, bootstrap)
 LOOKBACK_DAYS = 730             # calendar days of closes fetched: ~500 sessions, two years
+# Each voice's canon papers, by the name it speaks under.
+PAPERS: dict[str, tuple[str, ...]] = {baseline_model.NAME: baseline_model.PAPERS,
+                                      **voice_models.PAPERS}
+
+
+def default_source(massive_keyed: bool, ibkr_enabled: bool) -> str:
+    """Where a snapshot's prices come from unless told: Massive when keyed
+    (daily bars without TWS), else IBKR when it's on, else the store's file
+    imports."""
+    return "massive" if massive_keyed else "ibkr" if ibkr_enabled else "file"
 
 
 @dataclass(frozen=True)
@@ -65,12 +84,28 @@ class Taken:
     silent: tuple[str, ...]        # voices that couldn't speak, and why
 
 
+@dataclass(frozen=True)
+class DeskView:
+    """What the Desk page shows of one stored snapshot (module docstring).
+    ``comparison`` is None when the book can't be put in dollars, and
+    ``problem`` says why."""
+
+    snapshots: tuple[SnapshotSummary, ...]          # every one stored, newest first
+    id: int
+    snapshot: Snapshot
+    comparison: Comparison | None
+    problem: str
+    holdings: Mapping[str, tuple[float, ...]]       # the baseline's 21-session $ band
+    papers: Mapping[str, tuple[CanonPaper, ...]]    # each voice's, from the canon
+
+
 class DeskService:
     def __init__(self, store: DeskStore, market: MarketService, activity: ActivityService,
                  export_dir: Path | None = None, voices: Sequence[Voice] = VOICES) -> None:
         self._store, self._market, self._activity = store, market, activity
         self._export_dir = export_dir
         self._voices = tuple(voices)
+        self._canon = None              # read on the first view, on the worker thread
 
     def take(self, source: str, now: datetime | None = None) -> Taken:
         """Today's snapshot from ``source``'s prices (module docstring)."""
@@ -139,6 +174,25 @@ class DeskService:
                 if stored.book == book:
                     return summary.id, stored
         return None
+
+    def view(self, snapshot_id: int | None = None) -> DeskView | None:
+        """A stored snapshot (the newest unless named) as the Desk page shows
+        it; None when nothing is stored yet."""
+        summaries = tuple(self._store.snapshots())
+        if not summaries:
+            return None
+        chosen = snapshot_id if snapshot_id is not None else summaries[0].id
+        snapshot = self._store.load(chosen)
+        try:
+            comparison, problem = compare(snapshot), ""
+        except ValueError as exc:
+            comparison, problem = None, str(exc)
+        if self._canon is None:
+            self._canon = load_canon()
+        papers = {v.voice: tuple(self._canon.paper(p) for p in PAPERS.get(v.voice, ())
+                                 if p in self._canon) for v in snapshot.voices}
+        return DeskView(summaries, chosen, snapshot, comparison, problem,
+                        holding_bands(snapshot), papers)
 
     def record(self, decision: Decision) -> int:
         """Store a decision on a stored snapshot (``Decision.snapshot_sha``)."""

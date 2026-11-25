@@ -2429,3 +2429,46 @@ def test_the_trades_page_measures_timing_from_stored_bars(qt_app, tmp_path):
     page._trips_table.selectRow(1)                          # AAA, closed
     app.processEvents()
     assert page._trip_timing.value_text("t_in") != "—"
+
+
+def _desk_snapshot():
+    from datetime import date, datetime
+
+    from quant_hub.data.desk import Book, Holding, Snapshot
+    from quant_hub.models.baseline import baseline
+    from quant_hub.models.voices import bootstrap, garch, regimes
+    index = pd.bdate_range(end="2026-11-20", periods=300)
+    rng = np.random.default_rng(5)
+    log_returns = pd.DataFrame({"AAA": rng.normal(0, 0.012, 300),
+                                "BBB": rng.normal(0, 0.02, 300)}, index=index)
+    book = Book(date(2026, 11, 20), (Holding("AAA", 10.0, 100.0), Holding("BBB", 5.0, 200.0)),
+                500.0)
+    voices = tuple(v(book, log_returns) for v in (baseline, garch, regimes, bootstrap))
+    return Snapshot(datetime(2026, 11, 20, 17, 30), book.as_of, "test", "0", book, voices)
+
+
+def test_the_desk_page_shows_the_voices_side_by_side(qt_app):
+    app, window = qt_app
+    page = window.show_page("Desk")
+    wait_for(app, lambda: page._header._status.full_text().startswith("No snapshot"))
+    window._core.desk_store.save_snapshot(_desk_snapshot())
+    page.reload()
+    wait_for(app, lambda: page._header._status.full_text().startswith("Snapshot #1"))
+    assert [page._band_table.item(r, 0).text() for r in range(4)] == [
+        "baseline", "garch", "regimes", "bootstrap"]
+    assert page._band_table.item(0, 6).text() == ""             # the baseline against itself
+    assert page._agree.rowCount() == 5            # worst, median, best, the fall, volatility
+    assert page._agree.item(3, 0).text() == "Chance of a 10% fall (−$250)"
+    assert page._proposals.rowCount() == 4
+    assert page._facts.value_text("value") == "$2,500"
+    assert page._book.rowCount() == 3 and page._book.item(2, 0).text() == "Cash"
+    page._horizon_control.changed.emit("5 sessions")
+    app.processEvents()
+    assert page._agree.rowCount() == 3                          # 5 sessions: dollars only
+    assert "over 5 sessions" in page._voices_card.subtitle.full_text()
+    page._why_select.select.set_current("garch")
+    app.processEvents()
+    assert "Volatility clusters" in page._why._text.text()
+    assert [page._paper_table.item(r, 0).text() for r in range(2)] == [
+        "Bollerslev 1986", "Moreira–Muir 2017"]
+    assert "Changed:" in page._paper._text.text() and page._open_paper.isEnabled()

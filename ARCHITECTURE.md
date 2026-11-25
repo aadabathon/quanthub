@@ -87,7 +87,9 @@ quant_hub/
 │   │                          CurveChart (y vs numeric/log x: profiles, P&L
 │   │                          with signed shading, MC convergence + band,
 │   │                          markers / point-only series), SmileGrid (small
-│   │                          multiples), Heatmap (sequential ramp + color bar)
+│   │                          multiples), Heatmap (sequential ramp + color bar),
+│   │                          QuantileBands (rows of 5–95% bands: the desk's
+│   │                          voices side by side, D101)
 │   ├── timeline.py            TimelineChart: the literature on strand lanes
 │   │                          over a squeezed year axis, chips by level of
 │   │                          detail, links on selection; the one chart that
@@ -104,7 +106,7 @@ quant_hub/
 │   ├── sidebar.py / top_bar.py / status_bar.py   shell pieces (nav, Ctrl+K
 │   │                          search + IBKR control, status + log drawer)
 │   └── pages/                 base.py (Page, ScrollPage, Shell, debounce),
-│                              dashboard.py, markets.py, returns.py (HRH),
+│                              dashboard.py, desk.py (D101), markets.py, returns.py (HRH),
 │                              data.py (D64), trades.py (D95, timing D100), whatif.py (D73),
 │                              hedge_lab.py (D71),
 │                              garch_lab.py,
@@ -291,6 +293,7 @@ Layer by layer. Each module's docstring has the detail.
 - `models/hedge.py` — hedges on the book: cash, streams, trend, vol targeting, rolled puts / spreads / collars at VIX·ρ·smile; the yardstick: crash windows by rule, cost, Δ log growth ± NW, convexity (U1)
 - `models/stress.py` — crash stress: a constant-β replay through French's market from 1926, its worst falls (A2, D67)
 - `models/baseline.py` — the no-edge voice: today's book replayed on the past, a driftless random walk at its last 63 sessions' volatility; return quantiles, fall odds, realized-vol quantiles from the exact χ² (incomplete gamma, bisection); every voice is scored against it (D1, D96)
+- `models/comparison.py` — the desk's voices side by side in dollars: each claim on the book's return times its value (exact for V > 0), every shared claim lowest to highest with nothing averaged, each voice against the baseline, proposals as trades, and a uniform-scale proposal read under every voice's law (exactly m times each quantile) (D3, D101)
 - `models/timing.py` — how well each trade was timed: the exact P&L split (market, stock, entry fill, exit fill, costs), better days in a ±h window against the exact null (the arcsine law convolved, Sparre Andersen), n-fold for the aggregate p, markouts at 1/5/20 sessions net of β and an exact sign test, MFE/MAE/capture from the entry close (TR4, D100)
 - `models/voices.py` — the desk's first voices, each the baseline's claims with one assumption changed: garch (σ̂ from GARCH(1,1); proposes volatility-managed risk), regimes (a BIC-chosen HMM, simulated from today's state probabilities; the one voice with drift), bootstrap (the book's history resampled in blocks; no drift, no normal law) (D2, D99)
 - `models/ledger.py` — the history replayed against positions snapshots: each holding's residual between consecutive snapshots, same-day trades placed either way, opening gaps from the history's start, by account or by symbol when a snapshot names no accounts; cash shown, not judged (TR2, D92)
@@ -303,7 +306,7 @@ Layer by layer. Each module's docstring has the detail.
 - `services/book.py` — today's book for What-if and the Hedge Lab: `Book` (the analysed snapshot, its settings, sleeves and core), the `BookSource` and `Grader` protocols, `Grades`, and `PortfolioBook`: the newest Portfolio snapshot with the Portfolio page's own settings record, the example portfolio before any import (D89)
 - `services/whatif.py` — the What-if job: today's context from the book source, builders, references, each vector analysed, crash-replayed and (with a grader) graded; named sets (A3, D72, D89)
 - `services/massive_source.py` — Massive as a BarSource under CachedSource, like IBKR: traded = split-adjusted bars; adjusted = traded × Π f_e over later ex-dates, f = 1 − D/P_before, both on one split scale; unreachable is offline (D97)
-- `services/desk.py` — take a snapshot: the newest export rolled forward by the history, priced on the last day every holding has a close, unpriced holdings named, each voice's claims, stored once by hash, one per data day, written as JSON beside the store; record decisions (D1, D96). `python -m quant_hub.snapshot` takes one from the command line, for a daily run
+- `services/desk.py` — take a snapshot: the newest export rolled forward by the history, priced on the last day every holding has a close, unpriced holdings named, each voice's claims, stored once by hash, one per data day, written as JSON beside the store; record decisions (D1, D96). `python -m quant_hub.snapshot` takes one from the command line, for a daily run; `view`: a stored snapshot as the Desk page shows it, in dollars, with each voice's canon papers (`PAPERS`) (D3, D101)
 - `services/activity.py` — activity imports: every file read first, then all stored or none, each bad row named with its file and line; what each file added, whether it was imported before, and the wording it kept as other (TR1, D90; D91); reconcile: the history against the file snapshots, one per day (TR2, D92); round_trips and basis_checks (TR3, D94)
 - `services/hedge.py` — hedges on stored data: the β proxy and a mix's book, today's shape (ρ, smile, spread), every candidate at every size, today's prices; offline (D70)
 - `importers/activity_csv.py` — activity CSV: the generic layout (date, account, kind, symbol, quantity, price, commission, fees, amount); Fidelity's history download, recognized by its header, its action map holding only wording seen in real exports (trades, shorts and covers, options to open and their expiry, flows, interest, fees, journals) and everything else kept as other; a CUSIP in the wording when the Symbol cell is empty (TR1b, TR2, D91, D92); a bad row reported with its line, the rest still read (TR1, D90)
