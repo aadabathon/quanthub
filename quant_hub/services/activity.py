@@ -18,8 +18,10 @@
 ``ActivityService.reconcile`` replays the history against the positions
 snapshots imported from files (``models/ledger.py``): the newest import of
 each day, since two snapshots of one day can't be told apart by the
-history. Snapshots that didn't come from a file (a broker's live accounts)
-are left out: their accounts aren't the history's.
+history. A snapshot of a broker's live accounts (``From IBKR``) is left
+out: its accounts aren't the history's. Every other snapshot came from a
+file, including those imported before files were hashed (schema v10),
+which have no hash.
 
 ``current_holdings`` is the book as of the history's last day: the newest
 file snapshot, rolled forward by every transaction after its day (the
@@ -51,6 +53,7 @@ from quant_hub.importers.activity_csv import ActivityFileError, read_activity_cs
 from quant_hub.data.positions import Holding, PositionSnapshot
 from quant_hub.models.ledger import Reconciliation, reconcile
 from quant_hub.models.lots import BasisCheck, RoundTrip, basis_checks, round_trips
+from quant_hub.services.accounts import SOURCE as LIVE_ACCOUNTS
 from quant_hub.storage.activity_store import ActivityImportSummary, ActivityStore
 from quant_hub.storage.position_store import PositionStore
 
@@ -178,11 +181,12 @@ class ActivityService:
         return Holdings(base.name, base_day, through, held, frozenset(options & set(held)), cash)
 
     def _file_snapshots(self) -> list[PositionSnapshot]:
-        """The snapshots imported from files, the newest import of each day."""
+        """The snapshots imported from files (not a live broker's), the newest
+        import of each day."""
         if self._positions is None:
             raise ValueError("no positions store to reconcile against")
         newest: dict[date, int] = {}
         for summary in self._positions.snapshots():          # newest import first
-            if summary.sha256:
+            if summary.source != LIVE_ACCOUNTS:
                 newest.setdefault(summary.as_of.date(), summary.id)
         return [self._positions.load(i) for i in newest.values()]

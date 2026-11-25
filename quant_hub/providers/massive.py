@@ -102,8 +102,11 @@ class MassiveClient:
         query = {"adjusted": "true", "sort": "asc", "limit": "50000"}
         return [_bar(r, ticker) for r in self._pages(path, query, ticker)]
 
-    def dividends(self, ticker: str, since: date) -> list[Dividend]:
+    def dividends(self, ticker: str, since: date, until: date) -> list[Dividend]:
+        """Dividends gone ex from ``since`` to ``until``, inclusive. A declared
+        dividend not yet ex has no split-adjusted amount, and adjusts nothing."""
         query = {"ticker": ticker, "ex_dividend_date.gte": since.isoformat(),
+                 "ex_dividend_date.lte": until.isoformat(),
                  "sort": "ex_dividend_date.asc", "limit": "5000"}
         return [_dividend(r, ticker) for r in self._pages("/stocks/v1/dividends", query, ticker)]
 
