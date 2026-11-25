@@ -111,9 +111,10 @@ class TestClient:
         server = Server((200, {"status": "OK", "results": [
             {"ex_dividend_date": "2026-11-20", "cash_amount": 1.0,
              "split_adjusted_cash_amount": 0.5, "ticker": "AAA"}]}))
-        (d,) = client(server).dividends("AAA", date(2026, 1, 1))
+        (d,) = client(server).dividends("AAA", date(2026, 1, 1), date(2026, 11, 24))
         assert d == Dividend(date(2026, 11, 20), 0.5)
-        assert "/stocks/v1/dividends?ticker=AAA" in server.requests[0].full_url
+        url = server.requests[0].full_url
+        assert "/stocks/v1/dividends?ticker=AAA" in url and "ex_dividend_date.lte=2026-11-24" in url
 
     def test_a_key_that_cant_be_one_is_refused(self):
         with pytest.raises(MassiveError, match=r"\[massive\] key"):
@@ -147,6 +148,11 @@ class TestDividendAdjustment:
         with pytest.raises(MassiveError, match="not below"):
             dividend_adjusted(traded, [Dividend(date(2026, 11, 19), 150.0)])
 
+    def test_a_dividend_not_yet_ex_changes_nothing(self):
+        # Declared for after the last bar: today's prices stay on today's scale.
+        traded = bars([("2026-11-23", 100.0), ("2026-11-24", 101.0)])
+        assert dividend_adjusted(traded, [Dividend(date(2026, 12, 2), 1.0)]) == traded
+
 
 class FakeClient:
     def __init__(self, unreachable=False):
@@ -158,8 +164,8 @@ class FakeClient:
             raise MassiveUnreachable("couldn't reach Massive: offline")
         return [Bar(d.date(), 10.0, 10.0, 10.0, 10.0, 5.0) for d in pd.bdate_range(start, end)]
 
-    def dividends(self, ticker, since):
-        self.calls.append(("dividends", since))
+    def dividends(self, ticker, since, until):
+        self.calls.append(("dividends", since, until))
         return [Dividend(date(2026, 11, 18), 0.2)]
 
 

@@ -67,10 +67,14 @@ class MassiveOffline(SourceOfflineError):
 def dividend_adjusted(traded: list[Bar], dividends: list[Dividend]) -> list[Bar]:
     """Traded bars carried to the adjusted basis (module docstring). A
     dividend with no close before it in ``traded`` is skipped: it affects no
-    bar here."""
+    bar here. So is one not yet ex by the last bar: adjusted prices are on
+    the latest bar's scale, and a dividend still to come doesn't change it."""
     closes = sorted((b.day, b.close) for b in traded)
+    last = closes[-1][0] if closes else None
     factors: list[tuple[date, float]] = []
     for d in sorted(dividends, key=lambda d: d.ex_date):
+        if last is None or d.ex_date > last:
+            continue
         before = [c for day, c in closes if day < d.ex_date]
         if not before or d.cash <= 0:
             continue
@@ -117,7 +121,7 @@ class MassiveSource:
             else:
                 lead, today = start.date() - _LEAD, max(end.date(), self._today())
                 traded = self._client.bars(symbol, lead, today)
-                bars = dividend_adjusted(traded, self._client.dividends(symbol, lead))
+                bars = dividend_adjusted(traded, self._client.dividends(symbol, lead, today))
         except MassiveUnreachable as exc:
             raise MassiveOffline(str(exc)) from None
         if not bars:

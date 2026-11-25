@@ -94,17 +94,18 @@ def test_reconcile_uses_file_snapshots_one_per_day(tmp_path):
     from quant_hub.data.positions import Holding, Position, PositionSnapshot
     from quant_hub.storage.position_store import PositionStore
 
-    def snapshot(day: int, shares: float, name: str) -> PositionSnapshot:
+    def snapshot(day: int, shares: float, name: str, source: str = "Generic") -> PositionSnapshot:
         return PositionSnapshot((Position("AAA", Holding.EQUITY, shares, "Brokerage"),),
-                                datetime(2026, 3, day), "Generic", name)
+                                datetime(2026, 3, day), source, name)
 
     store, positions = ActivityStore(":memory:"), PositionStore(":memory:")
     service = ActivityService(store, positions)
     service.import_activity(write(tmp_path, "march.csv", MARCH))     # +10 on the 2nd, -10 on the 20th
     positions.save(snapshot(10, 10.0, "old.csv"), datetime(2026, 3, 10, 9), "aa")
     positions.save(snapshot(10, 99.0, "wrong.csv"), datetime(2026, 3, 10, 8), "bb")  # older import
-    positions.save(snapshot(25, 0.0, "late.csv"), datetime(2026, 3, 25, 9), "cc")
-    positions.save(snapshot(26, 7.0, "live.csv"), datetime(2026, 3, 26, 9), "")      # not a file
+    positions.save(snapshot(25, 0.0, "late.csv"), datetime(2026, 3, 25, 9), "")  # before hashes
+    positions.save(snapshot(26, 7.0, "IBKR positions", "IBKR"),
+                   datetime(2026, 3, 26, 9), "")                                    # live, not a file
     result = service.reconcile()
     assert result.reconciled and [i.end_name for i in result.intervals] == ["late.csv"]
     assert result.intervals[0].start_name == "old.csv"
