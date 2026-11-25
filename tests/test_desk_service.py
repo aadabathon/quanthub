@@ -86,7 +86,8 @@ def test_a_snapshot_prices_every_holding_on_one_day(parts):
     assert [h.symbol for h in book.holdings] == ["AAA", "BBB"]
     assert book.unpriced == ("AAA261218P30 (an option)",)
     assert book.units_as_of is None                          # the units are older than the prices
-    assert [v.voice for v in taken.snapshot.voices] == ["baseline"]
+    assert [v.voice for v in taken.snapshot.voices] == ["baseline", "garch", "regimes",
+                                                         "bootstrap"]
 
 
 def test_a_holding_without_bars_is_named_not_guessed(parts):
@@ -113,7 +114,7 @@ def test_the_export_is_the_snapshot_and_its_hash(parts):
     taken = service(parts, {"AAA": "2026-11-20", "BBB": "2026-11-20"}).take("test", NOW)
     body = json.loads(taken.path.read_text(encoding="utf-8"))
     assert body["sha256"] == taken.snapshot.sha256
-    assert body["snapshot"]["as_of"] == "2026-11-20" and len(body["snapshot"]["voices"]) == 1
+    assert body["snapshot"]["as_of"] == "2026-11-20" and len(body["snapshot"]["voices"]) == 4
     assert taken.path.name == f"desk-2026-11-20-{taken.snapshot.sha256[:8]}.json"
 
 

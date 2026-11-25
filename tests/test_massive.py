@@ -222,3 +222,16 @@ def test_the_key_setting_adds_the_source(tmp_path):
         assert "massive" not in core.market_service.source_names
     finally:
         core.shutdown()
+
+
+def test_todays_session_not_yet_published_is_no_bars_not_a_failure():
+    class Refusing(FakeClient):
+        def bars(self, ticker, start, end):
+            raise MassiveError("Massive returned HTTP 403 for AAA: not on your plan", 403)
+
+    source = MassiveSource(Refusing(), today=lambda: date(2026, 11, 25))
+    today = source.fetch_bars("AAA", datetime(2026, 11, 25), datetime(2026, 11, 25, 13, 50))
+    assert len(today) == 0
+    with pytest.raises(MassiveError, match="403"):           # an older window is a real refusal
+        source.fetch_bars("AAA", datetime(2026, 11, 2), datetime(2026, 11, 25))
+

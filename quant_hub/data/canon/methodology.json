@@ -60,7 +60,7 @@
     "doi": "10.1080/01621459.1994.10476870",
     "question": "How do you bootstrap dependent time series?",
     "changed": "Resample blocks of random geometric length, so the resampled series stays stationary.",
-    "lives_in": [],
+    "lives_in": ["quant_hub/models/voices.py"],
     "links": [{"to": "efron1979", "kind": "generalizes"}],
     "verified": {"via": "crossref", "checked": "2026-11-02", "matched": ["title", "first_author", "year"]}
   },
