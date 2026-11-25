@@ -12,10 +12,11 @@ from quant_hub.data.positions import Holding, OptionContract, Position, Position
 from quant_hub.data.sources import DataSource
 from quant_hub.data.types import PriceHistory
 from quant_hub.services.activity import ActivityService
-from quant_hub.services.desk import DeskService
+from quant_hub.services.desk import PAPERS, DeskService, default_source
 from quant_hub.services.market_service import MarketService
 from quant_hub.storage.activity_store import ActivityStore
 from quant_hub.storage.desk_store import DeskStore
+from quant_hub.storage.canon_store import load_canon
 from quant_hub.storage.position_store import PositionStore
 
 NOW = datetime(2026, 11, 24, 17, 0)
@@ -170,3 +171,34 @@ def test_the_command_line_prefers_massive_when_keyed(parts, monkeypatch):
     assert cli.main([]) == 0 and sources == ["massive"]
     assert cli.main(["--source", "ibkr"]) == 0 and sources[-1] == "ibkr"
 
+
+
+def test_the_desk_page_view_puts_a_stored_snapshot_in_dollars(parts):
+    desk = service(parts, {"AAA": "2026-11-20", "BBB": "2026-11-20"})
+    assert desk.view() is None                                   # nothing stored yet
+    first = desk.take("test", NOW)
+    view = desk.view()
+    assert view.id == first.id and [s.id for s in view.snapshots] == [first.id]
+    assert view.comparison is not None and view.problem == ""
+    assert view.comparison.voices == ("baseline", "garch", "regimes", "bootstrap")
+    assert view.comparison.value == pytest.approx(first.snapshot.book.value)
+    assert set(view.holdings) == {"AAA", "BBB"}                 # the baseline's per-holding claims
+    assert [p.id for p in view.papers["garch"]] == ["bollerslev1986", "moreiramuir2017"]
+    assert [p.id for p in view.papers["baseline"]] == ["osborne1959", "samuelson1965proof"]
+    assert desk.view(first.id).id == first.id
+
+
+def test_every_voice_names_its_papers_and_each_paper_names_the_voice():
+    canon = load_canon()
+    modules = {"baseline": "quant_hub/models/baseline.py"}
+    for voice, ids in PAPERS.items():
+        assert ids, voice
+        for paper_id in ids:
+            assert paper_id in canon, (voice, paper_id)
+            assert modules.get(voice, "quant_hub/models/voices.py") in                 canon.paper(paper_id).lives_in, (voice, paper_id)
+
+
+@pytest.mark.parametrize("keyed, ibkr, source", [(True, True, "massive"), (True, False, "massive"),
+                                                 (False, True, "ibkr"), (False, False, "file")])
+def test_the_default_source(keyed, ibkr, source):
+    assert default_source(keyed, ibkr) == source

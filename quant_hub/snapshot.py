@@ -19,6 +19,7 @@ import argparse
 import sys
 
 from quant_hub.core import build_core
+from quant_hub.services.desk import default_source
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -29,8 +30,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     core = build_core()
     try:
-        source = args.source or ("massive" if core.config.massive_key
-                                 else "ibkr" if core.config.ibkr_enabled else "file")
+        source = args.source or default_source(bool(core.config.massive_key),
+                                               core.config.ibkr_enabled)
         taken = core.desk.take(source)
         snapshot = taken.snapshot
         claims = sum(len(v.claims) for v in snapshot.voices)

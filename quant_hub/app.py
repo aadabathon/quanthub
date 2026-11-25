@@ -24,6 +24,7 @@ from quant_hub.extensions import (extensions_wanted, load_extensions, merge_book
 from quant_hub.gui.app_icon import APP_USER_MODEL_ID, app_icon
 from quant_hub.gui.main_window import MainWindow, PageSections
 from quant_hub.gui.pages.dashboard import DashboardPage
+from quant_hub.gui.pages.desk import DeskPage
 from quant_hub.gui.pages.garch_lab import GARCHLabPage
 from quant_hub.gui.pages.hedge_lab import HedgeLabPage
 from quant_hub.gui.pages.kalman_lab import KalmanLabPage
@@ -41,6 +42,7 @@ from quant_hub.gui.pages.trades import TradesPage
 from quant_hub.gui.pages.whatif import WhatIfPage
 from quant_hub.gui.theme import apply_theme
 from quant_hub.services.book import BookSource, Grader
+from quant_hub.services.desk import default_source
 from quant_hub.services.whatif import WhatIfService
 
 _logger = logging.getLogger(__name__)
@@ -53,6 +55,10 @@ def _sections(core: Core, book: BookSource | None = None,
     book = book if book is not None else core.book
     dashboard = ("Dashboard", "ph.house", lambda shell: DashboardPage(
         shell, core.workstation, core.file_import, core.tasks, core.state_store, core.config))
+    desk = ("Desk", "ph.users-three", lambda _shell: DeskPage(
+        core.desk, [s for s in core.market_service.source_names if s != "synthetic"],
+        default_source(bool(core.config.massive_key), core.config.ibkr_enabled),
+        core.tasks, core.state_store))
     markets = ("Markets", "ph.chart-bar", lambda shell: MarketsPage(
         shell, core.market_service, core.workstation, core.tasks, core.state_store))
     returns = ("Return histogram", "mdi6.chart-histogram", lambda _shell: ReturnHistogramPage(
@@ -86,7 +92,7 @@ def _sections(core: Core, book: BookSource | None = None,
     research = ("Research", "ph.file-text", lambda _shell: ResearchPage(
         core.research, core.market_service, core.tasks, core.state_store))
     return [
-        (None, [dashboard, markets, returns, data, portfolio, trades, whatif, hedge_lab,
+        (None, [dashboard, desk, markets, returns, data, portfolio, trades, whatif, hedge_lab,
                 valuation, simulator, options]),
         ("Research", [garch, vol_lab, kalman, markov, research]),
     ]

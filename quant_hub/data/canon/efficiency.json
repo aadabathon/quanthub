@@ -72,7 +72,7 @@
     "venue": "Industrial Management Review",
     "question": "Why should a competitive futures price be unpredictable?",
     "changed": "If prices fully reflect expectations, price changes are a martingale: randomness as a sign of efficiency, not chaos.",
-    "lives_in": [],
+    "lives_in": ["quant_hub/models/baseline.py"],
     "links": [{"to": "kendall1953", "kind": "builds_on"}, {"to": "bachelier1900", "kind": "rediscovers"}],
     "verified": {"via": "none", "checked": "2026-11-02", "note": "Industrial Management Review (1965) has no registered DOI; only later reprints do."}
   },
