@@ -17,12 +17,20 @@ nothing about timing yet; that's TR4.
   average cost match the exports' cost basis.
 - **Summary:** round trips closed and open, realized P&L on the closed
   ones, winners, longs against shorts, and income kept beside the P&L.
+- **How well you got in and out** (TR4, ``models/timing.py``): on
+  **Measure timing**, from the chosen price source: how many days in the
+  window around each entry and exit would have been better (against the
+  exact law of luck), what the stock did 1, 5 and 20 sessions after
+  (beyond the market), and where the P&L came from: the market, the stock,
+  the entry and exit fills, costs. The first run fetches every symbol's
+  bars, slowly on a free plan; later runs read them from the store.
 
 **The main column:**
 - **Round trips:** flat to flat for each account and symbol, newest first.
   Selecting one shows its pieces.
 - **The selected trip:** each FIFO piece: what opened it and what closed
-  it, at what quoted price, the P&L from the cash.
+  it, at what quoted price, the P&L from the cash; once timing is measured,
+  the trip's own split and what it offered (MFE, MAE, capture).
 - **Transactions:** the whole history, newest first.
 
 One TaskRunner job loads everything; a few thousand rows take well under a
@@ -44,13 +52,16 @@ from quant_hub.gui.components import (
     DataTable,
     Note,
     PageHeader,
+    SelectField,
     StatTable,
     button,
+    form_grid,
 )
 from quant_hub.gui.pages.base import ScrollPage, saved_grid
 from quant_hub.gui.theme import PALETTE, SIDE_PANEL_WIDTH, SPACE_L
 from quant_hub.models.ledger import Reconciliation
-from quant_hub.models.lots import BasisCheck, RoundTrip
+from quant_hub.models.lots import BasisCheck, Piece, RoundTrip
+from quant_hub.models.timing import PieceTiming, TimingReport
 from quant_hub.services.activity import (
     ActivityImportError,
     ActivityImportSummary,
@@ -93,9 +104,10 @@ def _units(x: float) -> str:
 
 
 class TradesPage(ScrollPage):
-    def __init__(self, activity: ActivityService, tasks, state_store) -> None:
+    def __init__(self, activity: ActivityService, market, tasks, state_store) -> None:
         super().__init__()
-        self._activity, self._tasks = activity, tasks
+        self._activity, self._market, self._tasks = activity, market, tasks
+        self._timing: dict[Piece, PieceTiming] = {}
         self._trips: list[RoundTrip] = []
         self._import_dir = str(Path.home())
         self._loaded_once = False
@@ -109,7 +121,8 @@ class TradesPage(ScrollPage):
                          ("history", self._build_transactions(), None)], x=0, w=8)
         grid.add_column([("import", self._build_import(), None),
                          ("checked", self._build_checked(), None),
-                         ("summary", self._build_summary(), None)], x=8, w=4,
+                         ("summary", self._build_summary(), None),
+                         ("timing", self._build_timing(), None)], x=8, w=4,
                         min_width=SIDE_PANEL_WIDTH)
         self._grid = saved_grid(grid, state_store, "trades.cards")
         self.body.addWidget(grid, 1)
@@ -165,6 +178,37 @@ class TradesPage(ScrollPage):
         card.body.addWidget(self._summary)
         return card
 
+    def _build_timing(self) -> Card:
+        card = Card("How well you got in and out", "Your days, fills and what came after, "
+                                                   "against luck")
+        sources = [s for s in self._market.source_names if s != "synthetic"] or ["synthetic"]
+        default = next((s for s in ("massive", "ibkr") if s in sources), sources[0])
+        self._timing_source = SelectField("Prices from", sources, default, _NOTE // 2)
+        card.body.addLayout(form_grid([self._timing_source], 1))
+        self._timing_button = button("Measure timing", "primary", "ph.timer",
+                                     on_click=self.measure)
+        card.body.addWidget(self._timing_button)
+        self._timing_note = Note("ph.info", "info", width=_NOTE)
+        self._timing_note.set_text("Better days: the closes around each decision that were a "
+                                   "better price, out of the window; luck averages half (10/20, "
+                                   "5/10). After: what the stock did next, beyond the market, "
+                                   "and how many went your way.")
+        card.body.addWidget(self._timing_note)
+        rows = []
+        for side, prefix in (("Entries", "e"), ("Exits", "x")):
+            rows.append((side, [(f"{prefix}10", "Better days, ±10"),
+                                (f"{prefix}5", "Better days, ±5"),
+                                (f"{prefix}d", "Against a random day"),
+                                (f"{prefix}m1", "1 session after"), (f"{prefix}m5", "5 after"),
+                                (f"{prefix}m20", "20 after")]))
+        rows.append(("Where the P&L came from", [("fills_in", "Entry fills"),
+                                                 ("fills_out", "Exit fills"),
+                                                 ("market", "The market"),
+                                                 ("stock", "The stock"), ("costs", "Costs")]))
+        self._timing_stats = StatTable(rows)
+        card.body.addWidget(self._timing_stats)
+        return card
+
     def _build_trips(self) -> Card:
         self._trips_card = Card("Round trips", "Flat to flat, each account and symbol, newest "
                                                "first; select one for its pieces")
@@ -187,6 +231,11 @@ class TradesPage(ScrollPage):
         self._pieces.balance_columns()
         self._pieces.setMinimumHeight(160)
         self._pieces_card.body.addWidget(self._pieces, 1)
+        self._trip_timing = StatTable([("This trip's timing", [
+            ("t_in", "Entry fills"), ("t_out", "Exit fills"), ("t_market", "The market"),
+            ("t_stock", "The stock"), ("t_mfe", "Best it offered (MFE)"),
+            ("t_mae", "Worst it went (MAE)"), ("t_capture", "Kept of the best")])])
+        self._pieces_card.body.addWidget(self._trip_timing)
         return self._pieces_card
 
     def _build_transactions(self) -> Card:
@@ -218,6 +267,54 @@ class TradesPage(ScrollPage):
     def _error(self, exc: Exception) -> None:
         self._import_button.setEnabled(True)
         self._header.set_status(str(exc), error=True)
+
+    # -------------------------------------------------------------- timing
+    def measure(self) -> None:
+        """Measure every trade's timing on the worker thread (module docstring)."""
+        source = self._timing_source.current()
+        self._timing_button.setEnabled(False)
+        self._header.set_status(f"Measuring timing from {source}: the first run fetches every "
+                                "symbol's bars, seconds each on a free plan…")
+        self._tasks.submit(lambda: self._activity.timing(self._market, source),
+                           on_done=self._render_timing, on_error=self._timing_error)
+
+    def _timing_error(self, exc: Exception) -> None:
+        self._timing_button.setEnabled(True)
+        self._header.set_status(str(exc), error=True)
+
+    def _render_timing(self, result: tuple[TimingReport, dict[str, str]]) -> None:
+        self._timing_button.setEnabled(True)
+        report, missing = result
+        self._timing = {row.piece: row for row in report.pieces}
+        s = self._timing_stats
+        for entry, prefix in ((True, "e"), (False, "x")):
+            for h in (10, 5):
+                w = report.windows[(entry, h)]
+                s.set_value(f"{prefix}{h}", f"{w.total / w.n:.1f}/{2 * h} · p {w.p:.2f} · "
+                            f"n {w.n}" if w.n else "—")
+            ten = report.windows[(entry, 10)]
+            s.set_value(f"{prefix}d", _money(ten.dollars) if ten.n else "—")
+            for k in (1, 5, 20):
+                m = report.markouts[(entry, k)]
+                s.set_value(f"{prefix}m{k}", f"{m.mean:+.1%} · {m.positive}/{m.n} · "
+                            f"p {m.p:.2f}" if m.n else "—")
+        totals = report.totals()
+        for key, name in (("fills_in", "entry_fill"), ("fills_out", "exit_fill"),
+                          ("market", "market"), ("stock", "stock"), ("costs", "costs")):
+            s.set_value(key, _money(totals[name]) if name in totals else "—")
+        measured = sum(1 for row in report.pieces if not row.reason)
+        decided = sum(1 for d in report.decisions if d.better)
+        text = (f"{measured} of {len(report.pieces)} pieces and {decided} of "
+                f"{len(report.decisions)} decisions measured. Luck averages half the window "
+                "(10/20, 5/10); p is the chance of days this good by luck.")
+        if measured < len(report.pieces):
+            text += " The rest have no bars for their days (often before the source's history)."
+        if missing:
+            shown = ", ".join(sorted(missing)[:12])
+            text += f" No bars for: {shown}{'…' if len(missing) > 12 else ''}."
+        self._timing_note.set_text(text)
+        self._header.set_status("Timing measured.")
+        self._select(self._trips_table.selected_row())
 
     # -------------------------------------------------------------- import
     def _choose_files(self) -> None:
@@ -369,3 +466,22 @@ class TradesPage(ScrollPage):
                                 f"{p.close_fill:,.2f}" if p.close_fill is not None else "—",
                                 f"{p.days_held:,}", (_money(p.pnl), _ink(p.pnl))]
                                for p in trip.pieces])
+        self._fill_trip_timing(trip)
+
+    def _fill_trip_timing(self, trip: RoundTrip) -> None:
+        rows = [self._timing[p] for p in trip.pieces
+                if p in self._timing and not self._timing[p].reason]
+        s = self._trip_timing
+        for key, name in (("t_in", "entry_fill"), ("t_out", "exit_fill"),
+                          ("t_market", "market"), ("t_stock", "stock")):
+            values = [getattr(r, name) for r in rows if getattr(r, name) is not None]
+            s.set_value(key, _money(sum(values)) if values else "—")
+        for key, name, fmt in (("t_mfe", "mfe", "{:+.1%}"), ("t_mae", "mae", "{:+.1%}"),
+                               ("t_capture", "capture", "{:.0%}")):
+            pairs = [(getattr(r, name), r.piece.units) for r in rows
+                     if getattr(r, name) is not None]
+            if pairs:
+                weight = sum(u for _, u in pairs)
+                s.set_value(key, fmt.format(sum(v * u for v, u in pairs) / weight))
+            else:
+                s.set_value(key, "—")

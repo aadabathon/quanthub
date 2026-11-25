@@ -14,6 +14,7 @@ NOT_FROM_A_PAPER = {
     "baseline.py": "the no-edge null: a driftless random walk at trailing volatility (D1)",
     "ledger.py": "a transaction history replayed against snapshots: bookkeeping (TR2)",
     "lots.py": "FIFO lots and round trips: bookkeeping (TR3)",
+    "timing.py": "trade-timing measures; the window null is Sparre Andersen's arcsine law, derived in the docstring (TR4)",
     "optimize.py": "a numerical minimizer, Nelder–Mead",
     "research_worlds.py": "synthetic controls with planted edges",
     "stress.py": "a constant-β replay of stored history: daily accounting (A2)",

@@ -35,7 +35,10 @@ closed (``models/lots.py``), FIFO, and check the open lots' cost against
 the same file snapshots' cost-basis column. A symbol those snapshots hold
 as cash is cash.
 
-Nothing here reads prices or touches a broker.
+``timing`` measures how well each trade was timed (``models/timing.py``,
+TR4): it reads the traded symbols' daily bars and the benchmark's from a
+named source, and names every symbol it couldn't get. It's the one method
+here that reads prices; nothing touches a broker.
 
 Runs on the task-worker thread (file and database I/O).
 """
@@ -45,7 +48,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from quant_hub.data.activity import ActivityFile, Kind, Transaction
@@ -53,6 +56,8 @@ from quant_hub.importers.activity_csv import ActivityFileError, read_activity_cs
 from quant_hub.data.positions import Holding, PositionSnapshot
 from quant_hub.models.ledger import Reconciliation, reconcile
 from quant_hub.models.lots import BasisCheck, RoundTrip, basis_checks, round_trips
+from quant_hub.models.timing import TimingReport, timing
+from quant_hub.data.types import PriceBasis
 from quant_hub.services.accounts import SOURCE as LIVE_ACCOUNTS
 from quant_hub.storage.activity_store import ActivityImportSummary, ActivityStore
 from quant_hub.storage.position_store import PositionStore
@@ -179,6 +184,36 @@ class ActivityService:
                     options.add(t.symbol)
         held = {s: q for s, q in units.items() if abs(q) > 1e-9}
         return Holdings(base.name, base_day, through, held, frozenset(options & set(held)), cash)
+
+    def timing(self, market, source: str, benchmark: str = "SPY",
+               now: datetime | None = None) -> tuple[TimingReport, dict[str, str]]:
+        """How well each trade was timed (module docstring), and each symbol
+        whose bars couldn't be had, with why. ``market`` is a MarketService."""
+        history = self._store.transactions()
+        if not history:
+            raise ValueError("no history imported yet")
+        snapshots = self._file_snapshots() if self._positions is not None else []
+        cash = {p.symbol for s in snapshots for p in s.positions if p.kind is Holding.CASH}
+        pieces = [p for trip in round_trips(history, cash) for p in trip.pieces]
+        symbols = sorted({p.symbol for p in pieces if not p.option}
+                         | {t.symbol for t in history if t.option is None and t.price is not None
+                            and t.kind in (Kind.BUY, Kind.SELL, Kind.SHORT, Kind.COVER)})
+        # Through yesterday: the store already covers it, so nothing is fetched
+        # again, and timing has no use for today's unfinished session.
+        end = datetime.combine((now or datetime.now()).date() - timedelta(days=1),
+                               datetime.min.time())
+        start = datetime.combine(min(t.trade_date for t in history), datetime.min.time())             - timedelta(days=400)
+        bars, missing = {}, {}
+        for symbol in [*symbols, benchmark]:
+            try:
+                history_bars = market.get_history(symbol, start, end, source,
+                                                  basis=PriceBasis.TRADED)
+                bars[symbol] = history_bars.frame
+            except Exception as exc:     # any source failure leaves the symbol out, named
+                missing[symbol] = str(exc)
+        bench = bars.pop(benchmark, None)
+        report = timing(pieces, history, bars, None if bench is None else bench["close"])
+        return report, missing
 
     def _file_snapshots(self) -> list[PositionSnapshot]:
         """The snapshots imported from files (not a live broker's), the newest
