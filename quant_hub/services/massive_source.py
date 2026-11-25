@@ -34,7 +34,11 @@ one for traded. ``CachedSource`` refetches the adjusted span whole once a
 day anyway, since each new dividend rescales everything before it.
 
 No time-of-day quote: the free plan is end of day, so ``get_quote`` says
-so, and callers use the last close (``services/underlying.py``).
+so, and callers use the last close (``services/underlying.py``). For the
+same reason it refuses (HTTP 403) a request for bars that starts today,
+while the session isn't published yet. That isn't a failure: there are no
+bars for today yet, so the source returns none, and ``CachedSource`` keeps
+what it has (its coverage only ever runs through yesterday).
 
 Runs on the task-worker thread, or from the command line.
 """
@@ -124,6 +128,10 @@ class MassiveSource:
                 bars = dividend_adjusted(traded, self._client.dividends(symbol, lead, today))
         except MassiveUnreachable as exc:
             raise MassiveOffline(str(exc)) from None
+        except MassiveError as exc:
+            if exc.status == 403 and start.date() >= self._today():
+                return bars_frame([])           # today's session isn't published yet
+            raise
         if not bars:
             return bars_frame([])
         return bars_frame(bars).loc[pd.Timestamp(start.date()):pd.Timestamp(end.date())]

@@ -11,8 +11,10 @@
    is named in ``unpriced`` and left out of the book, never guessed.
 3. **The voices** each speak about that book from those returns. One that
    can't (too little history, say) is logged and left out of this
-   snapshot; the others still speak. D1 ships one voice, the baseline
-   (``models/baseline.py``). D2 adds the rest.
+   snapshot; the others still speak. The baseline (``models/baseline.py``)
+   and, since D2, GARCH, regimes and the bootstrap (``models/voices.py``).
+   They see two years of closes, about 500 sessions, the most Massive's
+   free plan serves.
 4. **Frozen:** the snapshot is stored once by its hash (``DeskStore``), and
    written as JSON to ``export_dir`` for a person or an LLM to read.
 5. **One per data day:** if this exact book on this ``as_of`` is already
@@ -41,6 +43,7 @@ import pandas as pd
 from quant_hub import __version__
 from quant_hub.data.desk import Book, Decision, Holding, Snapshot, VoiceOutput
 from quant_hub.models.baseline import WINDOW, baseline
+from quant_hub.models.voices import bootstrap, garch, regimes
 from quant_hub.services.activity import ActivityService
 from quant_hub.services.market_service import MarketService
 from quant_hub.storage.desk_store import DeskStore
@@ -48,8 +51,8 @@ from quant_hub.storage.desk_store import DeskStore
 _logger = logging.getLogger(__name__)
 
 Voice = Callable[[Book, pd.DataFrame], VoiceOutput]
-VOICES: tuple[Voice, ...] = (baseline,)
-LOOKBACK_DAYS = 550             # calendar days of closes fetched: ~380 sessions
+VOICES: tuple[Voice, ...] = (baseline, garch, regimes, bootstrap)
+LOOKBACK_DAYS = 730             # calendar days of closes fetched: ~500 sessions, two years
 
 
 @dataclass(frozen=True)
@@ -122,7 +125,7 @@ class DeskService:
             raise ValueError("no holding has enough history to price the book")
         book = Book(as_of, tuple(holdings), held.cash, tuple(unpriced),
                     held.through if held.through > as_of else None)
-        return book, returns[kept].iloc[-WINDOW * 2:].dropna()
+        return book, returns[kept].dropna()
 
     def _same_day(self, book: Book) -> tuple[int, Snapshot] | None:
         """The stored snapshot of this exact book on this day, if any: one

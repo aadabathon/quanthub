@@ -52,7 +52,12 @@ MAX_PAGES = 20
 
 class MassiveError(Exception):
     """A request was refused or its reply wasn't what the docs describe;
-    the message says what to do and never carries the key."""
+    the message says what to do and never carries the key. ``status`` is
+    the HTTP status of a refusal, else None."""
+
+    def __init__(self, message: str, status: int | None = None) -> None:
+        super().__init__(message)
+        self.status = status
 
 
 class MassiveUnreachable(MassiveError):
@@ -138,7 +143,7 @@ class MassiveClient:
             hint = {401: "check [massive] key", 403: "not on your plan",
                     429: "over the rate limit; try again in a minute"}.get(exc.code, "")
             raise MassiveError(f"Massive returned HTTP {exc.code} for {ticker}"
-                               + (f": {hint}" if hint else "")) from None
+                               + (f": {hint}" if hint else ""), exc.code) from None
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             raise MassiveUnreachable(f"couldn't reach Massive: "
                                      f"{getattr(exc, 'reason', exc)}") from None
