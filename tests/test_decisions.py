@@ -182,8 +182,16 @@ class TestBackups:
         source = self.store(tmp_path)
 
         class Desk:
+            runs = []
+
             def resolve(self):
+                raise ValueError("no bars yet")
+
+            def take(self, source):
                 raise ValueError("no positions export to start from")
+
+            def record_run(self, run):
+                self.runs.append(run)
 
         class Core:
             config = type("Config", (), {"ibkr_enabled": False, "massive_key": "",
@@ -197,4 +205,8 @@ class TestBackups:
         assert cli.main([]) == 1
         captured = capsys.readouterr()
         assert "no snapshot" in captured.err and "backed up to" in captured.out
-        assert len(list((tmp_path / "backups" / "daily").glob("*.db"))) == 1
+        (copy,) = (tmp_path / "backups" / "daily").glob("*.db")
+        (run,) = Core.desk.runs                      # and the run says what happened
+        assert run.problems == ("nothing resolved: no bars yet",
+                                "no snapshot: no positions export to start from")
+        assert (run.backup, run.snapshot_id, run.ok) == (str(copy), None, False)

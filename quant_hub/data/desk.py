@@ -378,6 +378,29 @@ class Decision:
                         tuple(_claim(c) for c in d["expects"]))
 
 
+@dataclass(frozen=True)
+class Run:
+    """One daily run (``python -m quant_hub.snapshot``, A1): when it ran,
+    whether it worked, and what it did, so a reader can tell a quiet desk
+    from a broken one. ``problems`` are what failed (no snapshot, no
+    backup); ``notes`` are what was left out (a voice that couldn't speak,
+    a holding without prices, claims not yet resolvable)."""
+
+    started_at: datetime
+    finished_at: datetime
+    source: str                    # where the snapshot's prices came from
+    snapshot_id: int | None        # the snapshot taken or found; None when none
+    resolved: int                  # outcomes stored
+    pending: int                   # claims due but not yet resolvable
+    backup: str                    # the copy's path; "" when none was made
+    problems: tuple[str, ...] = ()
+    notes: tuple[str, ...] = ()
+
+    @property
+    def ok(self) -> bool:
+        return not self.problems
+
+
 def _plain(obj: Any) -> Any:
     """Dataclasses, tuples, mappings and dates as JSON-ready values."""
     if hasattr(obj, "__dataclass_fields__"):

@@ -1,13 +1,14 @@
-"""SQLite store for the desk: snapshots, their claims, and decisions (D1, D96).
+"""SQLite store for the desk: snapshots, their claims, decisions, outcomes
+and the daily runs (D1, D96, D104, A1).
 
 **Append only.** There is no update and no delete. A snapshot is stored
 once, by its SHA-256; storing it again returns the same row. That is what
 lets a record be trusted later: nothing the desk said can be revised after
 the outcome is known.
 
-Schema (four tables, created idempotently on open, in the same database as
-the bars, D17; schema v12, and v13 for the outcomes)
---------------------------------------------------------------------------
+Schema (five tables, created idempotently on open, in the same database as
+the bars, D17; schema v12, v13 for the outcomes, v14 for the runs)
+------------------------------------------------------------------
 ``desk_snapshots``
     One row per snapshot: when it was taken, its ``as_of``, its hash, the
     code version, and the snapshot itself as canonical JSON.
@@ -22,6 +23,11 @@ the bars, D17; schema v12, and v13 for the outcomes)
     return, volatility and deepest fall (``models/scoring.py``), or why it
     can't be known. One row each, stored once: a record must not move
     because a provider revised a bar later.
+``desk_runs`` (A1)
+    One row per daily run (``python -m quant_hub.snapshot``): when it
+    started and finished, the snapshot it took, what it resolved, the
+    backup it made, and what failed or was left out, so ``python -m
+    quant_hub.desk status`` can tell a quiet desk from a broken one.
 
 Threading contract: the same as ``BarStore``. The connection is created
 with ``check_same_thread=False``, and every public method holds an
@@ -39,7 +45,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 
-from quant_hub.data.desk import Claim, Decision, Outcome, Snapshot, resolves_on
+from quant_hub.data.desk import Claim, Decision, Outcome, Run, Snapshot, resolves_on
 
 _logger = logging.getLogger(__name__)
 
@@ -66,6 +72,14 @@ V13_TABLES = (
     "status TEXT NOT NULL, ret REAL, vol REAL, fall REAL, reason TEXT NOT NULL, "
     "source TEXT NOT NULL, resolved_at TEXT NOT NULL, "
     "PRIMARY KEY (snapshot_id, subject, horizon)) WITHOUT ROWID",
+)
+
+# Frozen: schema step 13 -> 14 creates exactly these.
+V14_TABLES = (
+    "CREATE TABLE IF NOT EXISTS desk_runs (id INTEGER PRIMARY KEY, started_at TEXT NOT NULL, "
+    "finished_at TEXT NOT NULL, source TEXT NOT NULL, snapshot_id INTEGER "
+    "REFERENCES desk_snapshots(id), resolved INTEGER NOT NULL, pending INTEGER NOT NULL, "
+    "backup TEXT NOT NULL, problems TEXT NOT NULL, notes TEXT NOT NULL)",
 )
 
 
@@ -104,7 +118,7 @@ class DeskStore:
             self._conn = sqlite3.connect(str(db_path), check_same_thread=False)
             self._conn.execute("PRAGMA foreign_keys = ON")
             with self._conn:
-                for statement in (*V12_TABLES, *V13_TABLES):
+                for statement in (*V12_TABLES, *V13_TABLES, *V14_TABLES):
                     self._conn.execute(statement)
         except sqlite3.Error as exc:
             raise DeskStoreError(f"could not open the desk store at {db_path}: {exc}") from exc
@@ -248,6 +262,38 @@ class DeskStore:
         return [Outcome(int(i), subject, int(h), status, ret, vol, fall, reason, source,
                         datetime.fromisoformat(at))
                 for i, subject, h, status, ret, vol, fall, reason, source, at in rows]
+
+    def save_run(self, run: Run) -> int:
+        """Append one daily run; returns its id."""
+        with self._lock:
+            try:
+                with self._conn:
+                    cursor = self._conn.execute(
+                        "INSERT INTO desk_runs (started_at, finished_at, source, snapshot_id,"
+                        " resolved, pending, backup, problems, notes)"
+                        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (run.started_at.isoformat(), run.finished_at.isoformat(), run.source,
+                         run.snapshot_id, run.resolved, run.pending, run.backup,
+                         json.dumps(list(run.problems)), json.dumps(list(run.notes))))
+                    return int(cursor.lastrowid)
+            except sqlite3.Error as exc:
+                raise DeskStoreError(f"could not save the run: {exc}") from exc
+
+    def runs(self, limit: int | None = None) -> list[Run]:
+        """The daily runs, newest first; the newest ``limit`` when given."""
+        query = ("SELECT started_at, finished_at, source, snapshot_id, resolved, pending,"
+                 " backup, problems, notes FROM desk_runs ORDER BY id DESC")
+        with self._lock:
+            try:
+                rows = self._conn.execute(query + (" LIMIT ?" if limit else ""),
+                                          (limit,) if limit else ()).fetchall()
+            except sqlite3.Error as exc:
+                raise DeskStoreError(f"could not read the runs: {exc}") from exc
+        return [Run(datetime.fromisoformat(started), datetime.fromisoformat(finished), source,
+                    None if snapshot_id is None else int(snapshot_id), int(resolved),
+                    int(pending), backup, tuple(json.loads(problems)), tuple(json.loads(notes)))
+                for started, finished, source, snapshot_id, resolved, pending, backup,
+                problems, notes in rows]
 
     def decisions(self) -> list[Decision]:
         """Every decision, oldest first."""

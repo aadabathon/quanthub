@@ -51,6 +51,11 @@ author's name.
 side by side in dollars (``models/comparison.py``), each holding's band,
 and each voice's papers from the canon (``PAPERS``).
 
+``record_run`` stores what one daily run did (``data/desk.Run``, A1), and
+``runs`` lists them, so a reader (``python -m quant_hub.desk status``) can
+tell a quiet desk from a broken one. ``summaries`` and ``snapshot`` read
+the stored snapshots.
+
 Runs on the task-worker thread, or from the command line
 (``python -m quant_hub.snapshot``).
 """
@@ -75,6 +80,7 @@ from quant_hub.data.desk import (
     Decision,
     Holding,
     Outcome,
+    Run,
     Snapshot,
     VoiceOutput,
     resolves_on,
@@ -309,6 +315,28 @@ class DeskService:
         return DeskView(summaries, chosen, snapshot, comparison, problem,
                         holding_bands(snapshot), papers, record,
                         self._regime(snapshot, record.cutoffs), tuple(self.decisions()))
+
+    def summaries(self) -> list[SnapshotSummary]:
+        """Every stored snapshot, newest first."""
+        return self._store.snapshots()
+
+    def snapshot(self, snapshot_id: int | None = None) -> Snapshot:
+        """One stored snapshot, the newest unless named (``DeskStoreError``
+        when there's none)."""
+        return self._store.load(snapshot_id)
+
+    def regime(self, snapshot: Snapshot) -> str | None:
+        """The market's regime at ``snapshot``: calm, middling or stormy;
+        None without French's century."""
+        return self._regime(snapshot, self._cutoffs())
+
+    def record_run(self, run: Run) -> int:
+        """Store what one daily run did (module docstring)."""
+        return self._store.save_run(run)
+
+    def runs(self, limit: int | None = None) -> list[Run]:
+        """The daily runs, newest first."""
+        return self._store.runs(limit)
 
     def record_decision(self, decision: Decision) -> int:
         """Store a decision on a stored snapshot (``Decision.snapshot_sha``)."""
