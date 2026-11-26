@@ -27,6 +27,12 @@
 
 ``record`` stores a decision made on a stored snapshot.
 
+**The tail voice** (D2c, ``models/tail.py``) reads French's market history
+from the store. When the desk is given the outside-data service, ``take``
+first refreshes French's files if they're a week old (one network call a
+week; a failure keeps the stored copy), so the daily run keeps the century
+current. Without the history the tail voice is silent and says why.
+
 ``view`` is what the Desk page shows (D3): a stored snapshot, its voices
 side by side in dollars (``models/comparison.py``), each holding's band,
 and each voice's papers from the canon (``PAPERS``).
@@ -51,11 +57,13 @@ from quant_hub import __version__
 from quant_hub.data.desk import MARKET, Book, Decision, Holding, Snapshot, VoiceOutput
 from quant_hub.data.literature import CanonPaper
 from quant_hub.models import baseline as baseline_model
+from quant_hub.models import tail as tail_model
 from quant_hub.models import voices as voice_models
 from quant_hub.models.baseline import WINDOW, baseline
 from quant_hub.models.comparison import Comparison, compare, holding_bands
 from quant_hub.models.voices import bootstrap, garch, regimes
 from quant_hub.services.activity import ActivityService
+from quant_hub.services.external_data import ExternalDataService
 from quant_hub.services.market_service import MarketService
 from quant_hub.storage.canon_store import load_canon
 from quant_hub.storage.desk_store import DeskStore, SnapshotSummary
@@ -67,7 +75,28 @@ VOICES: tuple[Voice, ...] = (baseline, garch, regimes, bootstrap)
 LOOKBACK_DAYS = 730             # calendar days of closes fetched: ~500 sessions, two years
 # Each voice's canon papers, by the name it speaks under.
 PAPERS: dict[str, tuple[str, ...]] = {baseline_model.NAME: baseline_model.PAPERS,
-                                      **voice_models.PAPERS}
+                                      **voice_models.PAPERS,
+                                      tail_model.NAME: tail_model.PAPERS}
+FRENCH_MARKET = ("french", "ff3.mkt_rf")
+FRENCH_BILLS = ("french", "ff3.rf")
+
+
+def century(external: ExternalDataService) -> tail_model.Century:
+    """French's stored market and bills as the tail voice's century. A
+    ValueError says what's missing."""
+    try:
+        excess = external.series(*FRENCH_MARKET).values
+        bills = external.series(*FRENCH_BILLS).values
+    except LookupError as exc:
+        raise ValueError(f"French's market history isn't stored: {exc}") from None
+    return tail_model.Century.from_series(excess, bills)
+
+
+def tail_voice(external: ExternalDataService) -> Voice:
+    """The tail voice, reading the century from the store each time it speaks."""
+    def tail(book: Book, log_returns: pd.DataFrame) -> VoiceOutput:
+        return tail_model.tail(book, log_returns, century(external))
+    return tail
 
 
 def default_source(massive_keyed: bool, ibkr_enabled: bool) -> str:
@@ -104,8 +133,10 @@ class DeskView:
 
 class DeskService:
     def __init__(self, store: DeskStore, market: MarketService, activity: ActivityService,
-                 export_dir: Path | None = None, voices: Sequence[Voice] = VOICES) -> None:
+                 export_dir: Path | None = None, voices: Sequence[Voice] = VOICES,
+                 external: ExternalDataService | None = None) -> None:
         self._store, self._market, self._activity = store, market, activity
+        self._external = external
         self._export_dir = export_dir
         self._voices = tuple(voices)
         self._canon = None              # read on the first view, on the worker thread
@@ -113,6 +144,11 @@ class DeskService:
     def take(self, source: str, now: datetime | None = None) -> Taken:
         """Today's snapshot from ``source``'s prices (module docstring)."""
         now = (now or datetime.now()).replace(microsecond=0)
+        if self._external is not None:
+            try:
+                self._external.refresh_french()      # only what's a week old
+            except Exception as exc:     # the stored copy stays; the tail voice says if none
+                _logger.warning("desk: French's files weren't refreshed: %s", exc)
         book, returns = self.book(source, now)
         same = self._same_day(book)
         if same is not None:

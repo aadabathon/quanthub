@@ -12,7 +12,8 @@ from quant_hub.data.positions import Holding, OptionContract, Position, Position
 from quant_hub.data.sources import DataSource
 from quant_hub.data.types import PriceHistory
 from quant_hub.services.activity import ActivityService
-from quant_hub.services.desk import PAPERS, DeskService, default_source
+from quant_hub.services.desk import (PAPERS, VOICES, DeskService, default_source,
+                                     tail_voice)
 from quant_hub.services.market_service import MarketService
 from quant_hub.storage.activity_store import ActivityStore
 from quant_hub.storage.desk_store import DeskStore
@@ -190,7 +191,7 @@ def test_the_desk_page_view_puts_a_stored_snapshot_in_dollars(parts):
 
 def test_every_voice_names_its_papers_and_each_paper_names_the_voice():
     canon = load_canon()
-    modules = {"baseline": "quant_hub/models/baseline.py"}
+    modules = {"baseline": "quant_hub/models/baseline.py", "tail": "quant_hub/models/tail.py"}
     for voice, ids in PAPERS.items():
         assert ids, voice
         for paper_id in ids:
@@ -226,3 +227,56 @@ def test_without_the_market_the_book_is_still_priced(parts):
     assert (book.market, book.market_price) == ("", None) and len(book.holdings) == 2
     assert not [c for v in taken.snapshot.voices for c in v.claims
                 if c.target.startswith("SPY.")]
+
+
+
+class French:
+    """The outside-data service, as the desk uses it: French's two series."""
+
+    def __init__(self, stored: bool = True) -> None:
+        self.stored, self.refreshed = stored, 0
+
+    def refresh_french(self):
+        self.refreshed += 1
+        return []
+
+    def series(self, source, name):
+        if not self.stored:
+            raise LookupError(f"{source}/{name} hasn't been fetched yet")
+        index = pd.bdate_range("1926-07-01", periods=30 * 252)
+        rng = np.random.default_rng(1)
+        values = (pd.Series(rng.normal(0.0003, 0.01, len(index)), index=index)
+                  if name == "ff3.mkt_rf" else pd.Series(0.0001, index=index))
+        return type("Stored", (), {"values": values})()
+
+
+ENDS = {"AAA": "2026-11-20", "BBB": "2026-11-20", "SPY": "2026-11-20"}
+
+
+def test_the_tail_voice_speaks_from_the_stored_century(parts):
+    french = French()
+    taken = service(parts, ENDS, voices=(*VOICES, tail_voice(french)),
+                    external=french).take("test", NOW)
+    assert french.refreshed == 1                     # refreshed first (a no-op when fresh)
+    tail = next(v for v in taken.snapshot.voices if v.voice == "tail")
+    assert any(c.key == "book.fall@252 >= 0.2" for c in tail.claims)
+    assert tail.parameters["history"].startswith("1926-07-01")
+
+
+def test_without_the_century_the_tail_voice_says_why(parts):
+    french = French(stored=False)
+    taken = service(parts, ENDS, voices=(*VOICES, tail_voice(french)),
+                    external=french).take("test", NOW)
+    assert [v.voice for v in taken.snapshot.voices] == ["baseline", "garch", "regimes",
+                                                         "bootstrap"]
+    assert taken.silent[0].startswith("tail: French's market history isn't stored")
+
+
+def test_a_failed_refresh_doesnt_stop_the_snapshot(parts):
+    class Offline(French):
+        def refresh_french(self):
+            raise OSError("no network")
+    french = Offline()
+    taken = service(parts, ENDS, voices=(*VOICES, tail_voice(french)),
+                    external=french).take("test", NOW)
+    assert "tail" in [v.voice for v in taken.snapshot.voices]

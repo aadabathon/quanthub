@@ -9,7 +9,7 @@
     "question": "If everyone holds mean–variance portfolios, which risks get paid?",
     "changed": "The CAPM: only covariance with the market, beta, earns a premium; diversifiable risk earns nothing.",
     "assumed": "Common beliefs, one period, unlimited borrowing and lending at the riskless rate.",
-    "lives_in": ["quant_hub/models/regression.py"],
+    "lives_in": ["quant_hub/models/regression.py", "quant_hub/models/tail.py"],
     "links": [{"to": "markowitz1952", "kind": "builds_on"}, {"to": "tobin1958", "kind": "builds_on"}],
     "verified": {"via": "crossref", "checked": "2026-11-02", "matched": ["title", "first_author", "year"]}
   },

@@ -24,7 +24,7 @@ from quant_hub.tasks import TaskRunner
 from quant_hub.services.accounts import AccountService
 from quant_hub.services.activity import ActivityService
 from quant_hub.services.book import PortfolioBook
-from quant_hub.services.desk import DeskService
+from quant_hub.services.desk import VOICES, DeskService, tail_voice
 from quant_hub.services.cached_source import CachedSource
 from quant_hub.services.chain_collector import ChainCollector
 from quant_hub.services.external_data import ExternalDataService
@@ -220,7 +220,8 @@ def build_core(config: AppConfig | None = None) -> Core:
     # The desk's snapshots and decisions, same database; JSON beside it (D96).
     desk_store = DeskStore(config.db_path)
     desk = DeskService(desk_store, market_service, activity,
-                       Path(config.db_path).parent / "desk")
+                       Path(config.db_path).parent / "desk",
+                       voices=(*VOICES, tail_voice(external_data)), external=external_data)
     return Core(
         config=config, bus=bus, broker=broker, store=store, state_store=state_store,
         market_service=market_service, chain_store=chain_store, chains=chains,
