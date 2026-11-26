@@ -166,3 +166,26 @@ def test_holding_bands_turn_around_for_a_short():
     assert bands["AAA"] == pytest.approx(tuple(1_000.0 * q for q in WIDE))
     assert bands["SSS"] == pytest.approx(tuple(-200.0 * q for q in reversed(WIDE)))
     assert list(bands["SSS"]) == sorted(bands["SSS"])
+
+
+def test_the_market_and_the_fall_are_lined_up_beside_the_book():
+    from quant_hub.data.desk import MARKET
+    book = Book(AS_OF, BOOK.holdings, BOOK.cash, market=MARKET, market_price=500.0)
+
+    def out(name, shift):
+        return VoiceOutput(name, "2", (
+            Claim("book.return", 21, BASE),
+            Claim("book.fall", 21, returns(0.01, 0.03, 0.05 + shift, 0.08, 0.12)),
+            Claim("book.fall", 21, event=">= 0.1", probability=0.2 + shift),
+            Claim(f"{MARKET}.return", 21, WIDE),
+            Claim("OTHER.return", 21, WIDE)), None)
+    c = C.compare(snapshot(out("baseline", 0.0), out("garch", 0.02), book=book))
+    kinds = [(a.target, a.kind) for a in c.across]
+    assert kinds[0] == ("book.return", "dollars") and ("book.fall", "fall") in kinds
+    assert all(t.startswith("book.") for t, _ in kinds[:kinds.index((f"{MARKET}.return",
+                                                                       "return"))])
+    assert "OTHER.return" not in {t for t, _ in kinds}               # neither book nor market
+    fall = next(a for a in c.across if a.kind == "fall" and a.level == 0.5)
+    assert fall.apart == pytest.approx(0.02) and fall.low[0] == "baseline"
+    market = next(a for a in c.across if a.kind == "return" and a.level == 0.05)
+    assert market.values == {"baseline": WIDE[0], "garch": WIDE[0]}   # a fraction, not dollars

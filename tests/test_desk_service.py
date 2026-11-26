@@ -202,3 +202,27 @@ def test_every_voice_names_its_papers_and_each_paper_names_the_voice():
                                                  (False, True, "ibkr"), (False, False, "file")])
 def test_the_default_source(keyed, ibkr, source):
     assert default_source(keyed, ibkr) == source
+
+
+def test_the_market_is_priced_beside_the_book(parts):
+    taken = service(parts, {"AAA": "2026-11-20", "BBB": "2026-11-20",
+                            "SPY": "2026-11-20"}).take("test", NOW)
+    book = taken.snapshot.book
+    assert book.market == "SPY" and book.market_price > 0
+    assert [h.symbol for h in book.holdings] == ["AAA", "BBB"]        # priced, not held
+    for voice in taken.snapshot.voices:
+        assert any(c.target == "SPY.fall" for c in voice.claims), voice.voice
+
+
+def test_the_market_must_reach_as_of_too(parts):
+    taken = service(parts, {"AAA": "2026-11-20", "BBB": "2026-11-20",
+                            "SPY": "2026-11-18"}).take("test", NOW)
+    assert taken.snapshot.as_of == date(2026, 11, 18)
+
+
+def test_without_the_market_the_book_is_still_priced(parts):
+    taken = service(parts, {"AAA": "2026-11-20", "BBB": "2026-11-20"}).take("test", NOW)
+    book = taken.snapshot.book
+    assert (book.market, book.market_price) == ("", None) and len(book.holdings) == 2
+    assert not [c for v in taken.snapshot.voices for c in v.claims
+                if c.target.startswith("SPY.")]

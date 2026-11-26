@@ -1,4 +1,4 @@
-r"""The baseline: what the desk says with no edge at all (D1, D96).
+r"""The baseline: what the desk says with no edge at all (D1, D96; D2b).
 
 Every voice on the desk is scored against this one. It knows only how much
 the book has been moving lately, and assumes nothing about direction. A
@@ -21,7 +21,7 @@ on direction, and that is what other voices have to earn. So:
 
 * **Return over h sessions**, at level τ:
   :math:`q_\tau = e^{\,z_\tau \hat\sigma \sqrt h} - 1`.
-* **The chance of a fall** to k or worse:
+* **The chance of ending down** k or worse:
   :math:`P(R_h \le k) = \Phi\bigl(\ln(1+k) / (\hat\sigma \sqrt h)\bigr)`.
 * **Realized volatility over h sessions**, :math:`\sqrt{252 \cdot \tfrac1h
   \sum r_t^2}`. With iid :math:`N(0, \hat\sigma^2)` days,
@@ -30,11 +30,29 @@ on direction, and that is what other voices have to earn. So:
   exact: the χ² CDF is the regularized lower incomplete gamma function,
   :math:`F_k(x) = P(k/2,\, x/2)`, computed by its series below
   :math:`a + 1` and its continued fraction above (the standard pair), and
-  inverted by bisection. The null holds no approximation; the tests check
-  it against closed forms, tables and simulation.
+  inverted by bisection. The tests check it against closed forms, tables
+  and simulation.
+* **The deepest fall within h sessions** (D2b), ``book.fall``. On daily
+  closes, with :math:`L_t = \sum_{s \le t} r_s` and :math:`L_0 = 0`,
 
-The same three apply to each holding alone, at its own :math:`\hat\sigma`,
-for its 21-session return.
+  .. math::  D_h = \max_{0 \le u \le v \le h} \bigl(1 - e^{L_v - L_u}\bigr)
+             = 1 - e^{-G_h}, \qquad
+             G_h = \max_{t \le h} \bigl(\max_{u \le t} L_u - L_t\bigr)
+
+  :math:`1 - e^{-G}` is increasing, so the deepest fall is the largest gap
+  below the running peak, read in logs and turned into a fall once
+  (``deepest_falls``). Its law on **daily** closes has no closed form: the
+  continuous-time drawdown law (Magdon-Ismail et al. 2004) watches the path between
+  closes too, so it overstates a fall the target can't see. So it's
+  **simulated**: ``NULL_PATHS`` = 100,000 driftless paths from a fixed
+  seed. A probability's standard error is then at most
+  :math:`\sqrt{0.25 / 10^5} = 0.0016`, and the same inputs give the same
+  claims. This is the only number in the null that isn't exact.
+
+**The targets.** The book, at the horizons in ``HORIZONS`` (5, 21, 63 and
+252 sessions), and **the market** (``data/desk.MARKET``, SPY) the same way
+at its own :math:`\hat\sigma`, when the snapshot priced it. Each holding
+gets its 21-session return.
 
 **What it ignores, on purpose:** fat tails, volatility clustering, the
 error in :math:`\hat\sigma`, and any drift. A voice that models those has
@@ -44,6 +62,7 @@ to show it scores better. The baseline proposes holding the book as it is.
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable, Mapping
 from statistics import NormalDist
 
 import numpy as np
@@ -51,14 +70,19 @@ import pandas as pd
 
 from quant_hub.data.desk import LEVELS, Book, Claim, Proposal, VoiceOutput
 
-NAME, VERSION = "baseline", "1"
+NAME, VERSION = "baseline", "2"
 # The canon papers it rests on (data/canon): log prices diffuse (Osborne),
 # and properly anticipated prices carry no predictable drift (Samuelson).
 PAPERS = ("osborne1959", "samuelson1965proof")
 WINDOW = 63                     # sessions of history for σ̂
-HORIZONS = (5, 21, 63)
-FALLS = ((21, -0.10), (63, -0.20))
+HORIZONS = (5, 21, 63, 252)
+FALLS = ((21, -0.10), (63, -0.20))          # ending down k or worse, at h
+FALL_HORIZONS = (21, 63, 252)               # the deepest fall's quantiles
+FALL_DEPTHS = ((21, 0.10), (63, 0.10), (63, 0.20), (252, 0.10), (252, 0.20))
+VOL_HORIZON = 21
 TRADING_DAYS = 252
+NULL_PATHS = 100_000
+NULL_SEED = 20261126
 _Z = [NormalDist().inv_cdf(tau) for tau in LEVELS]
 
 
@@ -72,6 +96,13 @@ def book_log_returns(book: Book, log_returns: pd.DataFrame) -> pd.Series:
     w = np.array([weights[s] for s in log_returns.columns if s in weights])
     simple = np.expm1(log_returns[[s for s in log_returns.columns if s in weights]].to_numpy())
     return pd.Series(np.log1p(simple @ w), index=log_returns.index, name="book")
+
+
+def market_log_returns(book: Book, log_returns: pd.DataFrame) -> pd.Series | None:
+    """The market's daily log returns, when the snapshot priced it."""
+    if not book.market or book.market not in log_returns.columns:
+        return None
+    return log_returns[book.market].rename(book.market)
 
 
 def gamma_p(a: float, x: float) -> float:
@@ -134,6 +165,59 @@ def vol_quantiles(sigma: float, h: int) -> tuple[float, ...]:
     return tuple(sigma * math.sqrt(TRADING_DAYS * chi2_quantile(h, tau) / h) for tau in LEVELS)
 
 
+def deepest_falls(steps: Iterable[np.ndarray], horizons: Iterable[int]) -> dict[int, np.ndarray]:
+    """:math:`D_h` for each h in ``horizons`` (module docstring), from daily
+    log returns that arrive one session at a time: each step is an array
+    with one value per path. One pass, three arrays of state, so 100,000
+    paths of a year never sit in memory at once."""
+    wanted = sorted(set(horizons))
+    out: dict[int, np.ndarray] = {}
+    level = peak = gap = None
+    t = 0
+    for t, step in enumerate(steps, 1):
+        step = np.asarray(step, dtype=float)
+        if level is None:
+            level, peak, gap = (np.zeros_like(step) for _ in range(3))
+        level = level + step
+        np.maximum(peak, level, out=peak)
+        np.maximum(gap, peak - level, out=gap)
+        if t in wanted:
+            out[t] = -np.expm1(-gap)
+            if len(out) == len(wanted):
+                break
+    if len(out) < len(wanted):
+        raise ValueError(f"paths of {t} sessions can't show a fall over {wanted[-1]}")
+    return out
+
+
+def fall_claims(target: str, falls: Mapping[int, np.ndarray]) -> list[Claim]:
+    """``target``'s deepest-fall claims from simulated falls: quantiles at
+    ``FALL_HORIZONS`` and the chances of ``FALL_DEPTHS``."""
+    claims = [Claim(f"{target}.fall", h, tuple(float(np.quantile(falls[h], tau))
+                                                for tau in LEVELS)) for h in FALL_HORIZONS]
+    claims += [Claim(f"{target}.fall", h, event=f">= {d:g}",
+                     probability=float(np.mean(falls[h] >= d))) for h, d in FALL_DEPTHS]
+    return claims
+
+
+def null_falls(sigma: float, rng: np.random.Generator,
+               paths: int = NULL_PATHS) -> dict[int, np.ndarray]:
+    """The driftless walk's deepest falls at ``FALL_HORIZONS``, simulated
+    (module docstring)."""
+    longest = max(FALL_HORIZONS)
+    return deepest_falls((sigma * rng.standard_normal(paths) for _ in range(longest)),
+                         FALL_HORIZONS)
+
+
+def walk_claims(target: str, sigma: float, rng: np.random.Generator) -> list[Claim]:
+    """The no-edge claims about one target at volatility ``sigma`` a day."""
+    claims = [Claim(f"{target}.return", h, return_quantiles(sigma, h)) for h in HORIZONS]
+    claims += [Claim(f"{target}.return", h, event=f"<= {k:g}",
+                     probability=fall_probability(sigma, h, k)) for h, k in FALLS]
+    claims.append(Claim(f"{target}.vol", VOL_HORIZON, vol_quantiles(sigma, VOL_HORIZON)))
+    return claims + fall_claims(target, null_falls(sigma, rng))
+
+
 def sigma_hat(series: pd.Series, window: int = WINDOW) -> float:
     tail = series.dropna().iloc[-window:]
     if len(tail) < window:
@@ -145,18 +229,30 @@ def sigma_hat(series: pd.Series, window: int = WINDOW) -> float:
 
 
 def baseline(book: Book, log_returns: pd.DataFrame, window: int = WINDOW) -> VoiceOutput:
-    """The no-edge voice's claims about ``book`` (module docstring)."""
+    """The no-edge voice's claims about ``book`` and the market (module
+    docstring)."""
+    rng = np.random.default_rng(NULL_SEED)
     series = book_log_returns(book, log_returns)
     sigma = sigma_hat(series, window)
-    claims = [Claim("book.return", h, return_quantiles(sigma, h)) for h in HORIZONS]
-    claims += [Claim("book.return", h, event=f"<= {k:g}",
-                     probability=fall_probability(sigma, h, k)) for h, k in FALLS]
-    claims.append(Claim("book.vol", 21, vol_quantiles(sigma, 21)))
+    claims = walk_claims("book", sigma, rng)
+    parameters = {"window": window, "sigma_daily": round(sigma, 10), "paths": NULL_PATHS,
+                  "seed": NULL_SEED}
+    market = market_log_returns(book, log_returns)
+    market_sigma = None
+    if market is not None:
+        try:
+            market_sigma = sigma_hat(market, window)
+        except ValueError:
+            market_sigma = None
+    if market_sigma is not None:
+        claims += walk_claims(book.market, market_sigma, rng)
+        parameters["market_sigma_daily"] = round(market_sigma, 10)
     for holding in book.holdings:
+        if market_sigma is not None and holding.symbol == book.market:
+            continue                    # the market's claims already include its return
         s = sigma_hat(log_returns[holding.symbol].rename(holding.symbol), window)
         claims.append(Claim(f"{holding.symbol}.return", 21, return_quantiles(s, 21)))
     why = (f"No edge: a random walk with no drift at the book's last {window} sessions' "
            f"volatility, {sigma * math.sqrt(TRADING_DAYS):.1%} a year. Every voice is "
            "scored against this.")
-    return VoiceOutput(NAME, VERSION, tuple(claims), Proposal(hold=True), why,
-                       {"window": window, "sigma_daily": round(sigma, 10)})
+    return VoiceOutput(NAME, VERSION, tuple(claims), Proposal(hold=True), why, parameters)

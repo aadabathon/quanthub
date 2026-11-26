@@ -30,7 +30,9 @@ Agreement and disagreement
 For each claim on the book that the voices make (same target, horizon and
 level, or same event), the comparison keeps every voice's value: the
 lowest, the highest, and how far apart they are, in dollars (a probability
-for an event, an annual volatility for ``book.vol``). **Nothing is
+for an event, an annual volatility for ``book.vol``, a fraction for the
+deepest fall, ``book.fall``). The market's claims (D2b) are lined up the
+same way, as fractions: the market isn't in the book's dollars. **Nothing is
 averaged.** A consensus number would hide the disagreement the desk is
 there to show.
 
@@ -90,12 +92,14 @@ _SCALE_TOLERANCE = 1e-9            # relative: w'_i = m w_i for every holding
 
 @dataclass(frozen=True)
 class Across:
-    """One claim on the book, every voice that made it (module docstring).
+    """One claim on the book or the market, every voice that made it
+    (module docstring).
 
     ``kind`` is ``"dollars"`` (a ``book.return`` quantile, as V q),
-    ``"vol"`` (a ``book.vol`` quantile, annualized) or ``"probability"`` (an
-    event). ``values`` maps each voice to its value, in the order the voices
-    spoke."""
+    ``"return"`` (the market's return quantile, a fraction), ``"fall"`` (a
+    deepest-fall quantile, a fraction), ``"vol"`` (a volatility quantile,
+    annualized) or ``"probability"`` (an event). ``values`` maps each voice
+    to its value, in the order the voices spoke."""
 
     target: str
     horizon: int
@@ -202,13 +206,16 @@ def compare(snapshot: Snapshot) -> Comparison:
         raise ValueError(f"the book is worth {value:,.2f}: a return on it means nothing, "
                          "so the voices can't be put in dollars")
     voices = tuple(v.voice for v in snapshot.voices)
+    subjects = ("book", book.market) if book.market else ("book",)
     rows: dict[tuple, dict[str, float]] = {}
     for output in snapshot.voices:
         for claim in output.claims:
-            if not claim.target.startswith("book."):
+            subject, _, what = claim.target.rpartition(".")
+            if subject not in subjects:
                 continue
             if claim.kind == "quantiles":
-                kind = "dollars" if claim.target == "book.return" else "vol"
+                kind = ("dollars" if claim.target == "book.return" else
+                        "return" if what == "return" else what)
                 for level, q in zip(LEVELS, claim.quantiles):
                     x = value * q if kind == "dollars" else q
                     rows.setdefault((claim.target, claim.horizon, kind, level, ""),
@@ -216,10 +223,11 @@ def compare(snapshot: Snapshot) -> Comparison:
             else:
                 rows.setdefault((claim.target, claim.horizon, "probability", None, claim.event),
                                 {})[output.voice] = claim.probability
-    order = {"dollars": 0, "probability": 1, "vol": 2}
+    order = {"dollars": 0, "return": 0, "probability": 1, "fall": 2, "vol": 3}
     across = tuple(Across(t, h, k, lv, ev, values) for (t, h, k, lv, ev), values in
-                   sorted(rows.items(), key=lambda item: (order[item[0][2]], item[0][1],
-                                                          item[0][3] or 0.0, item[0][4])))
+                   sorted(rows.items(), key=lambda item: (
+                       not item[0][0].startswith("book."), order[item[0][2]], item[0][1],
+                       item[0][0], item[0][3] or 0.0, item[0][4])))
     proposals = tuple(_proposed(o.voice, o.proposal, book) for o in snapshot.voices)
     comparison = Comparison(value, voices, across, proposals, ())
     effects = []
