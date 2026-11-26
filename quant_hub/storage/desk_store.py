@@ -5,8 +5,8 @@ once, by its SHA-256; storing it again returns the same row. That is what
 lets a record be trusted later: nothing the desk said can be revised after
 the outcome is known.
 
-Schema (three tables, created idempotently on open, in the same database as
-the bars, D17; schema v12)
+Schema (four tables, created idempotently on open, in the same database as
+the bars, D17; schema v12, and v13 for the outcomes)
 --------------------------------------------------------------------------
 ``desk_snapshots``
     One row per snapshot: when it was taken, its ``as_of``, its hash, the
@@ -17,6 +17,11 @@ the bars, D17; schema v12)
 ``desk_decisions``
     Decisions, each citing the hash of the snapshot it was made on, stored
     as canonical JSON with their own hash.
+``desk_outcomes`` (D4, D104)
+    What happened to one target of one snapshot over one horizon: its
+    return, volatility and deepest fall (``models/scoring.py``), or why it
+    can't be known. One row each, stored once: a record must not move
+    because a provider revised a bar later.
 
 Threading contract: the same as ``BarStore``. The connection is created
 with ``check_same_thread=False``, and every public method holds an
@@ -34,7 +39,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 
-from quant_hub.data.desk import Claim, Decision, Snapshot, resolves_on
+from quant_hub.data.desk import Claim, Decision, Outcome, Snapshot, resolves_on
 
 _logger = logging.getLogger(__name__)
 
@@ -52,6 +57,15 @@ V12_TABLES = (
     "CREATE TABLE IF NOT EXISTS desk_decisions (id INTEGER PRIMARY KEY, made_at TEXT NOT NULL, "
     "snapshot_sha TEXT NOT NULL REFERENCES desk_snapshots(sha256), author TEXT NOT NULL, "
     "sha256 TEXT NOT NULL UNIQUE, payload TEXT NOT NULL)",
+)
+
+# Frozen: schema step 12 -> 13 creates exactly these.
+V13_TABLES = (
+    "CREATE TABLE IF NOT EXISTS desk_outcomes (snapshot_id INTEGER NOT NULL "
+    "REFERENCES desk_snapshots(id), subject TEXT NOT NULL, horizon INTEGER NOT NULL, "
+    "status TEXT NOT NULL, ret REAL, vol REAL, fall REAL, reason TEXT NOT NULL, "
+    "source TEXT NOT NULL, resolved_at TEXT NOT NULL, "
+    "PRIMARY KEY (snapshot_id, subject, horizon)) WITHOUT ROWID",
 )
 
 
@@ -90,7 +104,7 @@ class DeskStore:
             self._conn = sqlite3.connect(str(db_path), check_same_thread=False)
             self._conn.execute("PRAGMA foreign_keys = ON")
             with self._conn:
-                for statement in V12_TABLES:
+                for statement in (*V12_TABLES, *V13_TABLES):
                     self._conn.execute(statement)
         except sqlite3.Error as exc:
             raise DeskStoreError(f"could not open the desk store at {db_path}: {exc}") from exc
@@ -203,6 +217,37 @@ class DeskStore:
                     return int(cursor.lastrowid)
             except sqlite3.Error as exc:
                 raise DeskStoreError(f"could not save the decision: {exc}") from exc
+
+    def save_outcome(self, outcome: Outcome) -> bool:
+        """Store ``outcome`` once; False if that snapshot's subject and
+        horizon already has one (it's never replaced)."""
+        with self._lock:
+            try:
+                with self._conn:
+                    cursor = self._conn.execute(
+                        "INSERT OR IGNORE INTO desk_outcomes (snapshot_id, subject, horizon,"
+                        " status, ret, vol, fall, reason, source, resolved_at)"
+                        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (outcome.snapshot_id, outcome.subject, outcome.horizon, outcome.status,
+                         outcome.ret, outcome.vol, outcome.fall, outcome.reason, outcome.source,
+                         outcome.resolved_at.isoformat()))
+                    return cursor.rowcount == 1
+            except sqlite3.Error as exc:
+                raise DeskStoreError(f"could not save the outcome: {exc}") from exc
+
+    def outcomes(self) -> list[Outcome]:
+        """Every stored outcome, by snapshot, subject and horizon."""
+        with self._lock:
+            try:
+                rows = self._conn.execute(
+                    "SELECT snapshot_id, subject, horizon, status, ret, vol, fall, reason,"
+                    " source, resolved_at FROM desk_outcomes"
+                    " ORDER BY snapshot_id, subject, horizon").fetchall()
+            except sqlite3.Error as exc:
+                raise DeskStoreError(f"could not read the outcomes: {exc}") from exc
+        return [Outcome(int(i), subject, int(h), status, ret, vol, fall, reason, source,
+                        datetime.fromisoformat(at))
+                for i, subject, h, status, ret, vol, fall, reason, source, at in rows]
 
     def decisions(self) -> list[Decision]:
         """Every decision, oldest first."""

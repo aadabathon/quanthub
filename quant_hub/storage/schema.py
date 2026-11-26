@@ -49,6 +49,8 @@ Versions:
   (``activity_imports``, ``activity``).
 * **12** (D1, D96): the desk's snapshots, their claims, and decisions
   (``desk_snapshots``, ``desk_claims``, ``desk_decisions``), append only.
+* **13** (D4, D104): what happened to each claim's target
+  (``desk_outcomes``), stored once, append only.
 
 Steps are frozen: each one spells out its own SQL, never the stores'
 current schema, which keeps moving. A test holds a migrated file and a new
@@ -71,7 +73,7 @@ from quant_hub.storage.bar_store import StorageError
 
 _logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
 BACKUP_DIR = "backups"
 
 _TABLE = """
@@ -203,10 +205,17 @@ def _desk(conn: sqlite3.Connection) -> None:
         conn.execute(statement)
 
 
+def _outcomes(conn: sqlite3.Connection) -> None:
+    """12 -> 13: the desk's outcomes (D104)."""
+    from quant_hub.storage.desk_store import V13_TABLES
+    for statement in V13_TABLES:
+        conn.execute(statement)
+
+
 _STEPS: dict[int, Callable[[sqlite3.Connection], None]] = {
     0: _adopt, 1: _price_basis, 2: _research, 3: _fundamentals, 4: _valuations, 5: _reserved,
     6: _series, 7: _holdings, 8: _security_ids, 9: _snapshot_hashes, 10: _activity,
-    11: _desk,
+    11: _desk, 12: _outcomes,
 }
 
 

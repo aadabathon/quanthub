@@ -101,7 +101,8 @@ def test_a_file_from_before_versioning_is_backed_up_then_adopted(tmp_path):
         (9, "2026-10-15T19:30:05", str(result.backup)),
         (10, "2026-10-15T19:30:05", str(result.backup)),
         (11, "2026-10-15T19:30:05", str(result.backup)),
-        (12, "2026-10-15T19:30:05", str(result.backup))]
+        (12, "2026-10-15T19:30:05", str(result.backup)),
+        (13, "2026-10-15T19:30:05", str(result.backup))]
     assert rows(db, "SELECT COUNT(*) FROM bars") == [(count,)]
     # Up to date now: the next start changes nothing and copies nothing.
     again = prepare_store(db, clock)
@@ -276,11 +277,28 @@ def test_version_11_gains_the_desk_tables_shaped_like_a_new_files(tmp_path):
     old, new = tmp_path / "old.db", tmp_path / "new.db"
     seeded_store(old, version=11)
     result = prepare_store(old, clock)
-    assert (result.migrated_from, result.version) == (11, 12) and result.backup.is_file()
+    assert (result.migrated_from, result.version) == (11, 13) and result.backup.is_file()
     prepare_store(new, clock)
     DeskStore(new).close()
     sql = "SELECT type, name, sql FROM sqlite_master WHERE name LIKE 'desk%' ORDER BY name"
     shapes = [rows(p, sql) for p in (old, new)]
     assert shapes[0] == shapes[1]
     assert [name for _, name, _ in shapes[0]] == ["desk_claims", "desk_claims_due",
-                                                  "desk_decisions", "desk_snapshots"]
+                                                  "desk_decisions", "desk_outcomes",
+                                                  "desk_snapshots"]
+
+
+def test_version_12_gains_the_outcomes_table_shaped_like_a_new_files(tmp_path):
+    from quant_hub.storage.desk_store import V12_TABLES, DeskStore
+    old, new = tmp_path / "old.db", tmp_path / "new.db"
+    seeded_store(old, version=12)
+    with sqlite3.connect(old) as conn:           # a v12 file already has the desk's tables
+        for statement in V12_TABLES:
+            conn.execute(statement)
+    result = prepare_store(old, clock)
+    assert (result.migrated_from, result.version) == (12, 13) and result.backup.is_file()
+    prepare_store(new, clock)
+    DeskStore(new).close()
+    sql = "SELECT type, name, sql FROM sqlite_master WHERE name = 'desk_outcomes'"
+    shapes = [rows(p, sql) for p in (old, new)]
+    assert shapes[0] == shapes[1] and len(shapes[0]) == 1

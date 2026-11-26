@@ -272,5 +272,18 @@
     "lives_in": [],
     "links": [],
     "verified": {"via": "crossref", "checked": "2026-11-07", "matched": ["title", "first_author", "year"], "note": "Crossref lists the chapter as \"17. A Value for n-Person Games\", with its chapter number."}
+    },
+  {
+    "id": "gneitingraftery2007",
+    "title": "Strictly Proper Scoring Rules, Prediction, and Estimation",
+    "authors": ["Tilmann Gneiting", "Adrian E. Raftery"],
+    "year": 2007,
+    "venue": "Journal of the American Statistical Association",
+    "doi": "10.1198/016214506000001437",
+    "question": "Which scores reward a forecaster for stating what it actually believes?",
+    "changed": "A unified theory of proper scoring rules: Brier, log, CRPS and the quantile score, and why honesty is optimal under them.",
+    "lives_in": ["quant_hub/models/scoring.py"],
+    "links": [],
+    "verified": {"via": "crossref", "checked": "2026-11-25", "matched": ["title", "first_author", "year"]}
   }
 ]
