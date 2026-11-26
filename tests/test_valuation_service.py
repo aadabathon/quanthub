@@ -5,7 +5,7 @@ v4 -> v5 migration. The original's ``rank_screen`` test is ported here."""
 import csv
 import math
 import sqlite3
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 
 import numpy as np
 import pandas as pd
@@ -28,7 +28,7 @@ from quant_hub.storage.bar_store import BarStore, InstrumentKey
 from quant_hub.storage.fundamentals_store import FundamentalsStore
 from quant_hub.storage.schema import SCHEMA_VERSION, prepare_store
 from quant_hub.storage.valuation_store import ValuationStore
-from test_sec_edgar import FY, companyfacts, flow
+from test_sec_edgar import companyfacts, flow
 
 NOW = datetime(2026, 3, 27, 10, 0, 0)
 

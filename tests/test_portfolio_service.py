@@ -1,7 +1,6 @@
 """Portfolio service and position store (P2, P3): snapshots kept, holdings
 valued and risked, gaps named rather than hidden."""
 
-import io
 from datetime import date, datetime
 
 import numpy as np
@@ -9,7 +8,6 @@ import pytest
 
 from quant_hub.data.positions import Holding, OptionContract, Position, PositionSnapshot
 from quant_hub.data.sources import SyntheticSource
-from quant_hub.importers.positions_csv import read_positions_csv
 from quant_hub.services.market_service import MarketService
 from quant_hub.services.portfolio import PortfolioService, example_snapshot
 from quant_hub.storage.position_store import PositionStore, PositionStoreError

@@ -42,7 +42,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-from PySide6.QtWidgets import QHBoxLayout, QWidget
 
 from quant_hub.gui.charts import Curve, CurveChart, Panel, Series, StackedTimeSeries
 from quant_hub.gui.components import (
@@ -56,7 +55,6 @@ from quant_hub.gui.components import (
     StatTable,
     button,
     form_grid,
-    label,
 )
 from quant_hub.gui.pages.base import ScrollPage, saved_grid
 from quant_hub.gui.theme import PALETTE, SIDE_PANEL_WIDTH, SPACE_L, SPACE_M

@@ -1,7 +1,6 @@
 """R1 performance definitions and statistical calibration on known nulls."""
 
 import math
-from statistics import NormalDist
 
 import numpy as np
 import pandas as pd

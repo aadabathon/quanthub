@@ -149,7 +149,6 @@ history on the real :math:`N_s(t)` instead of today's weights.
 
 from __future__ import annotations
 
-import math
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date

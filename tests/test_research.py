@@ -11,7 +11,7 @@ from quant_hub.data.sources import SyntheticSource
 from quant_hub.data.types import PriceBasis, PriceHistory
 from quant_hub.models.strategies import StrategySpec
 from quant_hub.services.market_service import MarketService
-from quant_hub.services.research import Experiment, ResearchService, WORLD_SOURCE
+from quant_hub.services.research import Experiment, ResearchService
 from quant_hub.storage.research_store import ResearchStore
 from quant_hub.storage.schema import SCHEMA_VERSION, prepare_store
 

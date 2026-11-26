@@ -1,9 +1,10 @@
 """Trades: your broker's history, every round trip, checked against your exports (TR5a, D95).
 
 The page on ``services/activity.py``: the transaction history (TR1, TR1b),
-its replay against the positions exports (TR2, ``models/ledger.py``), and
-its FIFO lots and round trips (TR3, ``models/lots.py``). It measures
-nothing about timing yet; that's TR4.
+its replay against the positions exports (TR2, ``models/ledger.py``), its
+FIFO lots and round trips (TR3, ``models/lots.py``), how well each trade
+was timed (TR4, ``models/timing.py``), and the account's returns as it
+actually held (TR6, ``models/held.py``).
 
 **The side panel:**
 - **History:** import a broker's history (Fidelity's Activity & Orders
