@@ -13,8 +13,10 @@ sessions):
   voice differs from it in one assumption. The table gives the five
   numbers, and each voice's worst 1 in 20 against the baseline's.
 - **Where they agree and disagree:** every claim the voices share, from
-  the lowest to the highest, and how far apart, in dollars, in chances of a
-  fall, and in volatility. Nothing is averaged.
+  the lowest to the highest, and how far apart: the book's return in
+  dollars, its chances of ending down or falling along the way, its
+  deepest fall and its volatility; then the market's (SPY) the same way,
+  as fractions (D2b). Nothing is averaged.
 - **What each would do:** each voice's proposal in dollars: what it would
   sell or buy, and what goes to cash. For a proposal that scales the whole
   book, what it changes against holding under every voice's claims: what
@@ -60,7 +62,7 @@ from quant_hub.gui.components import (
 from quant_hub.gui.pages.base import ScrollPage, saved_grid
 from quant_hub.gui.theme import PALETTE, SIDE_PANEL_WIDTH, SPACE_L
 from quant_hub.models.baseline import HORIZONS
-from quant_hub.models.comparison import BASELINE, Across, Comparison, Proposed
+from quant_hub.models.comparison import BASELINE, Across, Comparison
 from quant_hub.services.desk import DeskService, DeskView, Taken
 
 _NOTE = SIDE_PANEL_WIDTH - 2 * SPACE_L
@@ -186,6 +188,7 @@ class DeskPage(ScrollPage):
         self._facts = StatTable([("The snapshot", [
             ("as_of", "Prices as of"), ("taken", "Taken"), ("source", "Prices from"),
             ("value", "Book value"), ("priced", "Holdings priced"), ("units", "Units as of"),
+            ("market", "Market"),
             ("voices", "Voices"), ("sha", "SHA-256")])])
         card.body.addWidget(self._facts)
         self._left_out = Note("ph.warning", "warning", width=_NOTE)
@@ -339,6 +342,8 @@ class DeskPage(ScrollPage):
         facts.set_value("priced", f"{len(book.holdings)} of {held}")
         facts.set_value("units", f"{book.units_as_of:%b %d}, after the last prices"
                         if book.units_as_of else "the same day")
+        facts.set_value("market", f"{book.market} at ${book.market_price:,.2f}"
+                        if book.market and book.market_price is not None else "not priced")
         facts.set_value("voices", ", ".join(v.voice for v in s.voices) or "none")
         facts.set_value("sha", s.sha256[:16])
         if book.unpriced:
@@ -395,8 +400,8 @@ class DeskPage(ScrollPage):
     def _render_agree(self, c: Comparison, h: int) -> None:
         rows = []
         shown = [a for a in c.across if a.horizon == h and
-                 (a.kind != "dollars" or a.level in (0.05, 0.5, 0.95)) and
-                 (a.kind != "vol" or a.level == 0.5)]
+                 (a.kind not in ("dollars", "return") or a.level in (0.05, 0.5, 0.95)) and
+                 (a.kind not in ("vol", "fall") or a.level == 0.5)]
         for a in shown:
             (lo_voice, lo), (hi_voice, hi) = a.low, a.high
             one = len(a.values) == 1
@@ -404,6 +409,7 @@ class DeskPage(ScrollPage):
                          "" if one else f"{self._value(a, c, hi)} · {hi_voice}",
                          "one voice" if one else self._apart(a, c)])
         self._agree.set_rows(rows)
+        self._agree.setMinimumHeight(max(5, len(rows)) * _ROW + 36)     # every row, no scroll
         worst = next((a for a in shown if a.kind == "dollars" and a.level == 0.05), None)
         if worst is not None and len(worst.values) > 1:
             self._agree_card.set_subtitle(f"Over {h} sessions the voices' worst 1 in 20 runs "
@@ -412,21 +418,31 @@ class DeskPage(ScrollPage):
 
     @staticmethod
     def _claim_name(a: Across, c: Comparison) -> str:
-        if a.kind == "dollars":
-            return f"{_LEVEL_NAMES[a.level]}, {a.horizon} sessions"
+        subject, _, what = a.target.rpartition(".")
+        book = subject == "book"
+        prefix = "" if book else f"{subject} · "
+        if a.kind in ("dollars", "return"):
+            return f"{prefix}{_LEVEL_NAMES[a.level]}, {a.horizon} sessions"
         if a.kind == "vol":
-            return f"Volatility, {a.horizon} sessions (median)"
+            return f"{prefix}Volatility, {a.horizon} sessions (median)"
+        if a.kind == "fall":
+            return f"{prefix}Deepest fall within {a.horizon} sessions (median)"
         op, _, k = a.event.partition(" ")
-        drop = float(k)
-        if op in ("<=", "<") and drop < 0:
-            return f"Chance of a {-drop:.0%} fall ({_money(c.value * drop)})"
-        return f"Chance the return is {a.event}"
+        depth = abs(float(k))
+        dollars = f" (~{_money(-c.value * depth)})" if book else ""
+        if what == "fall" and op in (">=", ">"):
+            return f"{prefix}Falls {depth:.0%} at some point in {a.horizon}{dollars}"
+        if what == "return" and op in ("<=", "<") and float(k) < 0:
+            return f"{prefix}Ends {depth:.0%} or more down after {a.horizon}{dollars}"
+        return f"{prefix}Chance {what} {a.event} over {a.horizon}"
 
     @staticmethod
     def _value(a: Across, c: Comparison, x: float) -> str:
         if a.kind == "dollars":
             return _money(x)
-        if a.kind == "vol":
+        if a.kind == "return":
+            return f"{x:+.1%}"
+        if a.kind == "vol" and a.target.startswith("book."):
             return f"{x:.1%} (~${c.daily_move(x):,.0f}/day)"
         return f"{x:.1%}"
 

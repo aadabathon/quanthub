@@ -36,13 +36,24 @@ target                 resolves to
 ``book.vol``           that book's realized volatility over the h sessions:
                        :math:`\sqrt{252 \cdot \tfrac1h \sum r_t^2}`, daily
                        log returns
+``book.fall``          that book's deepest fall within the h sessions (D2b):
+                       :math:`\max_{0 \le u \le v \le h} (1 - V_v / V_u)`,
+                       with :math:`V_0` its value at ``as_of``, so a fall
+                       from today's own level counts
 ``SYM.return``         the symbol's adjusted close h sessions on, over its
                        close at ``as_of``, minus 1
 ``SYM.vol``            the symbol's realized volatility, as for the book
+``SYM.fall``           the symbol's deepest fall, as for the book, on its
+                       adjusted closes
 =====================  =====================================================
 
 The book is the snapshot's own, held unchanged, so a claim about it
 doesn't depend on later trades.
+
+**The market** (D2b) is ``MARKET``, SPY: every snapshot prices it, held
+or not, and records its close beside the book, so every voice can make
+the same claims about it. It's the one target all voices share with the
+voices that forecast the market itself, and β ties the book to it.
 
 A claim takes one of two forms, each made for a proper scoring rule. A
 proper rule is one whose expected score is best when the forecast is the
@@ -78,6 +89,8 @@ from typing import Any
 from quant_hub.data.trading_calendar import trading_days
 
 LEVELS = (0.05, 0.25, 0.5, 0.75, 0.95)
+MARKET = "SPY"                     # the market every snapshot prices (module docstring)
+TARGETS = ("return", "vol", "fall")
 _EVENT_OPS = ("<=", ">=", "<", ">")
 
 
@@ -96,8 +109,8 @@ class Claim:
         if not self.target or "." not in self.target:
             raise ValueError(f"a claim's target is SYMBOL.return, book.vol and the like, "
                              f"not {self.target!r}")
-        if self.target.rsplit(".", 1)[1] not in ("return", "vol"):
-            raise ValueError(f"{self.target}: only .return and .vol resolve")
+        if self.target.rsplit(".", 1)[1] not in TARGETS:
+            raise ValueError(f"{self.target}: only .return, .vol and .fall resolve")
         if self.horizon < 1:
             raise ValueError(f"{self.target}: the horizon is at least one session")
         has_quantiles, has_probability = bool(self.quantiles), self.probability is not None
@@ -168,13 +181,17 @@ class Holding:
 class Book:
     """What the claims are about: priced holdings and cash at ``as_of``.
     Anything held but not priced (an option, a symbol without bars) is
-    named in ``unpriced`` and left out, never guessed."""
+    named in ``unpriced`` and left out, never guessed. ``market`` and
+    ``market_price`` are the market's symbol and its close at ``as_of``
+    (module docstring), or "" and None when it couldn't be priced."""
 
     as_of: date
     holdings: tuple[Holding, ...]
     cash: float = 0.0
     unpriced: tuple[str, ...] = ()
     units_as_of: date | None = None   # the day the units are from, when not as_of
+    market: str = ""
+    market_price: float | None = None
 
     @property
     def value(self) -> float:
@@ -240,7 +257,8 @@ class Snapshot:
             Book(date.fromisoformat(book["as_of"]),
                  tuple(Holding(**h) for h in book["holdings"]), book["cash"],
                  tuple(book["unpriced"]),
-                 date.fromisoformat(book["units_as_of"]) if book.get("units_as_of") else None),
+                 date.fromisoformat(book["units_as_of"]) if book.get("units_as_of") else None,
+                 book.get("market", ""), book.get("market_price")),
             tuple(_voice(v) for v in d["voices"]))
 
 

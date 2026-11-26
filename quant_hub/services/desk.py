@@ -9,6 +9,9 @@
    price comes from a day another holding hadn't reached. A holding with no
    history, too little of it, or an option (priced from chains, not yet)
    is named in ``unpriced`` and left out of the book, never guessed.
+   **The market** (``data/desk.MARKET``, SPY) is priced too, held or not
+   (D2b), and must have its close on ``as_of`` as well. If it can't be
+   priced, the book is still priced and the voices make no market claims.
 3. **The voices** each speak about that book from those returns. One that
    can't (too little history, say) is logged and left out of this
    snapshot; the others still speak. The baseline (``models/baseline.py``)
@@ -45,7 +48,7 @@ import numpy as np
 import pandas as pd
 
 from quant_hub import __version__
-from quant_hub.data.desk import Book, Decision, Holding, Snapshot, VoiceOutput
+from quant_hub.data.desk import MARKET, Book, Decision, Holding, Snapshot, VoiceOutput
 from quant_hub.data.literature import CanonPaper
 from quant_hub.models import baseline as baseline_model
 from quant_hub.models import voices as voice_models
@@ -146,7 +149,17 @@ class DeskService:
             closes[symbol] = history.frame["close"].astype(float)
         if not closes:
             raise ValueError("no holding could be priced from " + source)
-        as_of = min(series.index.max() for series in closes.values()).date()
+        market = closes.get(MARKET)
+        if market is None:
+            try:
+                market = self._market.get_return_history(MARKET, start, now,
+                                                          source).frame["close"].astype(float)
+            except Exception as exc:     # the book is priced without it; no market claims
+                _logger.warning("desk: the market (%s) wasn't priced: %s", MARKET, exc)
+        ends = [series.index.max() for series in closes.values()]
+        if market is not None:
+            ends.append(market.index.max())
+        as_of = min(ends).date()
         frame = pd.DataFrame(closes).loc[:pd.Timestamp(as_of)]
         returns = np.log(frame).diff().iloc[1:]
         holdings = []
@@ -158,9 +171,19 @@ class DeskService:
         kept = [h.symbol for h in holdings]
         if not kept:
             raise ValueError("no holding has enough history to price the book")
+        columns, market_price = list(kept), None
+        if market is not None:
+            market = market.loc[:pd.Timestamp(as_of)]
+            if market.index.max().date() == as_of:
+                market_price = float(market.iloc[-1])
+                if MARKET not in returns.columns:
+                    returns = returns.join(np.log(market).diff().rename(MARKET), how="left")
+                if MARKET not in columns:
+                    columns.append(MARKET)
         book = Book(as_of, tuple(holdings), held.cash, tuple(unpriced),
-                    held.through if held.through > as_of else None)
-        return book, returns[kept].dropna()
+                    held.through if held.through > as_of else None,
+                    MARKET if market_price is not None else "", market_price)
+        return book, returns[columns].dropna(subset=kept)
 
     def _same_day(self, book: Book) -> tuple[int, Snapshot] | None:
         """The stored snapshot of this exact book on this day, if any: one

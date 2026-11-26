@@ -2440,9 +2440,10 @@ def _desk_snapshot():
     index = pd.bdate_range(end="2026-11-20", periods=300)
     rng = np.random.default_rng(5)
     log_returns = pd.DataFrame({"AAA": rng.normal(0, 0.012, 300),
-                                "BBB": rng.normal(0, 0.02, 300)}, index=index)
+                                "BBB": rng.normal(0, 0.02, 300),
+                                "SPY": rng.normal(0, 0.01, 300)}, index=index)
     book = Book(date(2026, 11, 20), (Holding("AAA", 10.0, 100.0), Holding("BBB", 5.0, 200.0)),
-                500.0)
+                500.0, market="SPY", market_price=600.0)
     voices = tuple(v(book, log_returns) for v in (baseline, garch, regimes, bootstrap))
     return Snapshot(datetime(2026, 11, 20, 17, 30), book.as_of, "test", "0", book, voices)
 
@@ -2457,14 +2458,19 @@ def test_the_desk_page_shows_the_voices_side_by_side(qt_app):
     assert [page._band_table.item(r, 0).text() for r in range(4)] == [
         "baseline", "garch", "regimes", "bootstrap"]
     assert page._band_table.item(0, 6).text() == ""             # the baseline against itself
-    assert page._agree.rowCount() == 5            # worst, median, best, the fall, volatility
-    assert page._agree.item(3, 0).text() == "Chance of a 10% fall (−$250)"
+    # The book's worst, median, best, two chances, the fall, volatility; the market's the same.
+    assert page._agree.rowCount() == 14
+    assert page._agree.item(3, 0).text() == "Falls 10% at some point in 21 (~−$250)"
+    assert page._agree.item(4, 0).text() == "Ends 10% or more down after 21 (~−$250)"
+    assert page._agree.item(5, 0).text() == "Deepest fall within 21 sessions (median)"
+    assert page._agree.item(7, 0).text() == "SPY · Worst 1 in 20, 21 sessions"
+    assert page._facts.value_text("market") == "SPY at $600.00"
     assert page._proposals.rowCount() == 4
     assert page._facts.value_text("value") == "$2,500"
     assert page._book.rowCount() == 3 and page._book.item(2, 0).text() == "Cash"
     page._horizon_control.changed.emit("5 sessions")
     app.processEvents()
-    assert page._agree.rowCount() == 3                          # 5 sessions: dollars only
+    assert page._agree.rowCount() == 6            # 5 sessions: returns only, book and market
     assert "over 5 sessions" in page._voices_card.subtitle.full_text()
     page._why_select.select.set_current("garch")
     app.processEvents()
