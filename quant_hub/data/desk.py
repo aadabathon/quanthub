@@ -263,6 +263,29 @@ class Snapshot:
 
 
 @dataclass(frozen=True)
+class Outcome:
+    """What happened to one subject (``book``, the market, a symbol) of one
+    snapshot over one horizon (D4, ``models/scoring.py``): its return,
+    realized volatility and deepest fall, or, when ``status`` is
+    ``"unresolvable"``, why it can't be known."""
+
+    snapshot_id: int
+    subject: str
+    horizon: int
+    status: str                    # "resolved" or "unresolvable"
+    ret: float | None
+    vol: float | None
+    fall: float | None
+    reason: str
+    source: str
+    resolved_at: datetime
+
+    def value(self, what: str) -> float | None:
+        """The resolved number for a target's kind: return, vol or fall."""
+        return {"return": self.ret, "vol": self.vol, "fall": self.fall}[what]
+
+
+@dataclass(frozen=True)
 class Decision:
     """What was decided on a snapshot (module docstring)."""
 

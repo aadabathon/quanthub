@@ -132,7 +132,7 @@ def test_a_decision_is_recorded_on_its_snapshot(parts):
     desk = service(parts, {"AAA": "2026-11-20", "BBB": "2026-11-20"})
     taken = desk.take("test", NOW)
     decision = Decision(NOW, taken.snapshot.sha256, "owner", (("BBB", 2.0),), "add")
-    assert desk.record(decision) == desk.record(decision)
+    assert desk.record_decision(decision) == desk.record_decision(decision)
 
 
 def test_the_command_line_takes_one_snapshot(parts, monkeypatch, capsys):
@@ -196,7 +196,8 @@ def test_every_voice_names_its_papers_and_each_paper_names_the_voice():
         assert ids, voice
         for paper_id in ids:
             assert paper_id in canon, (voice, paper_id)
-            assert modules.get(voice, "quant_hub/models/voices.py") in                 canon.paper(paper_id).lives_in, (voice, paper_id)
+            module = modules.get(voice, "quant_hub/models/voices.py")
+            assert module in canon.paper(paper_id).lives_in, (voice, paper_id)
 
 
 @pytest.mark.parametrize("keyed, ibkr, source", [(True, True, "massive"), (True, False, "massive"),
@@ -280,3 +281,78 @@ def test_a_failed_refresh_doesnt_stop_the_snapshot(parts):
     taken = service(parts, ENDS, voices=(*VOICES, tail_voice(french)),
                     external=french).take("test", NOW)
     assert "tail" in [v.voice for v in taken.snapshot.voices]
+
+
+# ------------------------------------------------------------------ D4
+LATER = {"AAA": "2026-12-31", "BBB": "2026-12-31", "SPY": "2026-12-31"}
+
+
+class Gappy(Bars):
+    """Later bars with one session missing for one symbol."""
+
+    def __init__(self, ends, gap):
+        super().__init__(ends)
+        self._gap = gap
+
+    def get_history(self, symbol, start, end, basis):
+        history = super().get_history(symbol, start, end, basis)
+        if symbol != "BBB":
+            return history
+        frame = history.frame.drop(pd.Timestamp(self._gap))
+        return PriceHistory(symbol, self.name, frame, basis)
+
+
+def later(parts, source=None) -> DeskService:
+    activity, store, folder = parts
+    return DeskService(store, MarketService([source or Bars(LATER)]), activity)
+
+
+def test_due_claims_resolve_from_one_series_fetched_now(parts):
+    from quant_hub.data.desk import resolves_on
+    taken = service(parts, ENDS).take("test", NOW)
+    as_of = taken.snapshot.as_of
+    day = resolves_on(as_of, 5)
+    resolved = later(parts).resolve(datetime(2026, 12, 2, 18))
+    store = parts[1]
+    assert {(o.subject, o.horizon) for o in store.outcomes()} == {("book", 5), ("SPY", 5)}
+    assert resolved.stored == 2 and resolved.pending == ()
+    spy = next(o for o in store.outcomes() if o.subject == "SPY")
+    from quant_hub.data.types import PriceBasis
+    closes = Bars(LATER).get_history("SPY", None, None, PriceBasis.ADJUSTED).frame["close"]
+    expected = closes[pd.Timestamp(day)] / closes[pd.Timestamp(as_of)] - 1
+    assert spy.ret == pytest.approx(expected)                    # the later series' own ratio
+    stored = taken.snapshot.book.market_price
+    assert spy.ret != pytest.approx(closes[pd.Timestamp(day)] / stored - 1)
+    assert later(parts).resolve(datetime(2026, 12, 2, 18)).stored == 0     # stored once
+
+
+def test_a_missing_bar_waits_then_is_named(parts):
+    from quant_hub.data.desk import resolves_on
+    taken = service(parts, ENDS).take("test", NOW)
+    gap = resolves_on(taken.snapshot.as_of, 2)
+    desk = later(parts, Gappy(LATER, gap))
+    first = desk.resolve(datetime(2026, 12, 2, 18))
+    assert first.pending and "BBB has no close on" in first.pending[0]
+    assert {o.subject for o in parts[1].outcomes()} == {"SPY"}
+    final = desk.resolve(datetime(2026, 12, 31, 18))              # well past ten sessions
+    book = next(o for o in parts[1].outcomes() if o.subject == "book")
+    assert final.unresolvable >= 1 and book.status == "unresolvable"
+    assert "BBB has no close on" in book.reason
+
+
+def test_the_record_scores_voices_and_decisions(parts):
+    from quant_hub.data.desk import Claim
+    taken = service(parts, ENDS).take("test", NOW)
+    desk = later(parts)
+    desk.record_decision(Decision(NOW, taken.snapshot.sha256, "trader", (), "hold",
+                                  (Claim("book.return", 5, (-0.05, -0.02, 0.0, 0.02, 0.05)),)))
+    assert desk.record().scored == ()
+    desk.resolve(datetime(2026, 12, 2, 18))
+    record = desk.record()
+    voices = {s.voice for s in record.scored}
+    assert voices == {"baseline", "garch", "regimes", "bootstrap", "trader"}
+    series = {(s.voice, s.target, s.form) for s in record.series}
+    assert ("trader", "book.return", "quantiles") in series
+    garch = next(s for s in record.series if s.voice == "garch" and s.target == "book.return")
+    assert garch.paired == 1 and garch.test.reason.startswith("too few")
+    assert record.cutoffs is None and record.by_regime == {}     # no century stored here

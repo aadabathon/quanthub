@@ -32,6 +32,12 @@ def main(argv: list[str] | None = None) -> int:
     try:
         source = args.source or default_source(bool(core.config.massive_key),
                                                core.config.ibkr_enabled)
+        resolved = core.desk.resolve()
+        if resolved.stored or resolved.pending:
+            print(f"resolved {resolved.stored} outcomes ({resolved.unresolvable} unresolvable); "
+                  f"{len(resolved.pending)} pending")
+            for line in resolved.pending[:10]:
+                print(f"  pending: {line}")
         taken = core.desk.take(source)
         snapshot = taken.snapshot
         claims = sum(len(v.claims) for v in snapshot.voices)

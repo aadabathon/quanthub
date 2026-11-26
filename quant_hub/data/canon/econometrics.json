@@ -325,5 +325,32 @@
     "lives_in": [],
     "links": [{"to": "andersenetal2003", "kind": "builds_on"}],
     "verified": {"via": "crossref", "checked": "2026-11-02", "matched": ["title", "first_author", "year"]}
+    },
+  {
+    "id": "dieboldmariano1995",
+    "title": "Comparing Predictive Accuracy",
+    "authors": ["Francis X. Diebold", "Roberto S. Mariano"],
+    "year": 1995,
+    "venue": "Journal of Business & Economic Statistics",
+    "doi": "10.1080/07350015.1995.10524599",
+    "question": "Is one forecast really more accurate than another, or was it luck?",
+    "changed": "A test on the loss differential under any loss function, with a long-run variance for overlapping forecasts.",
+    "assumed": "The loss differential is covariance-stationary; the forecasts are taken as given.",
+    "lives_in": ["quant_hub/models/scoring.py"],
+    "links": [{"to": "neweywest1987", "kind": "builds_on"}],
+    "verified": {"via": "crossref", "checked": "2026-11-25", "matched": ["title", "first_author", "year"]}
+  },
+  {
+    "id": "harveyleybournenewbold1997",
+    "title": "Testing the equality of prediction mean squared errors",
+    "authors": ["David Harvey", "Stephen Leybourne", "Paul Newbold"],
+    "year": 1997,
+    "venue": "International Journal of Forecasting",
+    "doi": "10.1016/S0169-2070(96)00719-4",
+    "question": "Does the Diebold–Mariano test hold its size in small samples?",
+    "changed": "It over-rejects with few forecasts and long horizons; a small-sample factor and Student's t fix most of it.",
+    "lives_in": [],
+    "links": [{"to": "dieboldmariano1995", "kind": "corrects"}],
+    "verified": {"via": "crossref", "checked": "2026-11-25", "matched": ["title", "first_author", "year"]}
   }
 ]
