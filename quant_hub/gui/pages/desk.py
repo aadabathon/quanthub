@@ -32,6 +32,13 @@ sessions):
   each snapshot against the century's terciles). **Resolve due claims**
   does what the daily run does first.
 
+- **Your decisions** (D108): what you decided on the newest snapshot,
+  your trades and reasoning, and at least one claim of what you expect,
+  one per line (``MSFT.return@21 q -12%,-4%,1%,6%,15%`` or
+  ``book.fall@63 >= 10% p 25%``). It's scored like a voice under your
+  name, so your judgment gets a record. ``python -m quant_hub.decide``
+  does the same from a terminal or an agent.
+
 **The side panel:**
 - **Snapshot:** which stored snapshot (the newest unless you pick one), its
   day, prices, value, what was left out, and its hash. **Take a snapshot
@@ -57,6 +64,7 @@ from PySide6.QtGui import QDesktopServices
 from quant_hub.data.desk import LEVELS, MARKET
 from quant_hub.data.literature import CanonPaper
 from quant_hub.gui.charts import BandRow, QuantileBands
+from quant_hub.data.desk import parse_claim, parse_trades, resolves_on
 from quant_hub.gui.components import (
     Card,
     CardGrid,
@@ -64,7 +72,9 @@ from quant_hub.gui.components import (
     Note,
     PageHeader,
     SegmentedControl,
+    Field,
     Select,
+    TextArea,
     SelectField,
     StatTable,
     button,
@@ -136,7 +146,8 @@ class DeskPage(ScrollPage):
         grid.add_column([("voices", self._build_voices(), None),
                          ("agree", self._build_agree(), None),
                          ("proposals", self._build_proposals(), None),
-                         ("record", self._build_record(), None)], x=0, w=8)
+                         ("record", self._build_record(), None),
+                         ("decisions", self._build_decisions(), None)], x=0, w=8)
         grid.add_column([("snapshot", self._build_snapshot(sources, default_source), None),
                          ("book", self._build_book(), None),
                          ("why", self._build_why(), None)], x=8, w=4,
@@ -230,6 +241,75 @@ class DeskPage(ScrollPage):
                                         "passed, and store it once.")
         self._record_card.body.addWidget(self._resolve_button)
         return self._record_card
+
+    def _build_decisions(self) -> Card:
+        card = Card("Your decisions", "What you decided and what you expect, scored like a "
+                                      "voice under your name")
+        self._author = Field("By", "me", 120)
+        self._trades_field = Field("Trades (optional)", "", 260, placeholder="MSFT +5, AAPL -2")
+        card.body.addLayout(form_grid([self._author, self._trades_field], 2))
+        self._why_text = TextArea(placeholder="Why, in a sentence or two")
+        self._why_text.setFixedHeight(64)
+        card.body.addWidget(self._why_text)
+        self._claims_text = TextArea(placeholder="What you expect, one claim per line:\n"
+                                                 "MSFT.return@21 q -12%,-4%,1%,6%,15%\n"
+                                                 "book.fall@63 >= 10% p 25%")
+        self._claims_text.setFixedHeight(96)
+        card.body.addWidget(self._claims_text)
+        self._decide_button = button("Record decision", "primary", "ph.note-pencil",
+                                     on_click=self.record_decision)
+        card.body.addWidget(self._decide_button)
+        self._decide_note = Note("ph.info", "info")
+        self._decide_note.set_text("Recorded on the newest snapshot and never changed. Each "
+                                   "claim resolves on its day and is scored against the "
+                                   "baseline's, as the voices are.")
+        card.body.addWidget(self._decide_note)
+        self._decisions_table = DataTable([("Made", "left"), ("By", "left"),
+                                           ("On snapshot", "left"), ("Claims", "right"),
+                                           ("Trades", "left"), ("Why", "left")],
+                                          row_height=_ROW)
+        self._decisions_table.balance_columns()
+        self._decisions_table.setMinimumHeight(3 * _ROW + 36)
+        card.body.addWidget(self._decisions_table)
+        return card
+
+    def record_decision(self) -> None:
+        """Read the form on the GUI thread (pure parsing), store it on the
+        worker, then reload."""
+        try:
+            claims = tuple(parse_claim(line) for line in
+                           self._claims_text.toPlainText().splitlines() if line.strip())
+            trades = parse_trades(self._trades_field.text())
+        except ValueError as exc:
+            self._decide_note.set_text(f"Not recorded: {exc}")
+            return
+        author, why = self._author.text().strip() or "me", self._why_text.toPlainText()
+        self._decide_button.setEnabled(False)
+        self._tasks.submit(lambda: self._desk.decide(author, claims, why, trades),
+                           on_done=self._decided, on_error=self._decide_error)
+
+    def _decided(self, result) -> None:
+        self._decide_button.setEnabled(True)
+        decision_id, decision, summary = result
+        first = min(resolves_on(summary.as_of, c.horizon) for c in decision.expects)
+        self._decide_note.set_text(f"Decision #{decision_id} recorded on snapshot #{summary.id} "
+                                   f"(as of {summary.as_of}): {len(decision.expects)} claims; "
+                                   f"the first resolves {first}.")
+        self._claims_text.setPlainText("")
+        self._why_text.setPlainText("")
+        self._trades_field.set_text("")
+        self.reload()
+
+    def _decide_error(self, exc: Exception) -> None:
+        self._decide_button.setEnabled(True)
+        self._decide_note.set_text(f"Not recorded: {exc}")
+
+    def _render_decisions(self, view: DeskView) -> None:
+        self._decisions_table.set_rows([
+            [f"{d.made_at:%Y-%m-%d %H:%M}", d.author,
+             f"#{s.id}, {s.as_of:%b %d}" if s else "—", f"{len(d.expects)}",
+             ", ".join(f"{sym} {units:+g}" for sym, units in d.trades), d.rationale]
+            for d, s in view.decisions])
 
     def _build_snapshot(self, sources: list[str], default_source: str) -> Card:
         card = Card("Snapshot", "What the desk said, frozen; the newest unless you pick one")
@@ -400,6 +480,7 @@ class DeskPage(ScrollPage):
         self._why_select.select.blockSignals(False)
         self._show_why(self._why_select.current())
         self._render_horizon()
+        self._render_decisions(view)
         snapshot = view.snapshot
         self._header.set_status(f"Snapshot #{view.id}, prices as of {snapshot.as_of:%b %d, %Y}: "
                                 f"{len(snapshot.voices)} voices on {len(snapshot.book.holdings)} "

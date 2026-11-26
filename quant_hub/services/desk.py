@@ -26,7 +26,10 @@
    on prices that haven't moved on (TWS closed, say) would otherwise count
    one forecast many times when the records are scored.
 
-``record_decision`` stores a decision made on a stored snapshot.
+``decide`` records a decision on a stored snapshot (the newest unless
+named): its trades, its reasoning and, required, at least one claim of
+what it expects, so it's scored like a voice (D108). ``record_decision``
+stores one already built. ``decisions`` lists them.
 
 **The tail voice** (D2c, ``models/tail.py``) reads French's market history
 from the store. When the desk is given the outside-data service, ``take``
@@ -68,6 +71,7 @@ from quant_hub import __version__
 from quant_hub.data.desk import (
     MARKET,
     Book,
+    Claim,
     Decision,
     Holding,
     Outcome,
@@ -179,6 +183,7 @@ class DeskView:
     papers: Mapping[str, tuple[CanonPaper, ...]]    # each voice's, from the canon
     record: DeskRecord | None = None                # every voice's record (D4b)
     regime: str | None = None                       # this snapshot's label
+    decisions: tuple = ()                           # (Decision, its snapshot), newest first
 
 
 class DeskService:
@@ -303,11 +308,38 @@ class DeskService:
         record = self.record()
         return DeskView(summaries, chosen, snapshot, comparison, problem,
                         holding_bands(snapshot), papers, record,
-                        self._regime(snapshot, record.cutoffs))
+                        self._regime(snapshot, record.cutoffs), tuple(self.decisions()))
 
     def record_decision(self, decision: Decision) -> int:
         """Store a decision on a stored snapshot (``Decision.snapshot_sha``)."""
         return self._store.save_decision(decision)
+
+    def decide(self, author: str, expects: Sequence[Claim], rationale: str = "",
+               trades: Sequence[tuple[str, float]] = (), snapshot_id: int | None = None,
+               now: datetime | None = None) -> tuple[int, Decision, SnapshotSummary]:
+        """Record a decision on the newest stored snapshot, or the one named
+        (module docstring). A ValueError says what's missing."""
+        if not author.strip():
+            raise ValueError("a decision needs its author: you, an LLM, a name")
+        if not expects:
+            raise ValueError("a decision needs at least one claim of what you expect, "
+                             "so it can be scored")
+        summaries = self._store.snapshots()
+        if not summaries:
+            raise ValueError("no snapshot to decide on yet: take one first")
+        summary = (summaries[0] if snapshot_id is None else
+                   next((s for s in summaries if s.id == snapshot_id), None))
+        if summary is None:
+            raise ValueError(f"no snapshot #{snapshot_id}")
+        made = (now or datetime.now()).replace(microsecond=0)
+        decision = Decision(made, summary.sha256, author.strip(), tuple(trades),
+                            rationale.strip(), tuple(expects))
+        return self._store.save_decision(decision), decision, summary
+
+    def decisions(self) -> list[tuple[Decision, SnapshotSummary | None]]:
+        """Every decision, newest first, with the snapshot it cites."""
+        by_sha = {s.sha256: s for s in self._store.snapshots()}
+        return [(d, by_sha.get(d.snapshot_sha)) for d in reversed(self._store.decisions())]
 
     # -------------------------------------------------------------- D4
     def _due(self, today: date) -> dict[tuple[int, str, int], date]:

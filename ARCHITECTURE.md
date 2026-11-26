@@ -34,6 +34,10 @@ storage/        SQLite persistence (stdlib sqlite3). Knows data/ only —
 visualization/  Matplotlib figures for scripts and notebooks. Never GUI.
 ```
 
+**CI.** `.github/workflows/tests.yml` runs the whole suite on every pull
+request and every push to main: Windows, Python 3.12, offscreen Qt, no
+network (D108).
+
 **No orders.** Brokerage access is read-only, and there is no order code.
 `tests/test_layering.py` fails the build if `placeOrder`, `cancelOrder` or
 `reqGlobalCancel` appears anywhere outside `broker/orders.py`, a module
@@ -322,7 +326,9 @@ trades.
 - `services/desk.py` — `take` (the book rolled forward and priced on one day, SPY beside it, every voice, stored once per data day, JSON beside the store), `resolve`, `record`, `view` for the page, `record_decision`; refreshes French's files before a take when a week old (D96, D101–D105)
 - `storage/desk_store.py` — desk_snapshots, desk_claims (each with its resolve day), desk_decisions, desk_outcomes; append only (schema v12, v13)
 - `gui/pages/desk.py` — the Desk page: the voices' bands in dollars, where they disagree, what each would do and its effect under every voice's law, each voice's record, the snapshot and its book, each voice's reasoning and papers (D101, D105)
-- `snapshot.py` — `python -m quant_hub.snapshot`: resolves what's due, then takes the day's snapshot; for a scheduled daily run (D96, D104)
+- `snapshot.py` — `python -m quant_hub.snapshot`: resolves what's due, takes the day's snapshot, then copies the store (`storage/backup.py`); for a scheduled daily run (D96, D104, D108)
+- `decide.py` — `python -m quant_hub.decide`: records a decision, its trades, reasoning and claims, on the newest snapshot, from flags or an agent's JSON; `--list` (D108)
+- `storage/backup.py` — the store copied with SQLite's online backup to dated files, the newest `[backup] keep` kept (D108)
 
 ### Your trades
 

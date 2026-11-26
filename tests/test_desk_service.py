@@ -149,7 +149,7 @@ def test_the_command_line_takes_one_snapshot(parts, monkeypatch, capsys):
     monkeypatch.setattr(cli, "build_core", lambda: core)
     monkeypatch.setattr(core.desk, "take",
                         lambda source, _take=core.desk.take: _take("test", NOW))
-    assert cli.main([]) == 0 and core.closed
+    assert cli.main(["--no-backup"]) == 0 and core.closed
     out = capsys.readouterr().out
     assert "as of 2026-11-20 from" in out and "not priced: AAA261218P30 (an option)" in out
 
@@ -169,8 +169,8 @@ def test_the_command_line_prefers_massive_when_keyed(parts, monkeypatch):
     monkeypatch.setattr(cli, "build_core", lambda: core)
     monkeypatch.setattr(core.desk, "take", lambda source, _take=core.desk.take:
                         (sources.append(source), _take("test", NOW))[1])
-    assert cli.main([]) == 0 and sources == ["massive"]
-    assert cli.main(["--source", "ibkr"]) == 0 and sources[-1] == "ibkr"
+    assert cli.main(["--no-backup"]) == 0 and sources == ["massive"]
+    assert cli.main(["--source", "ibkr", "--no-backup"]) == 0 and sources[-1] == "ibkr"
 
 
 
