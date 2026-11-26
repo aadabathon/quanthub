@@ -12,9 +12,11 @@ nothing about timing yet; that's TR4.
   import so far is listed.
 - **Checked against your exports:** whether the history explains every
   positions export imported on the Portfolio page, the newest import of
-  each day. Holdings it doesn't explain, opening gaps, and each interval's
-  cash residual (shown, not judged) are listed, plus how often FIFO and
-  average cost match the exports' cost basis.
+  each day. Holdings it doesn't explain and opening gaps are listed;
+  each export's cash lines are checked to the cent against what the
+  history implies (TR6: the core fund only, settled cash and margin,
+  short-type cash aside); and how often FIFO and average cost match the
+  exports' cost basis.
 - **Summary:** round trips closed and open, realized P&L on the closed
   ones, winners, longs against shorts, and income kept beside the P&L.
 - **How well you got in and out** (TR4, ``models/timing.py``): on
@@ -24,6 +26,14 @@ nothing about timing yet; that's TR4.
   (beyond the market), and where the P&L came from: the market, the stock,
   the entry and exit fills, costs. The first run fetches every symbol's
   bars, slowly on a free plan; later runs read them from the store.
+
+- **As you held it** (TR6, ``models/held.py``, in the main column): on
+  **Measure returns**, the account's value day by day beside the same
+  dollars put into SPY on the same days, the value of $1 time-weighted,
+  its drawdown, and the numbers: the window, deposits and withdrawals, the
+  time-weighted return (your choices) and the money-weighted one (your
+  dollars, timing included), the gap between them, SPY's, and how much of
+  the value had to be carried at a last trade price.
 
 **The main column:**
 - **Round trips:** flat to flat for each account and symbol, newest first.
@@ -46,6 +56,7 @@ from pathlib import Path
 from PySide6.QtWidgets import QFileDialog
 
 from quant_hub.data.activity import Transaction
+from quant_hub.gui.charts import Panel, Series, StackedTimeSeries
 from quant_hub.gui.components import (
     Card,
     CardGrid,
@@ -61,6 +72,7 @@ from quant_hub.gui.pages.base import ScrollPage, saved_grid
 from quant_hub.gui.theme import PALETTE, SIDE_PANEL_WIDTH, SPACE_L
 from quant_hub.models.ledger import Reconciliation
 from quant_hub.models.lots import BasisCheck, Piece, RoundTrip
+from quant_hub.models.held import HeldReport, drawdown, growth
 from quant_hub.models.timing import PieceTiming, TimingReport
 from quant_hub.services.activity import (
     ActivityImportError,
@@ -118,6 +130,7 @@ class TradesPage(ScrollPage):
         grid = CardGrid()
         grid.add_column([("trips", self._build_trips(), None),
                          ("pieces", self._build_pieces(), None),
+                         ("held", self._build_held(), None),
                          ("history", self._build_transactions(), None)], x=0, w=8)
         grid.add_column([("import", self._build_import(), None),
                          ("checked", self._build_checked(), None),
@@ -150,7 +163,8 @@ class TradesPage(ScrollPage):
                                                      "export, the newest import of each day")
         self._checked = StatTable([
             ("The replay", [("span", "History"), ("exports", "Exports replayed"),
-                            ("holdings", "Holdings explained"), ("opening", "Opening gaps")]),
+                            ("holdings", "Holdings explained"), ("opening", "Opening gaps"),
+                            ("cash", "Cash to the cent")]),
             ("Cost basis", [("fifo", "FIFO matches"), ("average", "Average cost matches")]),
         ])
         card.body.addWidget(self._checked)
@@ -158,13 +172,14 @@ class TradesPage(ScrollPage):
         self._gaps.hide()
         card.body.addWidget(self._gaps)
         self._intervals = DataTable([("From", "left"), ("To", "left"), ("Holdings", "right"),
-                                     ("Cash residual", "right")], row_height=_ROW)
+                                     ("Cash", "right")], row_height=_ROW)
         self._intervals.balance_columns()
         self._intervals.setMinimumHeight(120)
         card.body.addWidget(self._intervals)
         cash = Note("ph.info", "info", width=_NOTE)
-        cash.set_text("Cash is shown, not judged: pending activity, money-market accrual and "
-                      "how a broker splits margin and short cash all move it.")
+        cash.set_text("An export's cash is its core money-market fund only: each account's "
+                      "settled cash and margin, with short sales' cash aside and no line for a "
+                      "margin loan. That's what each export is checked against.")
         card.body.addWidget(cash)
         return card
 
@@ -237,6 +252,40 @@ class TradesPage(ScrollPage):
             ("t_mae", "Worst it went (MAE)"), ("t_capture", "Kept of the best")])])
         self._pieces_card.body.addWidget(self._trip_timing)
         return self._pieces_card
+
+    def _build_held(self) -> Card:
+        self._held_card = Card("As you held it", "The account's own value day by day, its "
+                                                 "returns, and the same dollars in SPY")
+        sources = [s for s in self._market.source_names if s != "synthetic"] or ["synthetic"]
+        default = next((s for s in ("massive", "ibkr") if s in sources), sources[0])
+        self._held_source = SelectField("Prices from", sources, default, _NOTE // 2)
+        self._held_button = button("Measure returns", "primary", "ph.chart-line-up",
+                                   on_click=self.measure_held)
+        self._held_card.body.addLayout(form_grid([self._held_source, self._held_button], 2))
+        self._held_chart = StackedTimeSeries(readout_per_panel=True)
+        self._held_chart.setMinimumHeight(420)
+        self._held_card.body.addWidget(self._held_chart, 1)
+        self._held_stats = StatTable([
+            ("Your account", [("window", "Window"), ("v0", "Value at the start"),
+                              ("v1", "Value at the end"), ("in", "Deposits"),
+                              ("out", "Withdrawals")]),
+            ("Returns", [("twr", "Time-weighted: your choices"),
+                         ("mwr", "Money-weighted: your dollars"),
+                         ("gap", "What the timing of the money did")]),
+            ("The same dollars in SPY", [("spy_v1", "Value at the end"),
+                                         ("spy_twr", "Time-weighted"),
+                                         ("spy_mwr", "Money-weighted"),
+                                         ("diff", "Yours minus SPY's")]),
+            ("Prices", [("carried", "Carried at a last trade price")]),
+        ])
+        self._held_card.body.addWidget(self._held_stats)
+        self._held_note = Note("ph.info", "info")
+        self._held_note.set_text("Time-weighted: what the holdings did, deposits and "
+                                 "withdrawals left out. Money-weighted: the rate your actual "
+                                 "dollars earned, timing in. Measured over the price source's "
+                                 "history; the first run fetches every symbol's closes.")
+        self._held_card.body.addWidget(self._held_note)
+        return self._held_card
 
     def _build_transactions(self) -> Card:
         self._history_card = Card("Transactions", "The whole history, newest first")
@@ -315,6 +364,89 @@ class TradesPage(ScrollPage):
         self._timing_note.set_text(text)
         self._header.set_status("Timing measured.")
         self._select(self._trips_table.selected_row())
+
+    # -------------------------------------------------------------- held
+    def measure_held(self) -> None:
+        """Returns as held on the worker thread (module docstring)."""
+        source = self._held_source.current()
+        self._held_button.setEnabled(False)
+        self._header.set_status(f"Measuring returns as held from {source}: every symbol's "
+                                "closes, then the account day by day…")
+        self._tasks.submit(lambda: self._activity.held(self._market, source),
+                           on_done=self._render_held, on_error=self._held_error)
+
+    def _held_error(self, exc: Exception) -> None:
+        self._held_button.setEnabled(True)
+        self._header.set_status(str(exc), error=True)
+
+    def _render_held(self, result: tuple[HeldReport, dict[str, str]]) -> None:
+        self._held_button.setEnabled(True)
+        report, missing = result
+        s = self._held_stats
+        if report.returns is None:
+            for key in ("window", "v0", "v1", "in", "out", "twr", "mwr", "gap", "spy_v1",
+                        "spy_twr", "spy_mwr", "diff", "carried"):
+                s.set_value(key, "—")
+            self._held_chart.clear()
+            self._held_note.set_text(f"No returns: {report.reason}.")
+            self._header.set_status("No stretch of history could be priced.")
+            return
+        r, v = report.returns, report.value
+        dates = v.index
+        mine = growth(r.daily, dates[0]).reindex(dates)
+        panels = [Panel("Value: yours, and the same dollars in SPY",
+                        [*( [Series("SPY, same dollars", report.market.path.to_numpy(),
+                                    PALETTE.text_secondary, 1.2, fmt="${:,.0f}")]
+                            if report.market is not None and report.market.path is not None
+                            else []),
+                         Series("Your account", v.to_numpy(), PALETTE.series, 1.8,
+                                fmt="${:,.0f}")], axis="money", stretch=3),
+                  Panel("Value of $1, time-weighted",
+                        [*([Series("SPY", report.market.growth.to_numpy(),
+                                   PALETTE.text_secondary, 1.2, fmt="{:.3f}")]
+                           if report.market is not None and report.market.growth is not None
+                           else []),
+                         Series("Yours", mine.to_numpy(), PALETTE.series, 1.8, fmt="{:.3f}")],
+                        axis="price", stretch=2, references=[("start", 1.0)]),
+                  Panel("Drawdown, time-weighted",
+                        [Series("Drawdown", drawdown(mine).to_numpy(), PALETTE.critical, 1.2,
+                                fmt="{:.1%}", fill=True)], axis="percent", stretch=1)]
+        self._held_chart.set_panels(dates, panels)
+        sessions = len(r.daily)
+        s.set_value("window", f"{report.start} to {report.end} · {sessions + 1:,} sessions")
+        s.set_value("v0", _money(float(v.iloc[0]), signed=False))
+        s.set_value("v1", _money(float(v.iloc[-1]), signed=False))
+        s.set_value("in", _money(report.deposits, signed=False))
+        s.set_value("out", _money(abs(report.withdrawals), signed=False))
+        s.set_value("twr", f"{r.twr:+.1%} · {r.twr_annual:+.1%} a year"
+                    if r.twr is not None and r.twr_annual is not None else "—")
+        s.set_value("mwr", f"{r.mwr:+.1%} a year" if r.mwr is not None else r.mwr_note)
+        gap = (r.mwr - r.twr_annual) if r.mwr is not None and r.twr_annual is not None else None
+        s.set_value("gap", f"{gap:+.1%} a year ({'helped' if gap > 0 else 'cost'})"
+                    if gap is not None else "—")
+        m = report.market
+        if m is not None:
+            s.set_value("spy_v1", _money(m.value_end, signed=False))
+            s.set_value("spy_twr", f"{m.twr:+.1%}")
+            s.set_value("spy_mwr", f"{m.mwr:+.1%} a year" if m.mwr is not None else m.mwr_note)
+            s.set_value("diff", _money(float(v.iloc[-1]) - m.value_end))
+        else:
+            for key in ("spy_v1", "spy_twr", "spy_mwr", "diff"):
+                s.set_value(key, "—")
+        s.set_value("carried", f"{report.carried.mean():.1%} on average, at most "
+                    f"{report.carried.max():.1%}")
+        text = (f"Over {report.start} to {report.end}. Time-weighted: what the holdings did, "
+                "deposits and withdrawals left out. Money-weighted: the rate your actual "
+                "dollars earned, timing in.")
+        if report.carried_names:
+            text += (" Carried at a last trade price on some days: "
+                     + ", ".join(report.carried_names[:8]) + ".")
+        if r.stopped:
+            text += f" The time-weighted chain stopped: {r.stopped}."
+        if missing:
+            text += " No closes for: " + ", ".join(sorted(missing)[:8]) + "."
+        self._held_note.set_text(text)
+        self._header.set_status("Returns as held measured.")
 
     # -------------------------------------------------------------- import
     def _choose_files(self) -> None:
@@ -405,6 +537,13 @@ class TradesPage(ScrollPage):
                           else "none imported on Portfolio")
         checked.set_value("holdings", f"{explained} of {len(holdings)}" if holdings else "—")
         checked.set_value("opening", f"{len(replay.opening)}")
+        exports = ([replay.opening_cash] if replay.opening_cash else []) + [
+            (i.cash_after, i.cash_expected) for i in replay.intervals]
+        matched = sum(1 for held, implied in exports
+                      if implied is not None and abs(held - implied) <= 0.01 + 1e-9)
+        checked.set_value("cash", f"{matched} of {len(exports)} exports" if exports else "—",
+                          tone="good" if exports and matched == len(exports) else
+                          ("critical" if exports else ""))
         basis = loaded.basis
         checked.set_value("fifo", f"{sum(b.fifo_matches for b in basis)} of {len(basis)}"
                           if basis else "—")
@@ -423,7 +562,15 @@ class TradesPage(ScrollPage):
         self._intervals.set_rows([[i.start.date().isoformat(), i.end.date().isoformat(),
                                    (f"{len(i.holdings) - len(i.gaps)}/{len(i.holdings)}",
                                     PALETTE.good if i.reconciled else PALETTE.critical),
-                                   _money(i.cash_residual)] for i in replay.intervals])
+                                   self._cash_cell(i)] for i in replay.intervals])
+
+    @staticmethod
+    def _cash_cell(interval) -> tuple[str, str] | str:
+        if interval.cash_expected is None:
+            return "—"
+        if interval.cash_reconciled:
+            return ("✓ to the cent", PALETTE.good)
+        return (f"off {_money(interval.cash_after - interval.cash_expected)}", PALETTE.critical)
 
     def _render_summary(self, trips: tuple[RoundTrip, ...]) -> None:
         closed = [t for t in trips if t.closed is not None]

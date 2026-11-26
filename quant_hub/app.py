@@ -76,7 +76,8 @@ def _sections(core: Core, book: BookSource | None = None,
     markov = ("Markov Lab", "ph.share-network", lambda _shell: MarkovLabPage(
         core.market_service, core.tasks, core.state_store))
     portfolio = ("Portfolio", "ph.chart-pie-slice", lambda _shell: PortfolioPage(
-        core.portfolio, core.market_service, core.tasks, core.state_store, core.accounts))
+        core.portfolio, core.market_service, core.tasks, core.state_store, core.accounts,
+        core.activity))
     trades = ("Trades", "ph.receipt", lambda _shell: TradesPage(
         core.activity, core.market_service, core.tasks, core.state_store))
     valuation = ("Valuation", "ph.scales", lambda _shell: ValuationPage(

@@ -2383,6 +2383,7 @@ def test_the_trades_page_imports_a_history_and_checks_it(qt_app, tmp_path):
     assert "history.csv: 4 new of 4" in page._import_note._text.text()
     assert page._checked.value_text("exports") == "1"
     assert page._checked.value_text("opening") == "0"
+    assert page._checked.value_text("cash") == "1 of 1 exports"   # no cash: none implied
     assert page._checked.value_text("fifo") == "1 of 1"
     assert page._summary.value_text("realized") == "+$8.00"
     assert "Every export is explained" in page._header._status.full_text()
@@ -2514,3 +2515,37 @@ def test_the_desk_page_shows_each_voices_record(qt_app):
     page._regime_control.changed.emit("Stormy")
     app.processEvents()
     assert page._record_table.rowCount() == 0       # unlabeled without the century
+
+
+def test_returns_as_held_on_the_trades_and_portfolio_pages(qt_app, tmp_path):
+    app, window = qt_app
+    page = window.show_page("Trades")
+    wait_for(app, lambda: page._header._status.full_text().startswith("No history"))
+    history = tmp_path / "history.csv"
+    history.write_text("date,account,kind,symbol,quantity,price,commission,fees,amount\n"
+                       "2025-03-03,Brokerage,deposit,,,,,,1000.00\n"
+                       "2025-03-03,Brokerage,buy,AAA,10,50.00,0,0,-500.00\n"
+                       "2025-06-02,Brokerage,deposit,,,,,,500.00\n"
+                       "2025-06-02,Brokerage,buy,BBB,4,50.00,0,0,-200.00\n", encoding="utf-8")
+    page.import_files([history])
+    wait_for(app, lambda: page._trips_table.rowCount() == 2)
+    dates = pd.bdate_range("2025-01-02", "2026-11-24")
+    closes = 50 * np.exp(np.cumsum(np.random.default_rng(3).normal(0, 0.01, len(dates))))
+    frame = pd.DataFrame({"open": closes, "high": closes, "low": closes, "close": closes,
+                          "volume": np.full(len(dates), 2e6)}, index=dates)
+    for symbol in ("AAA", "BBB"):
+        window._core.store.insert_bars(InstrumentKey(symbol), "file", "1 day", frame)
+    page._held_source.select.set_current("file")
+    page.measure_held()
+    wait_for(app, lambda: page._header._status.full_text() == "Returns as held measured.", 30)
+    s = page._held_stats
+    assert s.value_text("twr").endswith("a year") and "a year" in s.value_text("mwr")
+    assert s.value_text("in") == "$500.00"                     # the later deposit; the first is V0
+    assert s.value_text("spy_v1") == "—"                        # no SPY closes in the test
+    assert "No closes for: SPY" in page._held_note._text.text()
+    portfolio = window.show_page("Portfolio")
+    assert portfolio._replay_mode_control.isVisibleTo(portfolio)
+    report, _ = window._core.activity.held(window._core.market_service, "file")
+    portfolio._replay_mode = "As held"
+    portfolio._held_done(report)
+    assert portfolio._replay_card.subtitle.full_text().startswith("The account's own holdings")
