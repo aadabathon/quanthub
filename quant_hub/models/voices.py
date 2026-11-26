@@ -167,7 +167,7 @@ def _normal_claims(target: str, variance_per_day: dict[int, float]) -> list[Clai
     return claims
 
 
-def _path_claims(target: str, daily: np.ndarray) -> list[Claim]:
+def path_claims(target: str, daily: np.ndarray) -> list[Claim]:
     """Every claim from simulated daily log returns, shape (PATHS, LONGEST)."""
     claims = []
     for h in HORIZONS:
@@ -256,7 +256,7 @@ def regimes(book: Book, log_returns: pd.DataFrame) -> VoiceOutput:
     claims, fits = [], {}
     for target, r in _targets(book, log_returns):
         model, today, daily = _regime_paths(r)
-        claims += _path_claims(target, daily)
+        claims += path_claims(target, daily)
         fits[target] = (model, today, float(daily[:, :VOL_HORIZON].std()), r)
     model, today, sigma_21, r = fits["book"]
     m = min(1.0, float(r.std(ddof=1)) / sigma_21)
@@ -299,7 +299,7 @@ def bootstrap(book: Book, log_returns: pd.DataFrame) -> VoiceOutput:
         daily[:, :, d] = demeaned[index].T
     claims = []
     for column, target in enumerate(frame.columns):
-        claims += _path_claims(target, daily[column])
+        claims += path_claims(target, daily[column])
     why = (f"The tails are what they've been: {n} sessions resampled in blocks of about "
            f"{BLOCK}, no drift, no normal law.")
     return VoiceOutput("bootstrap", VERSION, tuple(claims), Proposal(hold=True), why,
