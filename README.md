@@ -100,7 +100,8 @@ and its price basis in Research.
 what's due, takes the day's snapshot and copies the store to a dated
 backup, with no window. Schedule it after the close (Windows Task
 Scheduler works), and each voice's record grows whether or not the app is
-open.
+open. Each run records what it did, so `py -3.12 -m quant_hub.desk status`
+can tell you whether last night's run worked.
 
 **Brokerage support is optional.** Install it with
 `py -3.12 -m pip install -e ".[dev,ibkr]"` and follow the IBKR setup
@@ -279,6 +280,20 @@ The Desk page reads the stored snapshots; nothing on it changes one.
   ```
 
   A decision cites the newest snapshot's hash and is never changed.
+- **Reading the desk** without the window, yourself or through an agent:
+
+  ```bash
+  py -3.12 -m quant_hub.desk status              # is it current? if not, why
+  py -3.12 -m quant_hub.desk view                # the Desk page, in a terminal
+  py -3.12 -m quant_hub.desk changes --since 2026-11-20   # what moved since then
+  py -3.12 -m quant_hub.desk record              # everyone's record, yours too
+  ```
+
+  `status` checks the last daily run, the snapshot's age, the book's
+  export and history, and the backup, and exits 1 when something's wrong.
+  Add `--json` to any of them, or to `decide --list`, for an agent: the
+  same numbers, every unit named, so it reads what the desk computed
+  rather than computing its own.
 
 ## Your trades
 

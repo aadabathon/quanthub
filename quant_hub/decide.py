@@ -4,7 +4,7 @@
                                [--claim ...] [--trade "MSFT +5"] [--why "..."]
                                [--author me] [--snapshot ID]
     python -m quant_hub.decide --json decision.json
-    python -m quant_hub.decide --list [N]
+    python -m quant_hub.decide --list [N] [--json]
 
 A decision cites a stored snapshot (the newest unless ``--snapshot`` names
 one), says what was traded and why, and states at least one **claim** of
@@ -16,7 +16,9 @@ a record beside the models'.
 ``--json`` takes ``{"author", "why", "trades": [["MSFT", 5]], "claims":
 [...], "snapshot": id}``, each claim a line of text or ``{"target",
 "horizon", "quantiles"}`` / ``{"target", "horizon", "event",
-"probability"}``: the form an agent writes. Nothing here trades.
+"probability"}``: the form an agent writes. ``--list --json`` lists them
+in the same form, with each claim's resolve day (``services/desk_report.py``).
+Nothing here trades.
 """
 
 from __future__ import annotations
@@ -26,8 +28,11 @@ import json
 import sys
 from pathlib import Path
 
+from datetime import datetime
+
 from quant_hub.core import build_core
 from quant_hub.data.desk import Claim, parse_claim, parse_trades, resolves_on
+from quant_hub.services import desk_report
 
 
 def _claim(item) -> Claim:
@@ -59,19 +64,28 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--why", default="", help="your reasoning, in a sentence or two")
     parser.add_argument("--author", default="me", help='who decided (default "me"; an agent: "llm")')
     parser.add_argument("--snapshot", type=int, help="the snapshot's number (default: the newest)")
-    parser.add_argument("--json", help="read the decision from a JSON file instead")
+    parser.add_argument("--json", nargs="?", const="", metavar="FILE",
+                        help="read the decision from a JSON file instead; with --list, "
+                             "list them as JSON")
     parser.add_argument("--list", nargs="?", const=10, type=int, metavar="N",
                         help="list the newest N decisions instead (default 10)")
     args = parser.parse_args(argv)
     core = build_core()
     try:
         if args.list is not None:
-            for decision, summary in core.desk.decisions()[:args.list]:
+            rows = core.desk.decisions()[:args.list]
+            if args.json is not None:
+                print(json.dumps(desk_report.decisions(rows, datetime.now()), indent=1,
+                                 allow_nan=False))
+                return 0
+            for decision, summary in rows:
                 cited = f"#{summary.id} as of {summary.as_of}" if summary else "a missing snapshot"
                 print(f"{decision.made_at:%Y-%m-%d %H:%M} {decision.author}: "
                       f"{len(decision.expects)} claims on {cited}"
                       + (f" | {decision.rationale}" if decision.rationale else ""))
             return 0
+        if args.json == "":
+            raise ValueError("--json names the decision's file (or lists, with --list)")
         if args.json:
             fields = _from_json(args.json)
         else:
