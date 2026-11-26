@@ -126,9 +126,18 @@ class Interval:
     def reconciled(self) -> bool:
         return not self.gaps
 
+    cash_expected: float | None = None   # the cash lines the history implies (TR6)
+
     @property
     def cash_residual(self) -> float:
         return self.cash_after - self.cash_before - self.cash_moved
+
+    @property
+    def cash_reconciled(self) -> bool:
+        """The end export's cash lines are what the history implies, to the
+        cent (``cash_lines``)."""
+        return self.cash_expected is not None and abs(self.cash_after
+                                                      - self.cash_expected) <= CASH_CENT
 
 
 @dataclass(frozen=True)
@@ -142,10 +151,35 @@ class Reconciliation:
     intervals: tuple[Interval, ...]
     snapshots: int = 0                # how many were replayed
     first_snapshot: date | None = None
+    opening_cash: tuple[float, float] | None = None   # the first export's (held, implied)
 
     @property
     def reconciled(self) -> bool:
         return not self.opening and all(i.reconciled for i in self.intervals)
+
+    @property
+    def cash_reconciled(self) -> bool:
+        """Every export's cash lines are what the history implies (TR6)."""
+        opening = (self.opening_cash is None
+                   or abs(self.opening_cash[0] - self.opening_cash[1]) <= CASH_CENT)
+        return opening and all(i.cash_reconciled for i in self.intervals)
+
+
+def cash_lines(transactions: Iterable[Transaction], cash_funds: set[str], day: date) -> float:
+    """What an export taken on ``day`` shows as cash, from the history (TR6,
+    ``models/held.py`` section 0): per account, the settled amounts of its
+    cash and margin types, a move into or out of a cash fund counted as
+    none (it buys or sells the cash line itself), and no line below zero
+    (a margin loan); summed over accounts. The short type's cash never
+    shows."""
+    balance: dict[str, float] = defaultdict(float)
+    for t in transactions:
+        if (t.settle_date or t.trade_date) > day or t.cash_type == "short":
+            continue
+        if t.quantity != 0 and t.symbol in cash_funds:
+            continue
+        balance[t.account] += t.amount
+    return sum(max(0.0, b) for b in balance.values())
 
 
 def reconcile(transactions: Iterable[Transaction],
@@ -215,12 +249,14 @@ def reconcile(transactions: Iterable[Transaction],
                     key=lambda m: abs(cash_held[j + 1] - cash_held[j] - m))
         intervals.append(Interval(ordered[j].as_of, ordered[j + 1].as_of, ordered[j].name,
                                   ordered[j + 1].name, tuple(holdings), cash_held[j],
-                                  cash_held[j + 1], moved))
+                                  cash_held[j + 1], moved,
+                                  cash_lines(history, cash_funds, d1)))
 
     trade_days = [t.trade_date for t in history]
+    opening_cash = (cash_held[0], cash_lines(history, cash_funds, days[0])) if ordered else None
     return Reconciliation(by_account, min(trade_days, default=None),
                           max(trade_days, default=None), opening, tuple(intervals),
-                          len(ordered), days[0] if days else None)
+                          len(ordered), days[0] if days else None, opening_cash)
 
 
 def _holdings(snapshot: PositionSnapshot, key) -> dict[tuple[str, str], float]:
@@ -229,6 +265,9 @@ def _holdings(snapshot: PositionSnapshot, key) -> dict[tuple[str, str], float]:
         if p.kind is not Holding.CASH:
             held[key(p.account, p.symbol)] += p.quantity
     return dict(held)
+
+
+CASH_CENT = 0.01 + 1e-9             # dollars: cents, and float noise
 
 
 def _cash(snapshot: PositionSnapshot) -> float:

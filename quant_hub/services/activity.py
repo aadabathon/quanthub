@@ -51,12 +51,16 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+import pandas as pd
+
 from quant_hub.data.activity import ActivityFile, Kind, Transaction
 from quant_hub.importers.activity_csv import ActivityFileError, read_activity_csv
 from quant_hub.data.positions import Holding, PositionSnapshot
 from quant_hub.models.ledger import Reconciliation, reconcile
 from quant_hub.models.lots import BasisCheck, RoundTrip, basis_checks, round_trips
 from quant_hub.models.timing import TimingReport, timing
+from quant_hub.models.held import HeldReport, book, held
+from quant_hub.data.trading_calendar import trading_days
 from quant_hub.data.types import PriceBasis
 from quant_hub.services.accounts import SOURCE as LIVE_ACCOUNTS
 from quant_hub.storage.activity_store import ActivityImportSummary, ActivityStore
@@ -72,6 +76,8 @@ class ActivityImportError(ValueError):
         super().__init__(f"nothing was imported: {count} problem{'s' * (count != 1)}\n"
                          + "\n".join(self.problems))
 
+
+HELD_LOOKBACK_DAYS = 730      # Massive's free plan: two years of closes
 
 @dataclass(frozen=True)
 class FileImported:
@@ -96,6 +102,7 @@ class Holdings:
     units: dict[str, float]        # by symbol across accounts; options by contract
     options: frozenset[str]
     cash: float
+    cash_from: str = "export"      # "history" when the history's own cash is used (TR6)
 
 
 class ActivityService:
@@ -183,7 +190,19 @@ class ActivityService:
                 if t.option is not None:
                     options.add(t.symbol)
         held = {s: q for s, q in units.items() if abs(q) > 1e-9}
-        return Holdings(base.name, base_day, through, held, frozenset(options & set(held)), cash)
+        # An export's cash line is settled core cash only (models/held.py,
+        # section 0): it leaves out a trade that hadn't settled, short
+        # proceeds and a margin loan. When the history reproduces every
+        # export's cash lines, its own cash, every type on a trade date
+        # basis, is the account's.
+        source = "export"
+        history = self._store.transactions()
+        if history and self.reconcile().cash_reconciled:
+            cash = sum(t.amount for t in history if t.trade_date <= through
+                       and not (t.quantity and t.symbol in funds))
+            source = "history"
+        return Holdings(base.name, base_day, through, held, frozenset(options & set(held)), cash,
+                        source)
 
     def timing(self, market, source: str, benchmark: str = "SPY",
                now: datetime | None = None) -> tuple[TimingReport, dict[str, str]]:
@@ -202,7 +221,8 @@ class ActivityService:
         # again, and timing has no use for today's unfinished session.
         end = datetime.combine((now or datetime.now()).date() - timedelta(days=1),
                                datetime.min.time())
-        start = datetime.combine(min(t.trade_date for t in history), datetime.min.time())             - timedelta(days=400)
+        start = (datetime.combine(min(t.trade_date for t in history), datetime.min.time())
+                 - timedelta(days=400))
         bars, missing = {}, {}
         for symbol in [*symbols, benchmark]:
             try:
@@ -214,6 +234,44 @@ class ActivityService:
         bench = bars.pop(benchmark, None)
         report = timing(pieces, history, bars, None if bench is None else bench["close"])
         return report, missing
+
+    def held(self, market, source: str, benchmark: str = "SPY", now: datetime | None = None,
+             lookback_days: int = HELD_LOOKBACK_DAYS) -> tuple[HeldReport, dict[str, str]]:
+        """Returns as held (TR6, ``models/held.py``) over the sessions the
+        source can price, through yesterday, and each symbol whose closes
+        couldn't be had, with why. ``market`` is a MarketService."""
+        history = self._store.transactions()
+        if not history:
+            raise ValueError("no history imported yet")
+        snapshots = self._file_snapshots() if self._positions is not None else []
+        cash = {p.symbol for s in snapshots for p in s.positions if p.kind is Holding.CASH}
+        last = (now or datetime.now()).date() - timedelta(days=1)
+        first = max(min(t.trade_date for t in history), last - timedelta(days=lookback_days))
+        sessions = pd.DatetimeIndex([pd.Timestamp(d) for d in trading_days(first, last)])
+        if len(sessions) < 2:
+            raise ValueError("too few sessions to measure")
+        held_units = book(history, cash, sessions).units
+        options = {t.symbol for t in history if t.option is not None}
+        symbols = sorted(s for s in held_units.columns
+                         if s not in options and (held_units[s] != 0).any())
+        start = datetime.combine(first - timedelta(days=7), datetime.min.time())
+        end = datetime.combine(last, datetime.min.time())
+        closes, missing = {}, {}
+        for symbol in symbols:
+            try:
+                frame = market.get_history(symbol, start, end, source,
+                                           basis=PriceBasis.TRADED).frame
+                closes[symbol] = frame["close"].astype(float)
+            except Exception as exc:     # any source failure: carried at cost, named
+                missing[symbol] = str(exc)
+        try:
+            adjusted = market.get_history(benchmark, start, end, source,
+                                          basis=PriceBasis.ADJUSTED).frame["close"].astype(float)
+            bench = (benchmark, adjusted)
+        except Exception as exc:         # no market book; the returns still stand
+            missing[benchmark] = str(exc)
+            bench = None
+        return held(history, cash, sessions, closes, bench), missing
 
     def _file_snapshots(self) -> list[PositionSnapshot]:
         """The snapshots imported from files (not a live broker's), the newest
