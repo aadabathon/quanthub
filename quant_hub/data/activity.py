@@ -93,6 +93,7 @@ has a new key and counts twice. The replay against positions snapshots
 from __future__ import annotations
 
 import math
+import re
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -137,6 +138,9 @@ OPTION_EVENTS = frozenset({Kind.EXPIRE, Kind.ASSIGN, Kind.EXERCISE})
 
 _ARRIVE = frozenset({Kind.BUY, Kind.COVER, Kind.REINVEST, Kind.TRANSFER_IN})
 _LEAVE = frozenset({Kind.SELL, Kind.SHORT, Kind.TRANSFER_OUT})
+
+
+_CASH_TYPE = re.compile(r"\((cash|margin|short)\)\s*$", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -204,6 +208,15 @@ class Transaction:
                 return (f"{name}: the amount {a:,.2f} doesn't match quantity × price"
                         f"{' × 100' if self.option else ''} − commission − fees = {expected:,.2f}")
         return ""
+
+    @property
+    def cash_type(self) -> str:
+        """The account type the row's cash sits in: ``"cash"``, ``"margin"``
+        or ``"short"`` (TR6, ``models/held.py`` section 0). A broker that
+        says ends the row's wording with it, as Fidelity does ("… (Short)");
+        a row that doesn't say is cash."""
+        match = _CASH_TYPE.search(self.description)
+        return match.group(1).lower() if match else "cash"
 
     @property
     def multiplier(self) -> float:
