@@ -158,6 +158,9 @@ class DeskRecord:
     by_regime: Mapping[str, tuple[scoring.Series, ...]]
     calibration: tuple[scoring.Calibration, ...]
     cutoffs: tuple[float, float] | None    # the regimes' volatility terciles
+    resolved: int = 0                      # outcomes stored as resolved
+    unresolvable: int = 0                  # outcomes that can't be known
+    next_due: date | None = None           # the first claim still waiting on its day
 
 
 @dataclass(frozen=True)
@@ -173,6 +176,8 @@ class DeskView:
     problem: str
     holdings: Mapping[str, tuple[float, ...]]       # the baseline's 21-session $ band
     papers: Mapping[str, tuple[CanonPaper, ...]]    # each voice's, from the canon
+    record: DeskRecord | None = None                # every voice's record (D4b)
+    regime: str | None = None                       # this snapshot's label
 
 
 class DeskService:
@@ -294,8 +299,10 @@ class DeskService:
             self._canon = load_canon()
         papers = {v.voice: tuple(self._canon.paper(p) for p in PAPERS.get(v.voice, ())
                                  if p in self._canon) for v in snapshot.voices}
+        record = self.record()
         return DeskView(summaries, chosen, snapshot, comparison, problem,
-                        holding_bands(snapshot), papers)
+                        holding_bands(snapshot), papers, record,
+                        self._regime(snapshot, record.cutoffs))
 
     def record_decision(self, decision: Decision) -> int:
         """Store a decision on a stored snapshot (``Decision.snapshot_sha``)."""
@@ -400,8 +407,15 @@ class DeskService:
         docstring)."""
         outcomes = {(o.snapshot_id, o.subject, o.horizon): o for o in self._store.outcomes()}
         cutoffs = self._cutoffs()
+        claims = self._store.claims_due(date.max)
+        waiting = [c.resolves_on for c in claims
+                   if (c.snapshot_id, c.claim.target.rpartition(".")[0], c.claim.horizon)
+                   not in outcomes]
+        next_due = min(waiting) if waiting else None
+        resolved = sum(o.status == "resolved" for o in outcomes.values())
+        unresolvable = len(outcomes) - resolved
         if not outcomes:
-            return DeskRecord((), (), {}, (), cutoffs)
+            return DeskRecord((), (), {}, (), cutoffs, 0, 0, next_due)
         snaps: dict[int, Snapshot] = {}
 
         def snapshot(snapshot_id: int) -> Snapshot:
@@ -418,7 +432,7 @@ class DeskService:
                 scored.append(scoring.Scored(snapshot_id, as_of, voice, version, claim, *result,
                                              regime))
 
-        for c in self._store.claims_due(date.max):
+        for c in claims:
             key = (c.snapshot_id, c.claim.target.rpartition(".")[0], c.claim.horizon)
             if key not in outcomes:
                 continue
@@ -439,7 +453,8 @@ class DeskService:
         return DeskRecord(tuple(scored), tuple(scoring.record(scored)),
                           {r: tuple(scoring.record(scored, r)) for r in scoring.REGIMES
                            if r in regimes},
-                          tuple(scoring.calibration(scored)), cutoffs)
+                          tuple(scoring.calibration(scored)), cutoffs, resolved,
+                          unresolvable, next_due)
 
     def _cutoffs(self) -> tuple[float, float] | None:
         """The regimes' terciles from French's century, when it's stored."""

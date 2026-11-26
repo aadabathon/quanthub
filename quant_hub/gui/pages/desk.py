@@ -22,6 +22,16 @@ sessions):
   book, what it changes against holding under every voice's claims: what
   the worst 1 in 20 saves, what the median and the best 1 in 20 give up.
 
+- **How each voice has done** (D4b, ``models/scoring.py``): for the chosen
+  target and horizon, each voice's claims once their day has passed: its
+  mean score, the baseline's on the same snapshots, its skill (the share
+  of the baseline's lost points it saved), and whether that edge is more
+  than luck, tested on non-overlapping claims only. Then how honest its
+  bands were: how often each level was crossed. All of it overall or
+  within one regime (calm, middling, stormy: the market's volatility at
+  each snapshot against the century's terciles). **Resolve due claims**
+  does what the daily run does first.
+
 **The side panel:**
 - **Snapshot:** which stored snapshot (the newest unless you pick one), its
   day, prices, value, what was left out, and its hash. **Take a snapshot
@@ -44,7 +54,7 @@ from __future__ import annotations
 from PySide6.QtCore import QUrl
 from PySide6.QtGui import QDesktopServices
 
-from quant_hub.data.desk import LEVELS
+from quant_hub.data.desk import LEVELS, MARKET
 from quant_hub.data.literature import CanonPaper
 from quant_hub.gui.charts import BandRow, QuantileBands
 from quant_hub.gui.components import (
@@ -54,6 +64,7 @@ from quant_hub.gui.components import (
     Note,
     PageHeader,
     SegmentedControl,
+    Select,
     SelectField,
     StatTable,
     button,
@@ -63,7 +74,8 @@ from quant_hub.gui.pages.base import ScrollPage, saved_grid
 from quant_hub.gui.theme import PALETTE, SIDE_PANEL_WIDTH, SPACE_L
 from quant_hub.models.baseline import HORIZONS
 from quant_hub.models.comparison import BASELINE, Across, Comparison
-from quant_hub.services.desk import DeskService, DeskView, Taken
+from quant_hub.models.scoring import REGIMES, Calibration, Series
+from quant_hub.services.desk import DeskRecord, DeskService, DeskView, Resolved, Taken
 
 _NOTE = SIDE_PANEL_WIDTH - 2 * SPACE_L
 _ROW = 30
@@ -72,6 +84,9 @@ _EMPTY = ("No snapshot yet. Take one here, or let the daily run take it "
           "(python -m quant_hub.snapshot, after the close).")
 _TAKE = ("The daily run takes one after the close. Taking one now stores today's book if "
          "it's new: on the same prices, nothing new is stored.")
+_ALL = "All snapshots"
+_TARGETS = ("book.return", "book.fall", "book.vol", f"{MARKET}.return", f"{MARKET}.fall",
+            f"{MARKET}.vol")
 _LEVEL_NAMES = {0.05: "Worst 1 in 20", 0.25: "Lower quarter", 0.5: "Median",
                 0.75: "Upper quarter", 0.95: "Best 1 in 20"}
 
@@ -120,7 +135,8 @@ class DeskPage(ScrollPage):
         grid = CardGrid()
         grid.add_column([("voices", self._build_voices(), None),
                          ("agree", self._build_agree(), None),
-                         ("proposals", self._build_proposals(), None)], x=0, w=8)
+                         ("proposals", self._build_proposals(), None),
+                         ("record", self._build_record(), None)], x=0, w=8)
         grid.add_column([("snapshot", self._build_snapshot(sources, default_source), None),
                          ("book", self._build_book(), None),
                          ("why", self._build_why(), None)], x=8, w=4,
@@ -179,6 +195,41 @@ class DeskPage(ScrollPage):
                                     "with no drift sees no cost at the median.")
         self._proposals_card.body.addWidget(self._effects_note)
         return self._proposals_card
+
+    def _build_record(self) -> Card:
+        self._record_card = Card("How each voice has done", "Each claim scored once its day "
+                                                            "has passed, against the baseline")
+        self._regime_choice = _ALL
+        self._regime_control = SegmentedControl([_ALL, *(r.title() for r in REGIMES)], _ALL)
+        self._regime_control.changed.connect(self._set_regime)
+        self._record_card.add_action(self._regime_control)
+        self._record_target = Select(min_width=150)
+        self._record_target.set_items(list(_TARGETS), "book.return")
+        self._record_target.current_changed.connect(lambda _t: self._render_record())
+        self._record_card.add_action(self._record_target)
+        self._record_table = DataTable([("Voice", "left"), ("Claim", "left"),
+                                        ("Scored", "right"), ("Score", "right"),
+                                        ("Baseline", "right"), ("Skill", "right"),
+                                        ("More than luck?", "right"), ("Versions", "left")],
+                                       row_height=_ROW)
+        self._record_table.balance_columns()
+        self._record_table.setMinimumHeight(5 * _ROW + 36)
+        self._record_card.body.addWidget(self._record_table)
+        self._calibration = DataTable([("Voice", "left"), ("Claim", "left"),
+                                       ("Windows", "right"), ("Crossed at 5/25/50/75/95%",
+                                                              "right")], row_height=_ROW)
+        self._calibration.balance_columns()
+        self._calibration.setMinimumHeight(5 * _ROW + 36)
+        self._record_card.body.addWidget(self._calibration)
+        self._record_note = Note("ph.info", "info")
+        self._record_card.body.addWidget(self._record_note)
+        self._resolve_button = button("Resolve due claims", icon_name="ph.check-circle",
+                                      on_click=self.resolve)
+        self._resolve_button.setToolTip("What the daily run does before it takes a snapshot: "
+                                        "fetch what happened to every claim whose day has "
+                                        "passed, and store it once.")
+        self._record_card.body.addWidget(self._resolve_button)
+        return self._record_card
 
     def _build_snapshot(self, sources: list[str], default_source: str) -> Card:
         card = Card("Snapshot", "What the desk said, frozen; the newest unless you pick one")
@@ -277,6 +328,29 @@ class DeskPage(ScrollPage):
                                 "then every voice…")
         self._tasks.submit(lambda: self._desk.take(source), on_done=self._taken,
                            on_error=self._error)
+
+    def resolve(self) -> None:
+        """Resolve every due claim on the worker thread, then reload."""
+        self._resolve_button.setEnabled(False)
+        self._header.set_status("Resolving due claims: each subject's closes since its "
+                                "snapshot…")
+        self._tasks.submit(self._desk.resolve, on_done=self._resolved,
+                           on_error=self._resolve_error)
+
+    def _resolve_error(self, exc: Exception) -> None:
+        self._resolve_button.setEnabled(True)
+        self._header.set_status(str(exc), error=True)
+
+    def _resolved(self, resolved: Resolved) -> None:
+        self._resolve_button.setEnabled(True)
+        text = f"Resolved {resolved.stored} outcomes"
+        if resolved.unresolvable:
+            text += f" ({resolved.unresolvable} can't be known)"
+        text += "."
+        if resolved.pending:
+            text += f" {len(resolved.pending)} still waiting: {resolved.pending[0]}"
+        self._header.set_status(text)
+        self.reload()
 
     def _taken(self, taken: Taken) -> None:
         self._take_button.setEnabled(True)
@@ -380,6 +454,93 @@ class DeskPage(ScrollPage):
         self._render_bands(comparison, h)
         self._render_agree(comparison, h)
         self._render_proposals(comparison, h)
+        self._render_record()
+
+    def _set_regime(self, text: str) -> None:
+        self._regime_choice = text
+        self._render_record()
+
+    def _render_record(self) -> None:
+        view = self._view
+        record = view.record if view is not None else None
+        target, h = self._record_target.current(), self._horizon
+        if record is None:
+            self._record_table.set_rows([])
+            self._calibration.set_rows([])
+            self._record_note.set_text("")
+            return
+        regime = None if self._regime_choice == _ALL else self._regime_choice.lower()
+        series = record.series if regime is None else record.by_regime.get(regime, ())
+        rows = [s for s in series if s.target == target and s.horizon == h]
+        self._record_table.set_rows([self._series_row(s) for s in rows])
+        self._record_table.setMinimumHeight(max(5, len(rows)) * _ROW + 36)   # no scroll
+        calibration = [c for c in record.calibration if c.target == target and c.horizon == h]
+        self._calibration.set_rows([self._calibration_row(c) for c in calibration])
+        self._calibration.setMinimumHeight(max(5, len(calibration)) * _ROW + 36)
+        self._record_card.set_subtitle(self._record_subtitle(record, target, h, regime, rows))
+        self._record_note.set_text(self._record_explained(record, view.regime))
+
+    @staticmethod
+    def _form_name(target: str, form: str) -> str:
+        if form == "quantiles":
+            return "bands"
+        op, _, k = form.partition(" ")
+        depth = abs(float(k))
+        if target.endswith(".fall"):
+            return f"falls {depth:.0%}+"
+        if target.endswith(".return") and float(k) < 0:
+            return f"ends {depth:.0%}+ down"
+        return form
+
+    def _series_row(self, s: Series) -> list:
+        skill = (f"{s.skill:+.0%}", PALETTE.good if s.skill > 0 else PALETTE.critical) \
+            if s.skill is not None else ("—" if s.voice != BASELINE else "the yardstick")
+        if s.test is None:
+            luck = ""
+        elif s.test.p is None:
+            luck = s.test.reason
+        else:
+            luck = (f"p {s.test.p:.2f} · {s.test.n} windows",
+                    PALETTE.good if s.test.p < 0.05 else PALETTE.text_secondary)
+        return [s.voice, self._form_name(s.target, s.form), f"{s.n:,}", f"{s.score:.4g}",
+                f"{s.baseline:.4g}" if s.baseline is not None else "—", skill, luck,
+                ", ".join(s.versions)]
+
+    def _calibration_row(self, c: Calibration) -> list:
+        if c.coverage is not None:
+            crossed = " ".join(f"{x:.0%}" for x in c.coverage)
+        else:
+            crossed = f"said {c.claimed:.0%}, happened {c.happened:.0%}"
+        windows = f"{c.windows:.1f}" if c.windows >= 1 else f"{c.windows:.2f}"
+        return [c.voice, self._form_name(c.target, c.form), windows, crossed]
+
+    @staticmethod
+    def _record_subtitle(record: DeskRecord, target: str, h: int, regime: str | None,
+                         rows: list) -> str:
+        if not record.scored:
+            due = f" The first resolves on {record.next_due:%b %d}." if record.next_due else ""
+            return "No claim has reached its day yet." + due
+        scope = f" in {regime} snapshots" if regime else ""
+        if not rows:
+            return f"No {target} claims over {h} sessions have resolved{scope} yet"
+        return (f"{target} over {h} sessions{scope}: {record.resolved:,} outcomes resolved"
+                + (f", {record.unresolvable} can't be known" if record.unresolvable else ""))
+
+    @staticmethod
+    def _record_explained(record: DeskRecord, regime: str | None) -> str:
+        text = ("Score: points lost per claim, lower is better. Skill: the share of the "
+                "baseline's lost points a voice saved on the same snapshots. More than luck: "
+                "a t-test on claims whose windows don't overlap; no p until 5 of them. "
+                "Crossed: how often the outcome fell at or below each band line (an honest "
+                "voice: 5/25/50/75/95%).")
+        if record.cutoffs is not None:
+            low, high = record.cutoffs
+            text += (f" Regimes by the market's 63-session volatility: calm below "
+                     f"{low:.1%}, stormy from {high:.1%} (the century's thirds)")
+            text += f"; this snapshot is {regime}." if regime else "."
+        else:
+            text += " Regimes need French's market history in the store."
+        return text
 
     def _render_bands(self, c: Comparison, h: int) -> None:
         rows, table = [], []

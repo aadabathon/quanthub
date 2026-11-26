@@ -2478,3 +2478,39 @@ def test_the_desk_page_shows_the_voices_side_by_side(qt_app):
     assert [page._paper_table.item(r, 0).text() for r in range(2)] == [
         "Bollerslev 1986", "Moreira–Muir 2017"]
     assert "Changed:" in page._paper._text.text() and page._open_paper.isEnabled()
+
+
+def test_the_desk_page_shows_each_voices_record(qt_app):
+    from datetime import datetime
+
+    from quant_hub.data.desk import Outcome
+    app, window = qt_app
+    page = window.show_page("Desk")
+    store = window._core.desk_store
+    snapshot_id = store.save_snapshot(_desk_snapshot())
+    page.reload()
+    wait_for(app, lambda: page._header._status.full_text().startswith("Snapshot #1"))
+    assert page._record_table.rowCount() == 0
+    assert page._record_card.subtitle.full_text().startswith(
+        "No claim has reached its day yet. The first resolves on")
+    for subject, ret, fall in (("book", -0.04, 0.06), ("SPY", 0.01, 0.02)):
+        store.save_outcome(Outcome(snapshot_id, subject, 21, "resolved", ret, 0.18, fall, "",
+                                   "test", datetime(2026, 12, 21, 18)))
+    page.reload()
+    wait_for(app, lambda: page._record_table.rowCount() == 8)   # 4 voices × bands, ends down
+    rows = [[page._record_table.item(r, c).text() for c in range(7)] for r in range(8)]
+    assert {r[0] for r in rows} == {"baseline", "garch", "regimes", "bootstrap"}
+    assert {r[1] for r in rows} == {"bands", "ends 10%+ down"}
+    baseline = next(r for r in rows if r[0] == "baseline" and r[1] == "bands")
+    assert baseline[5] == "the yardstick"
+    garch = next(r for r in rows if r[0] == "garch" and r[1] == "bands")
+    assert garch[5].endswith("%") and garch[6] == "too few: 1 of 5 independent windows"
+    assert page._calibration.rowCount() == 8
+    assert "Regimes need French's market history" in page._record_note._text.text()
+    page._record_target.set_current("book.fall")
+    app.processEvents()
+    assert {page._record_table.item(r, 1).text() for r in range(page._record_table.rowCount())} \
+        == {"bands", "falls 10%+"}
+    page._regime_control.changed.emit("Stormy")
+    app.processEvents()
+    assert page._record_table.rowCount() == 0       # unlabeled without the century
