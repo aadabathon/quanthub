@@ -28,7 +28,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-from PySide6.QtWidgets import QHBoxLayout, QStackedWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QStackedWidget, QVBoxLayout, QWidget
 
 from quant_hub.gui.charts import Panel, Series, StackedTimeSeries
 from quant_hub.gui.components import (

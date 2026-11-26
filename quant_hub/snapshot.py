@@ -2,9 +2,11 @@
 
     python -m quant_hub.snapshot [--source ibkr|file]
 
-Builds the core from your settings (no window), takes one snapshot of the
-book with every voice's claims (``services/desk.py``), stores it, writes
-its JSON beside the store (``<store folder>/desk/``), and prints where.
+Builds the core from your settings (no window), first resolves every claim
+whose day has passed (D4, ``DeskService.resolve``), then takes one snapshot
+of the book with every voice's claims (``services/desk.py``), stores it,
+writes its JSON beside the store (``<store folder>/desk/``), and prints
+where.
 The source defaults to Massive when ``[massive] key`` is set (daily bars
 without TWS, D97), else IBKR when it's on in settings (stored bars serve
 when TWS isn't running), else imported files.

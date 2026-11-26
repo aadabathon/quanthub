@@ -11,11 +11,10 @@ from datetime import datetime
 import pandas as pd
 import pytest
 
-from quant_hub.data.ranges import DateRange
 from quant_hub.data.sources import BasisUnavailableError, SourceOfflineError
 from quant_hub.data.types import PriceHistory, Quote
 from quant_hub.services.cached_source import CachedSource
-from quant_hub.storage.bar_store import BarStore, InstrumentKey
+from quant_hub.storage.bar_store import BarStore
 
 # A fixed "today" long after the master data, so the yesterday-cap on
 # coverage never interferes except in the tests that exercise it.

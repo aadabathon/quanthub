@@ -14,8 +14,9 @@
    priced, the book is still priced and the voices make no market claims.
 3. **The voices** each speak about that book from those returns. One that
    can't (too little history, say) is logged and left out of this
-   snapshot; the others still speak. The baseline (``models/baseline.py``)
-   and, since D2, GARCH, regimes and the bootstrap (``models/voices.py``).
+   snapshot; the others still speak: the baseline (``models/baseline.py``),
+   GARCH, regimes and the bootstrap (``models/voices.py``), and the tail
+   (``models/tail.py``), which core.py adds with French's century.
    They see two years of closes, about 500 sessions, the most Massive's
    free plan serves.
 4. **Frozen:** the snapshot is stored once by its hash (``DeskStore``), and

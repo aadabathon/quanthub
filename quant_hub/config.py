@@ -191,9 +191,10 @@ def _fred_key(value: Any, _base: Path) -> str:
 
 
 def _massive_key(value: Any, _base: Path) -> str:
-    if not isinstance(value, str) or not value.strip() or " " in value.strip()             or len(value.strip()) < 16:
+    key = value.strip() if isinstance(value, str) else ""
+    if not key or " " in key or len(key) < 16:
         raise ValueError("must be your Massive API key in quotes (from massive.com)")
-    return value.strip()
+    return key
 
 
 # [section] key -> (AppConfig field, parser)

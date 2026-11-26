@@ -2,11 +2,23 @@
 
 A quantitative research workstation for the desktop. It's a fast Qt
 interface over a layered Python core, for pricing, volatility, regimes,
-backtests and portfolio risk. Every model is derived in its docstring and
-tested against the closed forms.
+backtests, portfolio risk, and a daily desk of models whose forecasts are
+scored. Every model is derived in its docstring and tested against the
+closed forms.
 
 ![The Markov Lab: hidden volatility regimes, filtered against the true ones](docs/images/markov-lab.png)
 
+- **Desk:** every model's view of your book today, side by side, in
+  dollars. Each model is a **voice** that states scorable claims (quantiles
+  of the book's and the market's return, volatility and deepest fall, and
+  the chances of falls) and what it would change. Nothing is averaged.
+  Once a claim's day has passed it's scored against the no-edge baseline,
+  so each voice earns a record, by market regime too.
+- **Trades:** your broker's own history, imported and replayed against
+  your positions exports, holdings and cash, to the cent. It shows every
+  round trip, how well each entry and exit was timed against what luck
+  produces, and the returns the account really had, time- and
+  money-weighted, beside the same dollars in SPY.
 - **Research labs:**
   - **Simulator:** GBM and Monte Carlo against the closed forms.
   - **GARCH Lab:** conditional volatility, on synthetic or real history.
@@ -84,6 +96,11 @@ These are simulated worlds, not forecasts. To use your own daily
 histories, import them with Dashboard → Import CSV…, then select `file`
 and its price basis in Research.
 
+**The desk runs best daily.** `py -3.12 -m quant_hub.snapshot` scores
+what's due and takes the day's snapshot, with no window. Schedule it
+after the close (Windows Task Scheduler works), and each voice's record
+grows whether or not the app is open.
+
 **Brokerage support is optional.** Install it with
 `py -3.12 -m pip install -e ".[dev,ibkr]"` and follow the IBKR setup
 below. The app never connects or reconnects on its own.
@@ -153,6 +170,7 @@ defaults. Edit it and restart. It sets:
 - whether and how to reach Interactive Brokers
 - your SEC identity, for Valuation and fund holdings
 - your free FRED key, for the VIX and bill history
+- your free Massive key, for daily bars without TWS
 - which option chains to snapshot each trading day
 - whether installed extensions add their pages
 
@@ -217,6 +235,65 @@ date,open,high,low,close,volume,adj_close
 
 Stooq downloads use this layout as they are. Nasdaq.com and Yahoo Finance
 downloads are recognized by their headers.
+
+## The desk
+
+The Desk page reads the stored snapshots; nothing on it changes one.
+
+- **A snapshot** freezes today's book (the newest positions export rolled
+  forward by your history), priced on the last day every holding has a
+  close, with SPY beside it, and every voice's claims. It's canonical JSON
+  with a SHA-256, stored once, and written beside the store for you or an
+  LLM to read. There's one per data day.
+- **The voices:**
+
+  | Voice | What it assumes |
+  |---|---|
+  | baseline | no edge: a driftless random walk at recent volatility; every other voice is scored against it |
+  | garch | volatility clusters (GARCH(1,1)); proposes less risk when the next month looks rougher than usual |
+  | regimes | the market has states (a hidden Markov model), each with its own drift |
+  | bootstrap | the tails are what they've been: history resampled in blocks |
+  | tail | the next year is one of the market's last hundred, scaled by your book's β |
+
+- **The page:** each voice's 90% range, middle half and median for 5, 21,
+  63 or 252 sessions in dollars; where they agree and disagree; what each
+  would do, and what that change does under every voice's claims; each
+  voice's reasoning and the papers it rests on.
+- **The record:** once a claim's day has passed, what happened is fetched
+  and the claim scored (quantile score for bands, Brier for chances). Each
+  voice's skill is the share of the baseline's lost points it saves, and a
+  t-test on claims whose windows don't overlap says whether that's more
+  than luck. Calibration shows how often each band line was crossed. All
+  of it again within calm, middling and stormy markets.
+- **Decisions** you record cite a snapshot's hash and state what you
+  expect as claims, so your judgment is scored the same way.
+
+## Your trades
+
+The Trades page imports your broker's transaction history: Fidelity's
+Activity & Orders download as it is, or this generic layout.
+
+```text
+date,account,kind,symbol,quantity,price,commission,fees,amount,settle_date
+2026-03-02,Brokerage,buy,AAPL,10,227.52,0,0,-2275.20,2026-03-03
+```
+
+- **Overlapping downloads are fine:** each transaction is stored once.
+- **Checked against your exports:** the history is replayed to every
+  positions snapshot imported on Portfolio. Every holding is checked, and
+  every export's cash is checked **to the cent**: a cash line is the core
+  money-market fund only, so short-sale proceeds, unsettled trades and a
+  margin loan don't show in it, and the check accounts for each.
+- **Round trips:** FIFO, flat to flat, P&L from the cash, with the lots'
+  basis checked against your broker's.
+- **How well you got in and out:** for each entry and exit, how many days
+  around it would have been better, against the exact law of luck; what
+  the stock did after, beyond the market; and where the P&L came from:
+  the market, the stock, your fills and costs.
+- **As you held it:** the account's value day by day, its time-weighted
+  return (your choices) and money-weighted return (your dollars, timing
+  included), beside the same deposits put into SPY. The Portfolio page
+  can replay its history this way too.
 
 ## Portfolio
 
@@ -465,9 +542,9 @@ in the literature canon (`quant_hub/data/canon/`), with its DOI checked.
 
 Version 1.1 runs on Windows with Python 3.12. The suite needs no display
 and no network. Still to come:
-- portfolio optimizers
+- more desk voices: the option market's price of volatility (from FRED's
+  VIX), and voices from installed extensions
 - option strategy backtests
-- more free data sources, kept locally
 
 ## License
 

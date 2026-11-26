@@ -49,7 +49,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-from quant_hub.data.types import OPTIONAL_COLUMNS, REQUIRED_COLUMNS
+from quant_hub.data.types import REQUIRED_COLUMNS
 
 #: Canonical column order for validated frames (present columns only).
 CANONICAL_COLUMNS = ("open", "high", "low", "close", "volume")

@@ -40,7 +40,6 @@ from quant_hub.gui.charts import Curve, CurveChart, Histogram, Panel, Series, St
 from quant_hub.gui.components import (
     Card,
     CardGrid,
-    ElidedLabel,
     EmptyState,
     Field,
     MenuButton,

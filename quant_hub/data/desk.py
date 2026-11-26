@@ -66,7 +66,7 @@ forecaster's true belief, so it can't be gamed by hedging:
   ``> 0.05``). Scored by the Brier score :math:`(p - \mathbb 1\{E\})^2`
   and the log score.
 
-Scoring itself is D4. These forms exist so that it can be done.
+``models/scoring.py`` scores them once their day has passed (D4).
 
 Decisions
 ---------

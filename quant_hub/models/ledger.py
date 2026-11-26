@@ -58,13 +58,18 @@ position held before the history begins, or a gap in it. Those are the
 
 Cash
 ----
-Cash is checked the same way with the amounts: the change in the
-snapshots' cash against :math:`\sum A_i` between them, with the same choice
-of placements, but it's shown, not passed or failed. Pending activity,
-money-market accrual and how a broker splits margin and short cash all
-move it by more than a rounding error. Rows in a cash fund that move
-shares (buying or reinvesting into it) move cash into cash and are left
-out; its dividends are counted.
+An export's cash lines are its core money-market fund only (TR6,
+``models/held.py`` section 0): each account's **settled** cash- and
+margin-type balance, with the short type's cash (short proceeds, marked to
+market against margin) left out, and no line at all when the balance is a
+margin loan. ``cash_lines`` computes that from the history, and each
+export's cash is **checked to the cent** against it (``cash_reconciled``).
+Rows in a cash fund that move shares (buying or reinvesting into it) move
+cash into cash and are left out; its dividends are counted.
+
+``Interval.cash_residual`` is the older, rougher measure: the change in the
+exports' cash against the amounts between them, trade-dated and all
+types. It's kept for what it shows, not judged.
 """
 
 from __future__ import annotations

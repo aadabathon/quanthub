@@ -50,7 +50,7 @@ import threading
 import time
 from importlib.metadata import PackageNotFoundError, version
 from collections.abc import Sequence
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from typing import TYPE_CHECKING, Any
 
 from quant_hub.broker.base import ConnectionEvent, ConnectionState
