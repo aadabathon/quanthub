@@ -352,6 +352,8 @@ class MarketBook:
     twr: float
     mwr: float | None
     mwr_note: str
+    path: pd.Series | None = None  # its value each session, flows in (TR6b)
+    growth: pd.Series | None = None   # the market's own growth of $1
 
 
 def market_book(symbol: str, value_: pd.Series, flow: pd.Series,
@@ -360,14 +362,29 @@ def market_book(symbol: str, value_: pd.Series, flow: pd.Series,
     p = adjusted.reindex(value_.index).ffill()
     if p.isna().any():
         return None
-    units = value_.iloc[0] / p.iloc[0] + float((flow.iloc[1:] / p.iloc[1:]).sum())
-    end = float(units * p.iloc[-1])
+    bought = (flow / p).copy()
+    bought.iloc[0] = value_.iloc[0] / p.iloc[0]
+    path = bought.cumsum() * p
+    end = float(path.iloc[-1])
     start = value_.index[0]
     years = (value_.index[-1] - start).days / YEAR_DAYS
     cash_flows = [((day - start).days / YEAR_DAYS, float(f))
                   for day, f in flow.iloc[1:].items() if f != 0]
     mwr, note = money_weighted(float(value_.iloc[0]), cash_flows, end, years)
-    return MarketBook(symbol, end, float(p.iloc[-1] / p.iloc[0] - 1.0), mwr, note)
+    return MarketBook(symbol, end, float(p.iloc[-1] / p.iloc[0] - 1.0), mwr, note, path,
+                      p / p.iloc[0])
+
+
+def growth(daily: pd.Series, start: pd.Timestamp) -> pd.Series:
+    """The time-weighted chain as the value of $1 held from ``start``
+    (TR6b): 1 at the start, then each session's return compounded."""
+    path = pd.concat([pd.Series([1.0], index=[start]), (1.0 + daily).cumprod()])
+    return path
+
+
+def drawdown(path: pd.Series) -> pd.Series:
+    """How far ``path`` sits below its running peak, as a fraction (≤ 0)."""
+    return path / path.cummax() - 1.0
 
 
 def window_start(valued: Valued, limit: float = CARRIED_LIMIT) -> int | None:

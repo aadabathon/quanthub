@@ -7,7 +7,10 @@ Risk first, for a stock and ETF portfolio that uses options sparingly:
 * the holdings, each with its share of the *value* and of the *risk*
   (``models/portfolio.py``, risk contributions), sorted by risk: the
   holdings whose risk share outruns their weight are where the risk is;
-* today's mix replayed over the lookback against the benchmark, with its
+* today's mix replayed over the lookback against the benchmark, or (TR6,
+  **As held**, when the activity history is imported) the account's own
+  holdings and cash day by day, chained time-weighted (``models/held.py``);
+  the rest of the page stays on today's mix. The replay, with its
   drawdown;
 * the distribution of one-day P&L from that replay, with the VaR marks
   and the Gaussian curve of the same vol, so fat tails show;
@@ -78,9 +81,11 @@ from quant_hub.gui.components import (
 from quant_hub.gui.pages.base import ScrollPage, saved_grid, split_warning
 from quant_hub.gui.theme import PALETTE, SIDE_PANEL_WIDTH, SPACE_L, SPACE_M
 from quant_hub.models.growth import ADDS, COSTS, GrowthReport, what_if
+from quant_hub.models.held import HeldReport, drawdown, growth
 from quant_hub.models.portfolio import InfluentialDay
 from quant_hub.models.regression import Z95
 from quant_hub.services.accounts import AccountService
+from quant_hub.services.activity import ActivityService
 from quant_hub.services.book import (
     DEFAULT_BENCHMARK,
     DEFAULT_LOOKBACK,
@@ -140,13 +145,18 @@ def _influence_line(day: InfluentialDay) -> str:
     return (f"{when}: {holding.symbol} {holding.holding_return:+,.0%}, "
             f"{holding.variance_share:.0%} of its own variance; the mix {day.mix_return:+.1%}.")
 
+_TODAY, _AS_HELD = "Today's mix", "As held"
 
 class PortfolioPage(ScrollPage):
     def __init__(self, portfolio: PortfolioService, market_service: MarketService,
                  tasks: TaskRunner, state_store: ViewStateStore,
-                 broker_accounts: AccountService | None = None) -> None:
+                 broker_accounts: AccountService | None = None,
+                 activity: ActivityService | None = None) -> None:
         super().__init__()
         self._portfolio = portfolio
+        self._activity = activity                   # None: no "As held" replay (TR6)
+        self._replay_mode = _TODAY
+        self._held: HeldReport | None = None
         self._market = market_service
         self._broker_accounts = broker_accounts     # None when IBKR is off (E1)
         self._broker_left_out: tuple[str, ...] = ()
@@ -215,7 +225,7 @@ class PortfolioPage(ScrollPage):
         return self._holdings_card
 
     def _build_replay(self) -> Card:
-        self._replay_card = Card("Today's mix, replayed", "")
+        self._replay_card = Card("The book, replayed", "")
         self._replay_stack = QStackedWidget()
         self._replay = StackedTimeSeries(readout_per_panel=True)
         self._replay_empty = EmptyState("ph.chart-pie-slice", "No portfolio yet",
@@ -225,7 +235,59 @@ class PortfolioPage(ScrollPage):
         self._replay_stack.setCurrentWidget(self._replay_empty)
         self._replay_stack.setMinimumHeight(340)
         self._replay_card.body.addWidget(self._replay_stack, 1)
+        self._replay_mode_control = SegmentedControl([_TODAY, _AS_HELD], _TODAY)
+        self._replay_mode_control.changed.connect(self._set_replay_mode)
+        # Attached before any visibility change: a parentless widget shown
+        # is a temporary desktop window.
+        self._replay_card.add_action(self._replay_mode_control)
+        if self._activity is None:
+            self._replay_mode_control.hide()
         return self._replay_card
+
+    def _set_replay_mode(self, mode: str) -> None:
+        self._replay_mode = mode
+        if mode == _TODAY:
+            if self._view is not None:
+                self._render_replay(self._view)
+            return
+        if self._held is not None:
+            self._render_held(self._held)
+            return
+        source = self._view.source if self._view is not None else next(
+            (s for s in ("massive", "ibkr") if s in self._market.source_names), "file")
+        self._replay_card.set_subtitle(f"Rebuilding the account day by day from {source}…")
+        self._tasks.submit(lambda: self._activity.held(self._market, source)[0],
+                           on_done=self._held_done, on_error=self._held_error)
+
+    def _held_done(self, report: HeldReport) -> None:
+        self._held = report
+        if self._replay_mode == _AS_HELD:
+            self._render_held(report)
+
+    def _held_error(self, exc: Exception) -> None:
+        self._replay_card.set_subtitle(f"As held: {exc}")
+
+    def _render_held(self, report: HeldReport) -> None:
+        if report.returns is None:
+            self._replay_card.set_subtitle(f"As held: {report.reason}")
+            return
+        dates = report.value.index
+        mine = growth(report.returns.daily, dates[0]).reindex(dates)
+        series = [Series("As held", mine.to_numpy(), PALETTE.series, 1.8, fmt="{:.3f}")]
+        market = report.market
+        if market is not None and market.growth is not None:
+            series.insert(0, Series(market.symbol, market.growth.to_numpy(),
+                                    PALETTE.text_secondary, 1.2, fmt="{:.3f}"))
+        self._replay.set_panels(dates, [
+            Panel("Value of $1, as the account held it", series, axis="price", stretch=3,
+                  references=[("start", 1.0)]),
+            Panel("Drawdown", [Series("Drawdown", drawdown(mine).to_numpy(), PALETTE.critical,
+                                      1.2, fmt="{:.1%}", fill=True)], axis="percent",
+                  stretch=1)])
+        self._replay_stack.setCurrentWidget(self._replay)
+        self._replay_card.set_subtitle(
+            f"The account's own holdings and cash, {report.start} to {report.end}, chained "
+            "time-weighted (deposits left out) · the rest of the page is today's mix")
 
     def _build_losses(self) -> Card:
         self._losses_card = Card("One-day P&L", "")
@@ -603,7 +665,10 @@ class PortfolioPage(ScrollPage):
                 f"{len(view.rows)} holdings in the model")
         self._render_tiles(view)
         self._render_table(view)
-        self._render_replay(view)
+        if self._replay_mode == _AS_HELD and self._held is not None:
+            self._render_held(self._held)
+        else:
+            self._render_replay(view)
         self._render_losses(view)
         self._render_sizing(view)
         self._render_influence(view)
