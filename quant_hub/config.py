@@ -82,6 +82,11 @@ class AppConfig:
     fred_key: str = ""                 # [fred] key: FRED's API (HEDGE U2, D69); never logged
     massive_key: str = ""              # [massive] key: daily bars without TWS (D97); never logged
 
+    # Daily copies of the store, taken by the snapshot run (D108); None:
+    # backups/daily beside the store.
+    backup_folder: Path | None = None
+    backup_keep: int = 14
+
     # Installed packages that add pages, found at startup (D86).
     extensions_enabled: bool = True
 
@@ -128,6 +133,18 @@ client_id = 17
 # FRED's API needs a free key (fredaccount.stlouisfed.org): 32 letters and
 # digits. It brings the VIX and T-bill history. Keep it out of any repository.
 # key = "…"
+
+[massive]
+# Massive (formerly Polygon) serves daily bars without TWS, two years back
+# on its free plan (massive.com). Keep the key out of any repository.
+# key = "…"
+
+[backup]
+# The daily snapshot run copies the store here and keeps the newest copies.
+# The default, beside the store, survives a bad write but not a dead disk:
+# a folder on another disk, or one a cloud drive syncs, survives both.
+# folder = "~/.quant_hub/backups/daily"
+# keep = 14
 
 [extensions]
 # Installed packages can add pages to Quant Hub. Set enabled = false to run
@@ -197,6 +214,12 @@ def _massive_key(value: Any, _base: Path) -> str:
     return key
 
 
+def _keep(value: Any, _base: Path) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ValueError("must be a whole number, 1 or more")
+    return value
+
+
 # [section] key -> (AppConfig field, parser)
 _SETTINGS = {
     "store": {"path": ("db_path", _path)},
@@ -205,6 +228,7 @@ _SETTINGS = {
     "sec": {"identity": ("sec_identity", _identity)},
     "fred": {"key": ("fred_key", _fred_key)},
     "massive": {"key": ("massive_key", _massive_key)},
+    "backup": {"folder": ("backup_folder", _path), "keep": ("backup_keep", _keep)},
     "extensions": {"enabled": ("extensions_enabled", _boolean)},
     "collect": {"chains": ("collect_chains", _symbols)},
 }

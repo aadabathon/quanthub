@@ -74,6 +74,16 @@ A **decision** is what you (or an LLM) decided on a snapshot: the trades,
 the reasoning, and what you **expect**. The expectations are claims too,
 in the same forms, so a decision is scored like a model, and your judgment
 gets a record beside the models'.
+
+Written as text (``parse_claim``, D108), one claim per line:
+
+=====================================  ==================================
+``MSFT.return@21 q -12%,-4%,1%,6%,15%``  quantiles at 5/25/50/75/95%
+``book.fall@63 >= 10% p 25%``           the chance of an event
+=====================================  ==================================
+
+Numbers are fractions, or percents with ``%``. Trades (``parse_trades``)
+are ``SYMBOL +units`` or ``SYMBOL -units``, separated by commas.
 """
 
 from __future__ import annotations
@@ -151,6 +161,61 @@ def parse_event(event: str) -> tuple[str, float]:
     except ValueError:
         raise ValueError(f"an event is one of {', '.join(_EVENT_OPS)} and a number, "
                          f"not {event!r}") from None
+
+
+def _number(text: str) -> float:
+    """A fraction, or a percent with ``%``; a typographic minus is a minus."""
+    raw = text.strip().replace("\u2212", "-")
+    scale = 0.01 if raw.endswith("%") else 1.0
+    try:
+        value = float(raw.rstrip("%").strip()) * scale
+    except ValueError:
+        raise ValueError(f"{text.strip()!r} isn't a number") from None
+    if not math.isfinite(value):
+        raise ValueError(f"{text.strip()!r} isn't a finite number")
+    return value
+
+
+def parse_claim(text: str) -> Claim:
+    """One claim written as text (module docstring): ``TARGET@H q`` and five
+    quantiles, or ``TARGET@H OP K p P``. A ValueError says what's wrong."""
+    line = " ".join(text.replace(",", " , ").split())
+    head, _, rest = line.partition(" ")
+    target, at, horizon = head.partition("@")
+    subject, dot, what = target.rpartition(".")
+    if dot and subject.lower() != "book":
+        target = f"{subject.upper()}.{what.lower()}"
+    elif dot:
+        target = f"book.{what.lower()}"
+    if not at or not horizon.isdigit():
+        raise ValueError(f"{text.strip()!r}: start with TARGET@SESSIONS, e.g. book.return@21")
+    words = [w for w in rest.replace(" , ", " ").split(" ") if w]
+    if words[:1] == ["q"]:
+        if len(words) != 1 + len(LEVELS):
+            raise ValueError(f"{text.strip()!r}: q takes {len(LEVELS)} quantiles, at {LEVELS}")
+        return Claim(target, int(horizon), tuple(_number(w) for w in words[1:]))
+    if len(words) == 4 and words[2] == "p" and words[0] in _EVENT_OPS:
+        threshold = _number(words[1])
+        return Claim(target, int(horizon), event=f"{words[0]} {threshold:g}",
+                     probability=_number(words[3]))
+    raise ValueError(f"{text.strip()!r}: after the target, q and five quantiles, "
+                     "or an event and its chance, e.g. >= 10% p 25%")
+
+
+def parse_trades(text: str) -> tuple[tuple[str, float], ...]:
+    """``MSFT +5, AAPL -2`` (or ``MSFT:+5``) as (symbol, units) pairs."""
+    trades = []
+    for part in (p.strip() for p in text.split(",")):
+        if not part:
+            continue
+        symbol, _, units = part.replace(":", " ").partition(" ")
+        if not symbol or not units.strip():
+            raise ValueError(f"{part!r}: a trade is SYMBOL and units, e.g. MSFT +5")
+        value = _number(units)
+        if value == 0:
+            raise ValueError(f"{part!r}: a trade moves some units")
+        trades.append((symbol.strip().upper(), value))
+    return tuple(trades)
 
 
 def resolves_on(as_of: date, horizon: int) -> date:

@@ -97,9 +97,10 @@ histories, import them with Dashboard → Import CSV…, then select `file`
 and its price basis in Research.
 
 **The desk runs best daily.** `py -3.12 -m quant_hub.snapshot` scores
-what's due and takes the day's snapshot, with no window. Schedule it
-after the close (Windows Task Scheduler works), and each voice's record
-grows whether or not the app is open.
+what's due, takes the day's snapshot and copies the store to a dated
+backup, with no window. Schedule it after the close (Windows Task
+Scheduler works), and each voice's record grows whether or not the app is
+open.
 
 **Brokerage support is optional.** Install it with
 `py -3.12 -m pip install -e ".[dev,ibkr]"` and follow the IBKR setup
@@ -171,6 +172,7 @@ defaults. Edit it and restart. It sets:
 - your SEC identity, for Valuation and fund holdings
 - your free FRED key, for the VIX and bill history
 - your free Massive key, for daily bars without TWS
+- where the daily run copies the store, and how many copies it keeps
 - which option chains to snapshot each trading day
 - whether installed extensions add their pages
 
@@ -265,8 +267,18 @@ The Desk page reads the stored snapshots; nothing on it changes one.
   t-test on claims whose windows don't overlap says whether that's more
   than luck. Calibration shows how often each band line was crossed. All
   of it again within calm, middling and stormy markets.
-- **Decisions** you record cite a snapshot's hash and state what you
-  expect as claims, so your judgment is scored the same way.
+- **Your decisions:** on the Desk page, or from a terminal or an agent,
+  record what you decided and at least one claim of what you expect. It's
+  scored like a voice under your name:
+
+  ```bash
+  py -3.12 -m quant_hub.decide --claim "MSFT.return@21 q -12%,-4%,1%,6%,15%" \
+      --claim "book.fall@63 >= 10% p 25%" --trade "MSFT +5" --why "earnings drift"
+  py -3.12 -m quant_hub.decide --json decision.json     # the form an agent writes
+  py -3.12 -m quant_hub.decide --list
+  ```
+
+  A decision cites the newest snapshot's hash and is never changed.
 
 ## Your trades
 

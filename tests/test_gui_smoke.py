@@ -2521,15 +2521,19 @@ def test_returns_as_held_on_the_trades_and_portfolio_pages(qt_app, tmp_path):
     app, window = qt_app
     page = window.show_page("Trades")
     wait_for(app, lambda: page._header._status.full_text().startswith("No history"))
+    # Dates relative to today: the page measures through yesterday, over the
+    # source's last two years, so fixed dates would expire.
+    today = pd.Timestamp.today().normalize()
+    dates = pd.bdate_range(end=today - pd.Timedelta(days=1), periods=420)
+    first, second = dates[60].date(), dates[180].date()
     history = tmp_path / "history.csv"
     history.write_text("date,account,kind,symbol,quantity,price,commission,fees,amount\n"
-                       "2025-03-03,Brokerage,deposit,,,,,,1000.00\n"
-                       "2025-03-03,Brokerage,buy,AAA,10,50.00,0,0,-500.00\n"
-                       "2025-06-02,Brokerage,deposit,,,,,,500.00\n"
-                       "2025-06-02,Brokerage,buy,BBB,4,50.00,0,0,-200.00\n", encoding="utf-8")
+                       f"{first},Brokerage,deposit,,,,,,1000.00\n"
+                       f"{first},Brokerage,buy,AAA,10,50.00,0,0,-500.00\n"
+                       f"{second},Brokerage,deposit,,,,,,500.00\n"
+                       f"{second},Brokerage,buy,BBB,4,50.00,0,0,-200.00\n", encoding="utf-8")
     page.import_files([history])
     wait_for(app, lambda: page._trips_table.rowCount() == 2)
-    dates = pd.bdate_range("2025-01-02", "2026-11-24")
     closes = 50 * np.exp(np.cumsum(np.random.default_rng(3).normal(0, 0.01, len(dates))))
     frame = pd.DataFrame({"open": closes, "high": closes, "low": closes, "close": closes,
                           "volume": np.full(len(dates), 2e6)}, index=dates)
@@ -2549,3 +2553,24 @@ def test_returns_as_held_on_the_trades_and_portfolio_pages(qt_app, tmp_path):
     portfolio._replay_mode = "As held"
     portfolio._held_done(report)
     assert portfolio._replay_card.subtitle.full_text().startswith("The account's own holdings")
+
+
+def test_the_desk_page_records_a_decision(qt_app):
+    app, window = qt_app
+    page = window.show_page("Desk")
+    window._core.desk_store.save_snapshot(_desk_snapshot())
+    page.reload()
+    wait_for(app, lambda: page._header._status.full_text().startswith("Snapshot #1"))
+    page._claims_text.setPlainText("book.return@21 q 1,2")               # four short
+    page.record_decision()
+    assert "Not recorded" in page._decide_note._text.text()
+    page._claims_text.setPlainText("book.fall@21 >= 10% p 20%\nAAA.return@5 q -3%,-1%,0,1%,3%")
+    page._trades_field.set_text("AAA -2")
+    page._why_text.setPlainText("trimming before earnings")
+    page.record_decision()
+    wait_for(app, lambda: page._decisions_table.rowCount() == 1)
+    assert page._decide_note._text.text().startswith("Decision #1 recorded on snapshot #1")
+    assert page._decisions_table.item(0, 1).text() == "me"
+    assert page._decisions_table.item(0, 3).text() == "2"
+    assert page._decisions_table.item(0, 4).text() == "AAA -2"
+    assert page._claims_text.toPlainText() == ""
