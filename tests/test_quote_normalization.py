@@ -32,6 +32,11 @@ from quant_hub.config import AppConfig
 from quant_hub.data.types import MarketDataMode
 from quant_hub.events import EventBus
 
+# The broker builds ibapi's Contract for each request (the module imports
+# without it); without TWS's ibapi, the ibkr extra, there's nothing to
+# send, so these tests skip.
+pytest.importorskip("ibapi")
+
 SPY = ContractSpec(symbol="SPY")
 
 
