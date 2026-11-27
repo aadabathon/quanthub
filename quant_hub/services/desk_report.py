@@ -82,6 +82,14 @@ the one decisions cite. A snapshot stored before a field was added (the
 market, D2b) re-serializes with that field's default, so hashing the
 loaded snapshot again would give another number.
 
+What-if
+-------
+``whatif`` sets the book as held beside the book after trades you're
+weighing (``models/weighing.py``, ``DeskService.whatif``): the trades at the
+snapshot's closes, both books, and every voice's claims on the book with
+the change. The two books share one fetch, so the change is the trade's
+alone.
+
 Changes
 -------
 ``changes`` sets two snapshots side by side: the book's value, cash, each
@@ -327,6 +335,59 @@ def view(v, now: datetime) -> dict:
 
 
 # ------------------------------------------------------------------ changes
+def claim_changes(old: Snapshot, new: Snapshot, book_only: bool = False) -> list[dict]:
+    """Every claim both snapshots' voices made (on the book only, with
+    ``book_only``), its old and new value and the change, in its unit; a
+    ``book.return`` quantile in dollars too, at each book's own value."""
+    ov_, nv_ = old.book.value, new.book.value
+    o_voices = {v.voice: v for v in old.voices}
+    rows = []
+    for nv in new.voices:
+        ov = o_voices.get(nv.voice)
+        if ov is None:
+            continue
+        o_claims = {c.key: c for c in ov.claims}
+        for c in nv.claims:
+            before = o_claims.get(c.key)
+            if before is None or before.kind != c.kind:
+                continue
+            if book_only and not c.target.startswith("book."):
+                continue
+            base = {"voice": nv.voice, "key": c.key, "target": c.target, "horizon": c.horizon,
+                    "unit": UNITS[c.target.rpartition(".")[2]]}
+            if c.quantiles:
+                for level, q0, q1 in zip(LEVELS, before.quantiles, c.quantiles):
+                    row = {**base, "level": level, "old": q0, "new": q1, "change": q1 - q0}
+                    if c.target == "book.return":
+                        row.update({"old_usd": ov_ * q0, "new_usd": nv_ * q1,
+                                    "change_usd": nv_ * q1 - ov_ * q0})
+                    rows.append(row)
+            else:
+                rows.append({**base, "event": c.event, "unit": UNITS["probability"],
+                             "old": before.probability, "new": c.probability,
+                             "change": c.probability - before.probability})
+    rows.sort(key=lambda r: (not r["target"].startswith("book."), r["target"], r["horizon"],
+                             r.get("level") or 0.0, r.get("event") or "", r["voice"]))
+    return rows
+
+
+def whatif(w, now: datetime) -> dict:
+    """``DeskService.whatif``'s ``WhatIf`` as data (``models/weighing.py``):
+    the trades at the snapshot's closes, both books, and every voice's
+    claims on the book, as held and after, with the change."""
+    trades = [{"symbol": s, "units": u, "price_usd": p, "usd": u * p}
+              for s, u, p in w.traded.trades]
+    return document(
+        "whatif", now, snapshot=ref(w.summary, w.stored), trades=trades,
+        to_cash_usd=w.traded.to_cash, before=book(w.held), after=book(w.after),
+        shorts=list(w.traded.shorts), margin=w.traded.margin,
+        reproduces=not w.differs, differs=list(w.differs), silent=list(w.silent),
+        claims=claim_changes(w.held, w.after, book_only=True),
+        headline=[headline(w.held), headline(w.after)],
+        assumes="each trade at the snapshot's close, no commission; no taxes; cash and "
+                "loans earn and cost nothing")
+
+
 def changes(old_summary: SnapshotSummary, old: Snapshot, new_summary: SnapshotSummary,
             new: Snapshot, regimes: tuple[str | None, str | None], now: datetime) -> dict:
     """Two snapshots side by side (module docstring)."""
@@ -348,31 +409,7 @@ def changes(old_summary: SnapshotSummary, old: Snapshot, new_summary: SnapshotSu
                   "change": nb.market_price / ob.market_price - 1}
     o_voices = {v.voice: v for v in old.voices}
     n_voices = {v.voice: v for v in new.voices}
-    rows = []
-    for name, nv in n_voices.items():
-        ov = o_voices.get(name)
-        if ov is None:
-            continue
-        o_claims = {c.key: c for c in ov.claims}
-        for c in nv.claims:
-            before = o_claims.get(c.key)
-            if before is None or before.kind != c.kind:
-                continue
-            base = {"voice": name, "key": c.key, "target": c.target, "horizon": c.horizon,
-                    "unit": UNITS[c.target.rpartition(".")[2]]}
-            if c.quantiles:
-                for level, q0, q1 in zip(LEVELS, before.quantiles, c.quantiles):
-                    row = {**base, "level": level, "old": q0, "new": q1, "change": q1 - q0}
-                    if c.target == "book.return":
-                        row.update({"old_usd": ob.value * q0, "new_usd": nb.value * q1,
-                                    "change_usd": nb.value * q1 - ob.value * q0})
-                    rows.append(row)
-            else:
-                rows.append({**base, "event": c.event, "unit": UNITS["probability"],
-                             "old": before.probability, "new": c.probability,
-                             "change": c.probability - before.probability})
-    rows.sort(key=lambda r: (not r["target"].startswith("book."), r["target"], r["horizon"],
-                             r.get("level") or 0.0, r.get("event") or "", r["voice"]))
+    rows = claim_changes(old, new)
     sessions = (len(trading_days(ob.as_of + timedelta(days=1), nb.as_of))
                 if nb.as_of > ob.as_of else 0)
     return document(
