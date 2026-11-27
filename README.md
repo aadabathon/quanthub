@@ -321,6 +321,18 @@ date,account,kind,symbol,quantity,price,commission,fees,amount,settle_date
   return (your choices) and money-weighted return (your dollars, timing
   included), beside the same deposits put into SPY. The Portfolio page
   can replay its history this way too.
+- **From a terminal or an agent:**
+
+  ```bash
+  py -3.12 -m quant_hub.trades import-activity Accounts_History.csv
+  py -3.12 -m quant_hub.trades import-positions Portfolio_Positions.csv
+  py -3.12 -m quant_hub.trades trips --since 2026-11-01   # and the trades since
+  py -3.12 -m quant_hub.trades timing                     # against luck
+  py -3.12 -m quant_hub.trades held                       # returns as held
+  ```
+
+  `--json` gives an agent the same numbers, every unit named. An export
+  imported before is refused, and nothing is stored.
 
 ## Portfolio
 

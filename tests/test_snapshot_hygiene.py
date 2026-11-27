@@ -51,6 +51,20 @@ def test_under_another_layout_it_says_what_a_second_copy_would_do(world):
     assert "trades that never happened" in str(error.value)
 
 
+def test_an_import_from_before_hashes_counts_by_name_and_day(world):
+    """Imports from before D74 kept no hash: the same name on the same day
+    is the same file. Another day under that name is a new export."""
+    portfolio, store, older, newer, tmp_path = world
+    _, snapshot = portfolio.import_positions(older)
+    store.save(snapshot)                                   # as before D74: no hash
+    store.delete(store.snapshots()[-1].id)                 # only the unhashed one left
+    with pytest.raises(DuplicateImportError):
+        portfolio.import_positions(older)
+    renamed = tmp_path / older.name
+    renamed.write_text(newer.read_text(encoding="utf-8"), encoding="utf-8")   # another day
+    assert portfolio.import_positions(renamed)[0]
+
+
 def test_several_files_hash_the_same_in_any_order(world):
     _, _, older, newer, _ = world
     assert files_hash([older, newer]) == files_hash([newer, older])

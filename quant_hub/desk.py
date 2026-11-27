@@ -104,8 +104,9 @@ def text_status(doc: dict) -> str:
                      f"claims ({s['sha256'][:12]})")
     if doc["book"]:
         b = doc["book"]
-        lines.append(f"book      {b['export']} of {b['export_day']}, history through "
-                     f"{b['history_through']} ({b['sessions_since_history']} sessions ago), "
+        lines.append(f"book      {b['export']} of {b['export_day']}, history to its last "
+                     f"trade {b['history_through']}, imported {b['history_imported'] or '-'}; "
+                     f"current to {b['current_to']} ({b['sessions_since']} sessions ago), "
                      f"cash from the {b['cash_from']}")
     if doc["history"]:
         h = doc["history"]
