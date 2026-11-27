@@ -118,12 +118,12 @@ class TestStatus:
         assert doc["last_session"] == "2026-11-20" and doc["snapshot"]["sessions_behind"] == 0
         assert doc["snapshot"]["sha256"] == desk.summaries()[0].sha256
         assert doc["backup"]["copies"] == 2 and doc["run"]["ok"]
+        # The history was imported (by the fixture) after MONDAY: the book is
+        # current to that import, not to its last trade.
         assert doc["book"]["history_through"] == "2026-11-13"
-        assert doc["book"]["sessions_since_history"] == 5
+        assert doc["book"]["sessions_since"] == 0
         assert doc["notes"] == [
             "not priced in #1: AAA261218P30 (an option)",
-            "the book's units are as of 2026-11-13, 5 sessions ago: trades since aren't in it "
-            "until their exports are imported",
             "the history doesn't reconcile with the exports (the Trades page says where); the "
             "book's units are the newest export's, rolled forward"]
         assert doc["history"] == {"first_day": "2026-11-12", "last_day": "2026-11-13",
@@ -143,6 +143,34 @@ class TestStatus:
             "no daily run since 2026-11-23 07:00, before the 2026-11-24 session",
             "a voice couldn't speak: tail: French's market history isn't stored",
             "snapshot #1 is as of 2026-11-20, 2 sessions behind the last (2026-11-24)"]
+
+    def test_an_old_book_is_a_note(self, parts, tmp_path, monkeypatch):
+        """With no history import, the book is current to its export's day."""
+        activity = parts[0]
+        desk = service(parts, ENDS)
+        desk.take("test", NOW)
+        desk.record_run(run(datetime(2026, 11, 23, 7, 0)))
+        monkeypatch.setattr(activity, "imports", lambda: [])
+        doc = plain(report.status(desk, activity, backups(tmp_path), MONDAY))
+        assert doc["ok"] and doc["book"]["current_to"] == "2026-11-10"
+        assert doc["book"]["sessions_since"] == 8
+        assert ("the book is current to 2026-11-10 (the newest export or history import), 8 "
+                "sessions ago: trades since aren't in it until their exports are imported"
+                in doc["notes"])
+
+    def test_only_a_files_first_import_dates_the_book(self, parts, tmp_path, monkeypatch):
+        """Importing an old download again doesn't make the book newer."""
+        from types import SimpleNamespace as NS
+        activity = parts[0]
+        desk = service(parts, ENDS)
+        desk.take("test", NOW)
+        imports = [NS(sha256="old", imported_at=datetime(2026, 11, 23, 9)),    # newest first
+                   NS(sha256="new", imported_at=datetime(2026, 11, 18, 9)),
+                   NS(sha256="old", imported_at=datetime(2026, 11, 16, 9))]
+        monkeypatch.setattr(activity, "imports", lambda: imports)
+        doc = plain(report.status(desk, activity, backups(tmp_path), MONDAY))
+        assert doc["book"]["history_imported"] == "2026-11-18"
+        assert doc["book"]["sessions_since"] == 2
 
     def test_a_trade_since_the_snapshot_is_a_note(self, parts, tmp_path):
         activity, _, folder = parts

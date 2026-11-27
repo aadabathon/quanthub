@@ -56,10 +56,15 @@ Status
 * **Voices that couldn't speak** in the last run: each is a gap in that
   voice's record.
 * **The book:** the export it starts from, the history it's rolled forward
-  through, and how many sessions ago that was (a note when any: trades
-  since aren't in the book until their exports are imported), and any
-  holding whose units changed since the snapshot (a note: the next run
-  prices it).
+  through, and when the newest of them was imported. A history download
+  covers every trade up to the day it was made, so the book is current to
+  the later of the export's day and the newest activity import, not to its
+  last trade. Only a file's first import counts: importing an old download
+  again doesn't make the book any newer. How many sessions ago that was is
+  a note when any: trades
+  since aren't in the book until their exports are imported. A holding
+  whose units changed since the snapshot is a note too: the next run
+  prices it.
 * **The history** against the exports: a note when it doesn't reconcile.
   The book's units come from the newest export and the trades after it
   either way; its cash comes from the history only when the cash
@@ -141,10 +146,12 @@ def _rounded(obj):
     return obj
 
 
-def document(kind: str, now: datetime, **fields) -> dict:
-    """The envelope every report shares, its numbers rounded."""
+def document(kind: str, now: datetime, glossary: Mapping[str, str] = UNITS,
+             **fields) -> dict:
+    """The envelope every report shares (the trades' too, with their own
+    ``glossary``), its numbers rounded."""
     return {"schema": SCHEMA, "kind": kind, "now": now.replace(microsecond=0).isoformat(),
-            "units": UNITS, **_rounded(fields)}
+            "units": dict(glossary), **_rounded(fields)}
 
 
 # ------------------------------------------------------------------ pieces
@@ -505,14 +512,20 @@ def status(desk, activity, backup_folder: Path | None, now: datetime) -> dict:
                     notes.append(f"the book has changed since snapshot #{summaries[0].id} "
                                  f"({', '.join(c['symbol'] for c in changed)}); the next run "
                                  "prices it")
-            age = sessions_behind(held.through, today)
+            first_seen: dict[str, datetime] = {}      # each file's first import
+            for s in sorted(activity.imports(), key=lambda s: s.imported_at):
+                first_seen.setdefault(s.sha256, s.imported_at)
+            imported = max(first_seen.values()).date() if first_seen else None
+            current_to = max(d for d in (held.base_day, imported) if d is not None)
+            age = sessions_behind(current_to, today)
             if age:
-                notes.append(f"the book's units are as of {held.through}, {age} session"
-                             f"{'s' if age > 1 else ''} ago: trades since aren't in it until "
-                             "their exports are imported")
+                notes.append(f"the book is current to {current_to} (the newest export or "
+                             f"history import), {age} session{'s' if age > 1 else ''} ago: "
+                             "trades since aren't in it until their exports are imported")
             book_out = {"export": held.base, "export_day": held.base_day.isoformat(),
                         "history_through": held.through.isoformat(),
-                        "sessions_since_history": age, "cash_from": held.cash_from,
+                        "history_imported": _day(imported), "current_to": current_to.isoformat(),
+                        "sessions_since": age, "cash_from": held.cash_from,
                         "changed_since_snapshot": changed}
         try:
             rec = activity.reconcile()

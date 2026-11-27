@@ -232,11 +232,15 @@ class PortfolioService:
         anything is stored, naming the earlier import, unless
         ``allow_duplicate``. The same export kept twice, worst of all under
         two layouts, looked like a trade that never happened
-        (ALLOCATION finding 5)."""
+        (ALLOCATION finding 5). An import from before the hash was kept
+        (D74) has none, so there the same file name on the same day counts
+        as the same file (A4)."""
         files = [Path(p) for p in ([paths] if isinstance(paths, (str, Path)) else paths)]
         snapshot = read_positions_files(files)
         digest = files_hash(files)
-        earlier = self._store.with_hash(digest)
+        earlier = self._store.with_hash(digest) or [
+            s for s in self._store.snapshots()
+            if not s.sha256 and s.name == snapshot.name and s.as_of == snapshot.as_of]
         if earlier and not allow_duplicate:
             stored = self._store.snapshots()
             raise DuplicateImportError(snapshot, earlier, stored[0].id if stored else None)

@@ -330,6 +330,7 @@ trades.
 - `snapshot.py` — `python -m quant_hub.snapshot`: resolves what's due, takes the day's snapshot, then copies the store (`storage/backup.py`), each step going ahead when an earlier one fails; then records the run; for a scheduled daily run (D96, D104, D108, D109)
 - `decide.py` — `python -m quant_hub.decide`: records a decision, its trades, reasoning and claims, on the newest snapshot, from flags or an agent's JSON; `--list`, with `--json` for an agent (D108, D109)
 - `desk.py` — `python -m quant_hub.desk status / view / changes / record`, text or `--json`; only reads (D109)
+- `trades.py` — `python -m quant_hub.trades import-activity / import-positions / trips / timing / held`, text or `--json` (`services/trades_report.py`); the imports only append (D110)
 - `storage/backup.py` — the store copied with SQLite's online backup to dated files, the newest `[backup] keep` kept (D108)
 
 ### Your trades
