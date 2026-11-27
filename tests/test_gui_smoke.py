@@ -423,6 +423,23 @@ def test_a_window_saved_off_screen_comes_back_on_one(tmp_path):
 
 # ---------------------------------------------------------- card grids (D56)
 
+def _cards_fit(page) -> bool:
+    """Every visible grid's shown cards: none overlapping, none smaller than
+    its content."""
+    from quant_hub.gui.components import CardGrid
+    grids = [g for g in page.findChildren(CardGrid) if g.isVisible()]
+    for grid in grids:
+        names = [n for n in grid._order if grid.shown_place(n) is not None]
+        places = [grid.shown_place(n) for n in names]
+        if any(a.overlaps(b) for i, a in enumerate(places) for b in places[i + 1:]):
+            return False
+        for card_name in names:
+            card, hint = grid._cards[card_name], grid._cards[card_name].minimumSizeHint()
+            if card.width() < hint.width() or card.height() < hint.height():
+                return False
+    return bool(grids)
+
+
 def test_every_page_lays_its_cards_on_a_grid(qt_app):
     # Every module's cards can be dragged and resized: each sits on a grid,
     # none overlaps another, and none is smaller than its content.
@@ -431,6 +448,15 @@ def test_every_page_lays_its_cards_on_a_grid(qt_app):
     for name in list(window._factories):
         page = window.show_page(name)
         _settle(app)
+        # A page's own load (the Trades page's history, say) can land on any
+        # pass of the event loop and grow a card; the grid re-lays itself out
+        # on the next pass. So wait for it to settle, then check, so a slow
+        # machine doesn't catch it in between. A real overflow never settles,
+        # and the checks below name the card.
+        try:
+            wait_for(app, lambda: _cards_fit(page), timeout_s=10.0)
+        except AssertionError:
+            pass
         grids = [g for g in page.findChildren(CardGrid) if g.isVisible()]
         assert grids, name
         for grid in grids:
