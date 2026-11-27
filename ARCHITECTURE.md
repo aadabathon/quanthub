@@ -329,7 +329,8 @@ trades.
 - `gui/pages/desk.py` — the Desk page: the voices' bands in dollars, where they disagree, what each would do and its effect under every voice's law, each voice's record, the snapshot and its book, each voice's reasoning and papers (D101, D105)
 - `snapshot.py` — `python -m quant_hub.snapshot`: resolves what's due, takes the day's snapshot, then copies the store (`storage/backup.py`), each step going ahead when an earlier one fails; then records the run; for a scheduled daily run (D96, D104, D108, D109)
 - `decide.py` — `python -m quant_hub.decide`: records a decision, its trades, reasoning and claims, on the newest snapshot, from flags or an agent's JSON; `--list`, with `--json` for an agent (D108, D109)
-- `desk.py` — `python -m quant_hub.desk status / view / changes / record`, text or `--json`; only reads (D109)
+- `desk.py` — `python -m quant_hub.desk status / view / changes / record / whatif`, text or `--json`; only reads (D109, D111)
+- `models/weighing.py` — a trade weighed on the desk: the book after it at the snapshot's close (value unchanged, cash the other side), shorts and margin flagged (D111). `DeskService.whatif` runs every voice on both books from the returns `take` built (D111)
 - `trades.py` — `python -m quant_hub.trades import-activity / import-positions / trips / timing / held`, text or `--json` (`services/trades_report.py`); the imports only append (D110)
 - `storage/backup.py` — the store copied with SQLite's online backup to dated files, the newest `[backup] keep` kept (D108)
 

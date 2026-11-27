@@ -291,6 +291,9 @@ The Desk page reads the stored snapshots; nothing on it changes one.
 
   `status` checks the last daily run, the snapshot's age, the book's
   export and history, and the backup, and exits 1 when something's wrong.
+  `whatif --trade "MSFT -5"` (or `"MSFT -$500"`, repeatable) shows every
+  voice's claims on the book after trades you're weighing, beside the book
+  as held, at the snapshot's closes. Nothing is stored.
   Add `--json` to any of them, or to `decide --list`, for an agent: the
   same numbers, every unit named, so it reads what the desk computed
   rather than computing its own.

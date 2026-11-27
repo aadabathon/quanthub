@@ -51,6 +51,14 @@ author's name.
 side by side in dollars (``models/comparison.py``), each holding's band,
 and each voice's papers from the canon (``PAPERS``).
 
+``whatif`` weighs trades on a stored snapshot (A3, ``models/weighing.py``):
+the book after them at that day's closes, and every voice on both books
+from the same data. The held book's data is rebuilt exactly as ``take``
+built it (the same window, source and columns; a name not held is joined
+the way the market is), so when nothing has moved since, the voices on the
+held book reproduce the stored claims, and ``WhatIf.differs`` names any
+that don't. Nothing is stored.
+
 ``record_run`` stores what one daily run did (``data/desk.Run``, A1), and
 ``runs`` lists them, so a reader (``python -m quant_hub.desk status``) can
 tell a quiet desk from a broken one. ``summaries`` and ``snapshot`` read
@@ -91,6 +99,7 @@ from quant_hub.models import tail as tail_model
 from quant_hub.models import voices as voice_models
 from quant_hub.models.baseline import WINDOW, baseline
 from quant_hub.models import scoring
+from quant_hub.models import weighing
 from quant_hub.models.comparison import Comparison, compare, holding_bands
 from quant_hub.models.voices import bootstrap, garch, regimes
 from quant_hub.data.trading_calendar import trading_days
@@ -190,6 +199,23 @@ class DeskView:
     record: DeskRecord | None = None                # every voice's record (D4b)
     regime: str | None = None                       # this snapshot's label
     decisions: tuple = ()                           # (Decision, its snapshot), newest first
+
+
+@dataclass(frozen=True)
+class WhatIf:
+    """Trades weighed on a stored snapshot (module docstring): the voices on
+    the book as held and on the book after, each as a snapshot that isn't
+    stored. ``differs`` names the voices whose claims on the held book
+    aren't the stored ones (data or a version moved since); ``silent`` the
+    voices that couldn't speak on the book after."""
+
+    summary: SnapshotSummary
+    stored: Snapshot
+    traded: weighing.Traded
+    held: Snapshot
+    after: Snapshot
+    differs: tuple[str, ...]
+    silent: tuple[str, ...]
 
 
 class DeskService:
@@ -324,6 +350,93 @@ class DeskService:
         """One stored snapshot, the newest unless named (``DeskStoreError``
         when there's none)."""
         return self._store.load(snapshot_id)
+
+    def whatif(self, moves: Sequence[weighing.Move],
+               snapshot_id: int | None = None) -> WhatIf:
+        """Weigh ``moves`` on a stored snapshot, the newest unless named
+        (module docstring). A ValueError says what can't be weighed."""
+        summaries = self._store.snapshots()
+        if not summaries:
+            raise ValueError("no snapshot to weigh trades on yet: take one first")
+        summary = (summaries[0] if snapshot_id is None else
+                   next((s for s in summaries if s.id == snapshot_id), None))
+        if summary is None:
+            raise ValueError(f"no snapshot #{snapshot_id}")
+        stored = self._store.load(summary.id)
+        book = stored.book
+        held = {h.symbol for h in book.holdings}
+        new = sorted({m.symbol for m in moves} - held)
+        returns, prices = self._returns_as_taken(stored, new)
+        traded = weighing.apply(book, moves, prices)
+        after_names = [h.symbol for h in traded.book.holdings]
+        held_names = [h.symbol for h in book.holdings]
+        market = [MARKET] if book.market and MARKET in returns.columns else []
+        held_returns = returns[[*held_names, *(c for c in market if c not in held_names)]
+                               ].dropna(subset=held_names)
+        after_returns = returns[[*after_names, *(c for c in market if c not in after_names)]
+                                ].dropna(subset=after_names)
+        if len(after_returns) < WINDOW:
+            raise ValueError(f"the book after has fewer than {WINDOW} sessions in common")
+        on_held, _ = self._speak(book, held_returns)
+        on_after, silent = self._speak(traded.book, after_returns)
+        was = {v.voice: v for v in stored.voices}
+        differs = tuple(v.voice for v in on_held
+                        if v.voice not in was or was[v.voice].claims != v.claims)
+        now = stored.taken_at
+        return WhatIf(summary, stored, traded,
+                      Snapshot(now, stored.as_of, stored.source, __version__, book, on_held),
+                      Snapshot(now, stored.as_of, stored.source, __version__, traded.book,
+                               on_after), differs, tuple(silent))
+
+    def _speak(self, book: Book, returns: pd.DataFrame) -> tuple[tuple[VoiceOutput, ...],
+                                                                  list[str]]:
+        spoken, silent = [], []
+        for voice in self._voices:
+            name = getattr(voice, "__name__", str(voice))
+            try:
+                spoken.append(voice(book, returns))
+            except ValueError as exc:
+                silent.append(f"{name}: {exc}")
+        return tuple(spoken), silent
+
+    def _returns_as_taken(self, snap: Snapshot,
+                          new: Sequence[str]) -> tuple[pd.DataFrame, dict[str, float]]:
+        """The daily log returns ``take`` gave the voices for ``snap`` (the
+        same window and source, ``book``'s construction), with each name in
+        ``new`` joined as the market is; and each new name's close on
+        ``as_of``."""
+        start = snap.taken_at - timedelta(days=LOOKBACK_DAYS)
+        end, as_of = snap.taken_at, pd.Timestamp(snap.as_of)
+        # Every name take priced, and those it read but left out for too
+        # little history: they shaped the frame's dates too.
+        short = [u.split(" ")[0] for u in snap.book.unpriced
+                 if "sessions of closes" in u]
+        closes = {}
+        for symbol in sorted({h.symbol for h in snap.book.holdings} | set(short)):
+            closes[symbol] = self._market.get_return_history(
+                symbol, start, end, snap.source).frame["close"].astype(float)
+        frame = pd.DataFrame(closes).loc[:as_of]
+        returns = np.log(frame).diff().iloc[1:]
+        joined = [s for s in new if s not in returns.columns]
+        if snap.book.market and MARKET not in returns.columns and MARKET not in joined:
+            joined.append(MARKET)
+        prices = {}
+        for symbol in joined:
+            try:
+                series = self._market.get_return_history(
+                    symbol, start, end, snap.source).frame["close"].astype(float).loc[:as_of]
+            except Exception as exc:     # any source failure: that name can't be weighed
+                raise ValueError(f"{symbol} couldn't be priced from {snap.source}: {exc}") \
+                    from None
+            if series.empty or series.index.max() != as_of:
+                raise ValueError(f"{symbol} has no close on {snap.as_of} to trade it at")
+            prices[symbol] = float(series.iloc[-1])
+            returns = returns.join(np.log(series).diff().rename(symbol), how="left")
+            if symbol in new and returns[symbol].iloc[-WINDOW:].notna().sum() < WINDOW:
+                raise ValueError(f"{symbol} has fewer than {WINDOW} sessions of closes")
+        if MARKET in new and MARKET not in prices and snap.book.market_price:
+            prices[MARKET] = snap.book.market_price
+        return returns, prices
 
     def regime(self, snapshot: Snapshot) -> str | None:
         """The market's regime at ``snapshot``: calm, middling or stormy;

@@ -4,6 +4,8 @@
     python -m quant_hub.desk view     [--snapshot N] [--json]
     python -m quant_hub.desk changes  [--since N | --since YYYY-MM-DD] [--json]
     python -m quant_hub.desk record   [--scored] [--json]
+    python -m quant_hub.desk whatif   --trade "SYM +units" [--trade "SYM -$500" ...]
+                                      [--snapshot N] [--json]
 
 * ``status``: whether the desk is current: the last daily run, the newest
   snapshot's age, the book's export and history, the backup, the record.
@@ -15,6 +17,9 @@
   or the newest on or before a date; a week back gives the week).
 * ``record``: every author's record, the voices', yours and an agent's,
   overall and by regime; ``--scored`` adds every scored claim.
+* ``whatif``: the trades you're weighing, at the snapshot's closes, and
+  every voice's claims on the book after them beside the book as held, in
+  dollars (``models/weighing.py``). Nothing is stored.
 
 Text is for reading; ``--json`` is for an agent, every unit named
 (``services/desk_report.py``). Everything here only reads: nothing is
@@ -31,6 +36,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 from quant_hub.core import build_core
+from quant_hub.models.weighing import parse_move
 from quant_hub.services import desk_report as report
 from quant_hub.storage.desk_store import DeskStoreError
 
@@ -200,6 +206,32 @@ def text_record(doc: dict) -> str:
     return "\n".join(lines)
 
 
+def text_whatif(doc: dict) -> str:
+    s, b, a = doc["snapshot"], doc["before"], doc["after"]
+    lines = [f"what-if on snapshot #{s['id']} as of {s['as_of']} ({s['sha256'][:12]}), "
+             "at that day's closes"]
+    for t in doc["trades"]:
+        lines.append(f"  {'buy' if t['units'] > 0 else 'sell'} {abs(t['units']):,.2f} "
+                     f"{t['symbol']} @ {t['price_usd']:,.2f} = {_usd(t['usd'], True)}")
+    beta = (f"; beta {b['beta']:.2f} -> {a['beta']:.2f}"
+            if b["beta"] is not None and a["beta"] is not None else "")
+    lines.append(f"book {_usd(a['value_usd'])} either way; cash {_usd(b['cash_usd'])} -> "
+                 f"{_usd(a['cash_usd'])} ({_pct(b['cash_weight'])} -> "
+                 f"{_pct(a['cash_weight'])}){beta}")
+    if doc["shorts"]:
+        lines.append(f"  ! short after: {', '.join(doc['shorts'])}")
+    if doc["margin"]:
+        lines.append("  ! cash below zero: a loan, and its interest isn't in the claims")
+    voices = list(doc["headline"][1][0]["values"]) if doc["headline"][1] else []
+    lines += _table(doc["headline"][1], voices, doc["headline"][0])
+    lines.append("  (after, and the change from the book as held)")
+    if not doc["reproduces"]:
+        lines.append(f"  the book as held, re-run, differs from #{s['id']}'s claims for "
+                     f"{', '.join(doc['differs'])}: data or a version has moved since")
+    lines += [f"  silent on the book after: {v}" for v in doc["silent"]]
+    return "\n".join(lines)
+
+
 # ------------------------------------------------------------------ main
 def _since(desk, since: str | None, newest_id: int) -> int:
     """The earlier snapshot's id: the one before the newest, a number, or the
@@ -225,11 +257,15 @@ def main(argv: list[str] | None = None) -> int:
     for name, text in (("status", "whether the desk is current"),
                        ("view", "a snapshot, as the Desk page shows it"),
                        ("changes", "the newest snapshot against an earlier one"),
-                       ("record", "every author's record")):
+                       ("record", "every author's record"),
+                       ("whatif", "the voices on the book after trades you're weighing")):
         sub = commands.add_parser(name, help=text)
         sub.add_argument("--json", action="store_true", help="JSON for an agent")
-        if name == "view":
+        if name in ("view", "whatif"):
             sub.add_argument("--snapshot", type=int, help="its number (default: the newest)")
+        if name == "whatif":
+            sub.add_argument("--trade", action="append", required=True,
+                             help='a trade, e.g. "MSFT +5" or "MSFT -$500"; repeatable')
         if name == "changes":
             sub.add_argument("--since", help="a snapshot's number, or a date (YYYY-MM-DD)")
         if name == "record":
@@ -263,6 +299,9 @@ def main(argv: list[str] | None = None) -> int:
             doc = report.changes(summaries[old_id], old, summaries[newest], new,
                                  (desk.regime(old), desk.regime(new)), now)
             render = text_changes
+        elif args.command == "whatif":
+            moves = [parse_move(t) for t in args.trade]
+            doc, render = report.whatif(desk.whatif(moves, args.snapshot), now), text_whatif
         else:
             doc, render = report.record(desk.record(), now, args.scored), text_record
         print(json.dumps(doc, indent=1, allow_nan=False) if args.json else render(doc))

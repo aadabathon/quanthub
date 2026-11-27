@@ -19,6 +19,7 @@ NOT_FROM_A_PAPER = {
     "optimize.py": "a numerical minimizer, Nelder–Mead",
     "research_worlds.py": "synthetic controls with planted edges",
     "stress.py": "a constant-β replay of stored history: daily accounting (A2)",
+    "weighing.py": "a trade applied to the desk's book at the close: bookkeeping (A3)",
 }
 
 
