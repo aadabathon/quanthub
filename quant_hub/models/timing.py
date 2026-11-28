@@ -31,7 +31,7 @@ is left out of (a), named.
 (b) Which day you chose: the window rank
 ----------------------------------------
 For a **decision** on day d (a day's fills of one symbol on one side merged
-at their volume-weighted price, TRADES_PLAN decision 6), count the
+at their volume-weighted price), count the
 **better days** W among the h closes on each side: closes below
 :math:`C_d` for a buy, above it for a sell; a tie counts ½. W = 0 means the
 best close in the window.

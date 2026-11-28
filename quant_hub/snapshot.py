@@ -22,7 +22,8 @@ what it resolved, the backup, what failed and what was left out. That's
 how ``python -m quant_hub.desk status`` knows whether last night's run
 worked. It exits 1 when anything failed, so the scheduler shows it too.
 
-Meant for a daily scheduled run after the close, so every voice's record
+Meant for a daily scheduled run (before the open: Massive's free plan
+serves a day's bar the next morning), so every voice's record
 starts accruing whether or not the app is open. Nothing here trades.
 """
 

@@ -59,6 +59,10 @@ the way the market is), so when nothing has moved since, the voices on the
 held book reproduce the stored claims, and ``WhatIf.differs`` names any
 that don't. Nothing is stored.
 
+``scorecard`` (A5) sets each decision author, you or an agent, head to
+head with every other author on the claims they share (``models/scoring.py``
+section 8), overall and by regime, beside the record.
+
 ``record_run`` stores what one daily run did (``data/desk.Run``, A1), and
 ``runs`` lists them, so a reader (``python -m quant_hub.desk status``) can
 tell a quiet desk from a broken one. ``summaries`` and ``snapshot`` read
@@ -181,6 +185,17 @@ class DeskRecord:
     resolved: int = 0                      # outcomes stored as resolved
     unresolvable: int = 0                  # outcomes that can't be known
     next_due: date | None = None           # the first claim still waiting on its day
+
+
+@dataclass(frozen=True)
+class DeskScorecard:
+    """The record, and each decision author head to head with every other
+    author (module docstring)."""
+
+    record: DeskRecord
+    judges: tuple[str, ...]                          # the decisions' authors
+    duels: tuple[scoring.Duel, ...]
+    by_regime: Mapping[str, tuple[scoring.Duel, ...]]
 
 
 @dataclass(frozen=True)
@@ -629,6 +644,21 @@ class DeskService:
                            if r in regimes},
                           tuple(scoring.calibration(scored)), cutoffs, resolved,
                           unresolvable, next_due)
+
+    def scorecard(self) -> DeskScorecard:
+        """Each decision author head to head with every other author, on
+        the record's scored claims (module docstring)."""
+        record = self.record()
+        scored = record.scored
+        judges = tuple(sorted({s.voice for s in scored if s.version == "decision"}))
+        authors = sorted({s.voice for s in scored})
+
+        def duels(regime: str | None) -> tuple[scoring.Duel, ...]:
+            return tuple(d for judge in judges for other in authors if other != judge
+                         for d in scoring.head_to_head(scored, judge, other, regime))
+        regimes = {s.regime for s in scored if s.regime is not None}
+        return DeskScorecard(record, judges, duels(None),
+                             {r: duels(r) for r in scoring.REGIMES if r in regimes})
 
     def _cutoffs(self) -> tuple[float, float] | None:
         """The regimes' terciles from French's century, when it's stored."""

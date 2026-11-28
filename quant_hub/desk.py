@@ -4,6 +4,7 @@
     python -m quant_hub.desk view     [--snapshot N] [--json]
     python -m quant_hub.desk changes  [--since N | --since YYYY-MM-DD] [--json]
     python -m quant_hub.desk record   [--scored] [--json]
+    python -m quant_hub.desk scorecard [--json]
     python -m quant_hub.desk whatif   --trade "SYM +units" [--trade "SYM -$500" ...]
                                       [--snapshot N] [--json]
 
@@ -17,6 +18,9 @@
   or the newest on or before a date; a week back gives the week).
 * ``record``: every author's record, the voices', yours and an agent's,
   overall and by regime; ``--scored`` adds every scored claim.
+* ``scorecard``: you and an agent, each against the baseline and head to
+  head with every voice and each other, on the claims you share, overall
+  and by regime (``models/scoring.py`` section 8).
 * ``whatif``: the trades you're weighing, at the snapshot's closes, and
   every voice's claims on the book after them beside the book as held, in
   dollars (``models/weighing.py``). Nothing is stored.
@@ -206,6 +210,32 @@ def text_record(doc: dict) -> str:
     return "\n".join(lines)
 
 
+def text_scorecard(doc: dict) -> str:
+    lines = [f"scorecard: {doc['resolved']} resolved, {doc['unresolvable']} unresolvable"
+             + (f"; next due {doc['next_due']}" if doc["next_due"] else "")]
+    if not doc["judges"]:
+        lines.append("  no decision scored yet: yours and the agent's claims appear here "
+                     "once they resolve")
+        return "\n".join(lines)
+
+    def p(test: dict | None) -> str:
+        return f"p {test['p']:.2f}" if test and test.get("p") is not None else "p -"
+    for judge in doc["judges"]:
+        lines.append(f"{judge}:")
+        for s in (s for s in doc["against_baseline"] if s["author"] == judge):
+            skill = f"{s['skill']:+.1%}" if s["skill"] is not None else "-"
+            lines.append(f"  {s['target']}@{s['horizon']} {s['form']}: vs baseline {skill} "
+                         f"on {s['paired']} ({p(s['test'])})")
+            for d in (d for d in doc["head_to_head"] if d["author"] == judge
+                      and (d["target"], d["horizon"], d["form"])
+                      == (s["target"], s["horizon"], s["form"])
+                      and d["against"] != "baseline"):
+                dskill = f"{d['skill']:+.1%}" if d["skill"] is not None else "-"
+                lines.append(f"      vs {d['against']:<10} {dskill} on {d['paired']}, "
+                             f"wins {d['wins']}/{d['paired']} ({p(d['test'])})")
+    return "\n".join(lines)
+
+
 def text_whatif(doc: dict) -> str:
     s, b, a = doc["snapshot"], doc["before"], doc["after"]
     lines = [f"what-if on snapshot #{s['id']} as of {s['as_of']} ({s['sha256'][:12]}), "
@@ -258,6 +288,7 @@ def main(argv: list[str] | None = None) -> int:
                        ("view", "a snapshot, as the Desk page shows it"),
                        ("changes", "the newest snapshot against an earlier one"),
                        ("record", "every author's record"),
+                       ("scorecard", "you and the agent against every voice"),
                        ("whatif", "the voices on the book after trades you're weighing")):
         sub = commands.add_parser(name, help=text)
         sub.add_argument("--json", action="store_true", help="JSON for an agent")
@@ -299,6 +330,8 @@ def main(argv: list[str] | None = None) -> int:
             doc = report.changes(summaries[old_id], old, summaries[newest], new,
                                  (desk.regime(old), desk.regime(new)), now)
             render = text_changes
+        elif args.command == "scorecard":
+            doc, render = report.scorecard(desk.scorecard(), now), text_scorecard
         elif args.command == "whatif":
             moves = [parse_move(t) for t in args.trade]
             doc, render = report.whatif(desk.whatif(moves, args.snapshot), now), text_whatif

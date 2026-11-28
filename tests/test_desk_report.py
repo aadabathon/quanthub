@@ -11,7 +11,7 @@ from quant_hub.services import desk_report as report
 from quant_hub.services.desk import DeskRecord, DeskService
 from quant_hub.services.market_service import MarketService
 from quant_hub.storage.desk_store import DeskStore
-from test_desk_service import NOW, Bars, parts, service  # noqa: F401  (parts is a fixture)
+from desk_fixtures import NOW, Bars, service
 
 MONDAY = datetime(2026, 11, 23, 7, 45)          # the snapshot below is as of Friday 11-20
 ENDS = {"AAA": "2026-11-20", "BBB": "2026-11-20"}

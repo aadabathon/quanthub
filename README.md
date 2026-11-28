@@ -98,9 +98,10 @@ and its price basis in Research.
 
 **The desk runs best daily.** `py -3.12 -m quant_hub.snapshot` scores
 what's due, takes the day's snapshot and copies the store to a dated
-backup, with no window. Schedule it after the close (Windows Task
-Scheduler works), and each voice's record grows whether or not the app is
-open. Each run records what it did, so `py -3.12 -m quant_hub.desk status`
+backup, with no window. Schedule it once a day (Windows Task Scheduler
+works), and each voice's record grows whether or not the app is open. Before
+the open is a good time: Massive's free plan serves a day's bar the next
+morning, so a run after the close prices the day before. Each run records what it did, so `py -3.12 -m quant_hub.desk status`
 can tell you whether last night's run worked.
 
 **Brokerage support is optional.** Install it with
@@ -293,7 +294,9 @@ The Desk page reads the stored snapshots; nothing on it changes one.
   export and history, and the backup, and exits 1 when something's wrong.
   `whatif --trade "MSFT -5"` (or `"MSFT -$500"`, repeatable) shows every
   voice's claims on the book after trades you're weighing, beside the book
-  as held, at the snapshot's closes. Nothing is stored.
+  as held, at the snapshot's closes. Nothing is stored. `scorecard` sets
+  you, and an agent recording decisions, against the baseline and head to
+  head with every voice and each other, on only the claims you share.
   Add `--json` to any of them, or to `decide --list`, for an agent: the
   same numbers, every unit named, so it reads what the desk computed
   rather than computing its own.

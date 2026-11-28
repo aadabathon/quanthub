@@ -8,7 +8,7 @@ import pytest
 from quant_hub.services.market_service import MarketService
 from quant_hub.services.portfolio import PortfolioService
 from book_fixtures import export
-from test_desk_service import Bars, parts  # noqa: F401  (parts is a fixture)
+from desk_fixtures import Bars
 
 HEADER = "date,account,kind,symbol,quantity,price,commission,fees,amount\n"
 
