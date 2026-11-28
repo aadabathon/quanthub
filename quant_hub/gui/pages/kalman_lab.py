@@ -40,11 +40,10 @@ import pandas as pd
 from PySide6.QtWidgets import QStackedWidget, QWidget
 
 from quant_hub.data.stats import TRADING_DAYS_PER_YEAR
-from quant_hub.tasks import TaskRunner
 from quant_hub.gui.charts import Band, Histogram, Panel, Series, StackedTimeSeries
 from quant_hub.gui.components import (
-    CardGrid,
     Card,
+    CardGrid,
     EmptyState,
     Field,
     Note,
@@ -55,7 +54,13 @@ from quant_hub.gui.components import (
     button,
     form_grid,
 )
-from quant_hub.gui.pages.base import saved_grid, PRICE_BASES, ScrollPage, basis_field, history_note
+from quant_hub.gui.pages.base import (
+    PRICE_BASES,
+    ScrollPage,
+    basis_field,
+    history_note,
+    saved_grid,
+)
 from quant_hub.gui.theme import PALETTE, SIDE_PANEL_WIDTH, SPACE_L, SPACE_M
 from quant_hub.models.kalman import (
     LocalLevel,
@@ -72,6 +77,7 @@ from quant_hub.models.kalman import (
 )
 from quant_hub.services.market_service import MarketService
 from quant_hub.storage.state_store import ViewStateStore
+from quant_hub.tasks import TaskRunner
 
 _logger = logging.getLogger(__name__)
 

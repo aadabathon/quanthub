@@ -13,14 +13,19 @@ from __future__ import annotations
 from collections.abc import Callable
 
 import numpy as np
-from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QStackedWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QHBoxLayout,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
+)
 
-from quant_hub.tasks import TaskRunner
 from quant_hub.gui.charts import Curve, CurveChart, Histogram, Series
 from quant_hub.gui.components import (
-    CardGrid,
     Badge,
     Card,
+    CardGrid,
     EmptyState,
     Field,
     SegmentedControl,
@@ -31,6 +36,7 @@ from quant_hub.gui.components import (
 from quant_hub.gui.theme import PALETTE, SIDE_PANEL_WIDTH, SPACE_L, SPACE_S
 from quant_hub.models.black_scholes import BlackScholesInputs
 from quant_hub.models.option_monte_carlo import MonteCarloPricing, monte_carlo_price
+from quant_hub.tasks import TaskRunner
 
 Reporter = Callable[[str, bool], None]
 _PATHS = {"10K": 10_000, "100K": 100_000, "1M": 1_000_000}

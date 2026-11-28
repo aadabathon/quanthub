@@ -13,17 +13,24 @@ from __future__ import annotations
 import logging
 import sys
 
-import quant_hub.gui  # noqa: F401  (pins qtpy to PySide6 before qtawesome loads)
 from PySide6.QtWidgets import QApplication
 
+import quant_hub.gui  # noqa: F401  (pins qtpy to PySide6 before qtawesome loads)
 from quant_hub import __version__
 from quant_hub.config import AppConfig
 from quant_hub.core import Core, build_core
-from quant_hub.extensions import (extensions_wanted, load_extensions, merge_book,
-                                  merge_commands, merge_pages, shut_down)
+from quant_hub.extensions import (
+    extensions_wanted,
+    load_extensions,
+    merge_book,
+    merge_commands,
+    merge_pages,
+    shut_down,
+)
 from quant_hub.gui.app_icon import APP_USER_MODEL_ID, app_icon
 from quant_hub.gui.main_window import MainWindow, PageSections
 from quant_hub.gui.pages.dashboard import DashboardPage
+from quant_hub.gui.pages.data import DataPage
 from quant_hub.gui.pages.desk import DeskPage
 from quant_hub.gui.pages.garch_lab import GARCHLabPage
 from quant_hub.gui.pages.hedge_lab import HedgeLabPage
@@ -31,14 +38,13 @@ from quant_hub.gui.pages.kalman_lab import KalmanLabPage
 from quant_hub.gui.pages.markets import MarketsPage
 from quant_hub.gui.pages.markov_lab import MarkovLabPage
 from quant_hub.gui.pages.options_lab import OptionsLabPage
-from quant_hub.gui.pages.data import DataPage
-from quant_hub.gui.pages.research import ResearchPage
 from quant_hub.gui.pages.portfolio import PortfolioPage
+from quant_hub.gui.pages.research import ResearchPage
 from quant_hub.gui.pages.returns import ReturnHistogramPage
 from quant_hub.gui.pages.simulator import SimulatorPage
+from quant_hub.gui.pages.trades import TradesPage
 from quant_hub.gui.pages.valuation import ValuationPage
 from quant_hub.gui.pages.volatility_lab import VolatilityLabPage
-from quant_hub.gui.pages.trades import TradesPage
 from quant_hub.gui.pages.whatif import WhatIfPage
 from quant_hub.gui.theme import apply_theme
 from quant_hub.services.book import BookSource, Grader

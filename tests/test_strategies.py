@@ -6,8 +6,8 @@ import pandas as pd
 import pytest
 
 from quant_hub.models.backtest import backtest
-from quant_hub.models.portfolio import scale_to_risk
 from quant_hub.models.garch import fit_garch11
+from quant_hub.models.portfolio import scale_to_risk
 from quant_hub.models.research_worlds import WORLDS, research_world
 from quant_hub.models.strategies import STRATEGIES, StrategySpec, strategy_targets
 

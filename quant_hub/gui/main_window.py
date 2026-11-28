@@ -20,8 +20,14 @@ from datetime import datetime
 
 from PySide6.QtCore import QByteArray, QTimer
 from PySide6.QtGui import QKeySequence, QScreen, QShortcut
-from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, QInputDialog, QMainWindow, QVBoxLayout,
-                               QWidget)
+from PySide6.QtWidgets import (
+    QFileDialog,
+    QHBoxLayout,
+    QInputDialog,
+    QMainWindow,
+    QVBoxLayout,
+    QWidget,
+)
 
 from quant_hub.broker.base import ConnectionEvent, ConnectionState
 from quant_hub.core import Core

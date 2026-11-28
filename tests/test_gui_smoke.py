@@ -454,7 +454,7 @@ def test_every_page_lays_its_cards_on_a_grid(qt_app):
         # machine doesn't catch it in between. A real overflow never settles,
         # and the checks below name the card.
         try:
-            wait_for(app, lambda: _cards_fit(page), timeout_s=10.0)
+            wait_for(app, lambda page=page: _cards_fit(page), timeout_s=10.0)
         except AssertionError:
             pass
         grids = [g for g in page.findChildren(CardGrid) if g.isVisible()]
@@ -676,6 +676,7 @@ def test_research_timeline_selects_follows_links_finds_and_saves(qt_app):
 def test_startup_and_first_visits_do_not_show_temporary_windows(tmp_path, monkeypatch):
     from PySide6.QtCore import QEvent, QObject
     from PySide6.QtWidgets import QApplication, QWidget
+
     from quant_hub.gui.pages.volatility_lab import VolatilityLabPage
 
     # Observe Show events, not just allWindows() after construction: the
@@ -1268,8 +1269,9 @@ def _valuation(app, window, **state):
     """The Valuation page over a stored filer (no SEC identity in tests, so the
     store serves): the made-up DEMO filings, ten shares."""
     from datetime import datetime
-    from test_sec_edgar import companyfacts, flow
+
     from quant_hub.providers.sec_edgar import facts_from_companyfacts
+    from test_sec_edgar import companyfacts, flow
     core = window._core
     now = datetime.now()
     shares = {"WeightedAverageNumberOfDilutedSharesOutstanding": {"shares": [
@@ -1478,6 +1480,7 @@ def test_hrh_is_in_the_command_search(qt_app):
 
 def test_histogram_counts_on_a_log_axis_read_out_the_normal(qt_app):
     import numpy as np
+
     from quant_hub.gui.charts import Histogram
     chart = Histogram(axis="percent", bin_fmt="{:+.2%}")
     chart.set_counts(np.array([-0.02, -0.01, 0.0, 0.01, 0.02]), np.array([3, 0, 10, 1]),
@@ -2041,10 +2044,15 @@ def test_vol_lab_3d_needs_two_expiries(qt_app):
 
 def test_surface_figure_is_plain_json():
     import json
+
     from quant_hub.gui.surface3d import surface_figure
     from quant_hub.models.svi import SSVISurface
-    from quant_hub.models.vol_surface import (SyntheticChainSpec, fit_surface, surface_mesh,
-                                              synthetic_chain)
+    from quant_hub.models.vol_surface import (
+        SyntheticChainSpec,
+        fit_surface,
+        surface_mesh,
+        synthetic_chain,
+    )
     truth = SSVISurface(v0=0.25**2, v_inf=0.20**2, kappa=2.0, rho=-0.6, eta=1.2)
     mesh = surface_mesh(fit_surface(synthetic_chain(truth, SyntheticChainSpec(seed=2))), truth)
     figure = surface_figure(mesh)

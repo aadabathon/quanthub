@@ -21,9 +21,9 @@ adjacency well-defined: ``[a, b]`` and ``[b+1day, c]`` merge into
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Iterable
 
 import numpy as np
 
@@ -48,13 +48,13 @@ class DateRange:
         object.__setattr__(self, "start", start)
         object.__setattr__(self, "end", end)
 
-    def overlaps(self, other: "DateRange") -> bool:
+    def overlaps(self, other: DateRange) -> bool:
         return self.start <= other.end and other.start <= self.end
 
-    def contains(self, other: "DateRange") -> bool:
+    def contains(self, other: DateRange) -> bool:
         return self.start <= other.start and other.end <= self.end
 
-    def intersection(self, other: "DateRange") -> "DateRange | None":
+    def intersection(self, other: DateRange) -> DateRange | None:
         if not self.overlaps(other):
             return None
         return DateRange(max(self.start, other.start), min(self.end, other.end))

@@ -8,7 +8,11 @@ import pytest
 from quant_hub.data.sources import SyntheticSource
 from quant_hub.data.stats import annualized_volatility
 from quant_hub.services.market_service import MarketService
-from quant_hub.services.vol_context import REALIZED_WINDOWS, VolContext, load_vol_context
+from quant_hub.services.vol_context import (
+    REALIZED_WINDOWS,
+    VolContext,
+    load_vol_context,
+)
 
 NOW = datetime(2026, 9, 25)
 

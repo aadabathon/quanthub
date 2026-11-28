@@ -42,7 +42,11 @@ import pandas as pd
 
 from quant_hub.models.backtest import validate_price_matrix
 from quant_hub.models.garch import fit_garch11, next_variance
-from quant_hub.models.kalman import fit_local_level, fit_local_linear_trend, kalman_filter
+from quant_hub.models.kalman import (
+    fit_local_level,
+    fit_local_linear_trend,
+    kalman_filter,
+)
 from quant_hub.models.markov import fit_hmm, hmm_filter
 from quant_hub.models.portfolio import scale_to_risk
 

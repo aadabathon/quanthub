@@ -6,7 +6,12 @@ from datetime import date
 
 import pytest
 
-from quant_hub.data.trading_calendar import easter, holidays, is_trading_day, trading_days
+from quant_hub.data.trading_calendar import (
+    easter,
+    holidays,
+    is_trading_day,
+    trading_days,
+)
 
 
 def days(year, *month_days):

@@ -219,7 +219,7 @@ class _YearAxis(pg.AxisItem):
 class _Label(pg.TextItem):
     """A paper's chip. Clicks select the paper; double-clicks open it."""
 
-    def __init__(self, node: Node, chart: "TimelineChart", font: QFont) -> None:
+    def __init__(self, node: Node, chart: TimelineChart, font: QFont) -> None:
         text = ("✓ " if node.read else "") + node.label
         super().__init__(text, color=PALETTE.text_secondary, anchor=(0.5, 1.0))
         self.node = node

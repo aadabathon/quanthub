@@ -78,10 +78,11 @@ class TestAnalyse:
 
     def test_a_holding_without_history_is_named_with_its_share(self, store):
         # The "file" source has only what was imported: nothing for BBB.
-        from quant_hub.services.file_import import FileSource
-        from quant_hub.storage.bar_store import BarStore, InstrumentKey
         import numpy as np
         import pandas as pd
+
+        from quant_hub.services.file_import import FileSource
+        from quant_hub.storage.bar_store import BarStore, InstrumentKey
         bars = BarStore(":memory:")
         dates = pd.bdate_range("2024-06-03", "2026-10-16")
         closes = 50 * np.exp(np.cumsum(np.random.default_rng(1).normal(0, 0.01, len(dates))))
@@ -229,9 +230,10 @@ class TestRegressions:
         assert both.report.beta == plain.report.beta
 
     def test_a_factor_without_history_is_named(self, store):
+        import pandas as pd
+
         from quant_hub.services.file_import import FileSource
         from quant_hub.storage.bar_store import BarStore, InstrumentKey
-        import pandas as pd
         bars = BarStore(":memory:")
         dates = pd.bdate_range("2024-06-03", "2026-10-16")
         rng = np.random.default_rng(2)
@@ -246,10 +248,11 @@ class TestRegressions:
         assert "ZZZ" in view.regression_note
 
     def test_no_benchmark_history_means_no_regressions(self, store):
-        from quant_hub.services.file_import import FileSource
-        from quant_hub.storage.bar_store import BarStore, InstrumentKey
         import numpy as np
         import pandas as pd
+
+        from quant_hub.services.file_import import FileSource
+        from quant_hub.storage.bar_store import BarStore, InstrumentKey
         bars = BarStore(":memory:")
         dates = pd.bdate_range("2024-06-03", "2026-10-16")
         closes = 50 * np.exp(np.cumsum(np.random.default_rng(1).normal(0, 0.01, len(dates))))
@@ -295,6 +298,7 @@ class TestHistoryProblems:
         """The ``file`` source holding ``days`` daily closes per symbol, up to NOW."""
         import numpy as np
         import pandas as pd
+
         from quant_hub.services.file_import import FileSource
         from quant_hub.storage.bar_store import BarStore, InstrumentKey
         bars = BarStore(":memory:")

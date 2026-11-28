@@ -37,7 +37,7 @@ def nport_xml(series="", holdings=None, net="1000000.00", date="2026-06-30"):
             f'<seriesName>{"Example Series" if series else "N/A"}</seriesName>{series_tag}'
             f'<repPdEnd>2026-09-30</repPdEnd><repPdDate>{date}</repPdDate></genInfo>'
             f'<fundInfo><totAssets>1100000</totAssets><netAssets>{net}</netAssets></fundInfo>'
-            f'<invstOrSecs>{secs}</invstOrSecs></formData></edgarSubmission>').encode("utf-8")
+            f'<invstOrSecs>{secs}</invstOrSecs></formData></edgarSubmission>').encode()
 
 
 FEED = (b'<?xml version="1.0" encoding="ISO-8859-1" ?><feed xmlns="http://www.w3.org/2005/Atom">'

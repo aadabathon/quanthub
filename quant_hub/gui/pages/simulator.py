@@ -31,11 +31,10 @@ from quant_hub.data.simulation import (
     run_gbm_simulation,
 )
 from quant_hub.data.stats import SeriesAnalysis, analyze_history
-from quant_hub.tasks import TaskRunner
 from quant_hub.gui.charts import FanChart, Histogram, Panel, Series, StackedTimeSeries
 from quant_hub.gui.components import (
-    CardGrid,
     Card,
+    CardGrid,
     EmptyState,
     Field,
     PageHeader,
@@ -44,9 +43,10 @@ from quant_hub.gui.components import (
     button,
     form_grid,
 )
-from quant_hub.gui.pages.base import saved_grid, ScrollPage
+from quant_hub.gui.pages.base import ScrollPage, saved_grid
 from quant_hub.gui.theme import FIELD_S, PALETTE, SIDE_PANEL_WIDTH, SPACE_L, SPACE_M
 from quant_hub.storage.state_store import ViewStateStore
+from quant_hub.tasks import TaskRunner
 
 _logger = logging.getLogger(__name__)
 

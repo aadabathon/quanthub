@@ -4,12 +4,16 @@ do; and deleting a snapshot backs the store up first. Made-up exports."""
 
 import pytest
 
+from book_fixtures import bars, export
 from quant_hub.data.sources import SyntheticSource
 from quant_hub.services.file_import import FileSource
 from quant_hub.services.market_service import MarketService
-from quant_hub.services.portfolio import DuplicateImportError, PortfolioService, files_hash
+from quant_hub.services.portfolio import (
+    DuplicateImportError,
+    PortfolioService,
+    files_hash,
+)
 from quant_hub.storage.position_store import PositionStore, PositionStoreError
-from book_fixtures import bars, export
 
 
 @pytest.fixture

@@ -16,9 +16,9 @@ from PySide6.QtWidgets import QCompleter, QFrame, QHBoxLayout, QLabel, QLineEdit
 
 from quant_hub.broker.base import Broker, ConnectionEvent, ConnectionState
 from quant_hub.events import EventBus
-from quant_hub.tasks import TaskRunner
 from quant_hub.gui.components import StatusDot, button, label
 from quant_hub.gui.theme import PALETTE, SPACE_L, SPACE_M, SPACE_S, SPACE_XL, icon
+from quant_hub.tasks import TaskRunner
 
 _logger = logging.getLogger(__name__)
 

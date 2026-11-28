@@ -20,18 +20,17 @@ from quant_hub.config import AppConfig, load_config
 from quant_hub.data.sources import SyntheticSource
 from quant_hub.events import EventBus, EventBusLogHandler
 from quant_hub.providers.massive import MassiveClient
-from quant_hub.tasks import TaskRunner
 from quant_hub.services.accounts import AccountService
 from quant_hub.services.activity import ActivityService
 from quant_hub.services.book import PortfolioBook
-from quant_hub.services.desk import VOICES, DeskService, tail_voice
 from quant_hub.services.cached_source import CachedSource
 from quant_hub.services.chain_collector import ChainCollector
+from quant_hub.services.desk import VOICES, DeskService, tail_voice
 from quant_hub.services.external_data import ExternalDataService
 from quant_hub.services.file_import import FileImportService, FileSource
 from quant_hub.services.fund_holdings import FundHoldingsService
-from quant_hub.services.hedge import HedgeService
 from quant_hub.services.fundamentals import FundamentalsService
+from quant_hub.services.hedge import HedgeService
 from quant_hub.services.market_service import MarketService
 from quant_hub.services.massive_source import MassiveSource
 from quant_hub.services.option_chains import ChainService
@@ -52,6 +51,7 @@ from quant_hub.storage.schema import prepare_store
 from quant_hub.storage.series_store import SeriesStore
 from quant_hub.storage.state_store import ViewStateStore
 from quant_hub.storage.valuation_store import ValuationStore
+from quant_hub.tasks import TaskRunner
 
 _logger = logging.getLogger(__name__)
 

@@ -8,7 +8,10 @@ import pytest
 
 from quant_hub.data.synthetic import GeometricBrownianMotion
 from quant_hub.models.black_scholes import BlackScholesInputs
-from quant_hub.models.option_monte_carlo import monte_carlo_price, risk_neutral_terminal_prices
+from quant_hub.models.option_monte_carlo import (
+    monte_carlo_price,
+    risk_neutral_terminal_prices,
+)
 
 
 def inputs(**overrides):

@@ -6,8 +6,15 @@ from datetime import date, datetime
 import numpy as np
 import pytest
 
-from quant_hub.data.desk import (LEVELS, Book, Claim, Holding, Proposal, Snapshot,
-                                 VoiceOutput)
+from quant_hub.data.desk import (
+    LEVELS,
+    Book,
+    Claim,
+    Holding,
+    Proposal,
+    Snapshot,
+    VoiceOutput,
+)
 from quant_hub.models import comparison as C
 
 AS_OF = date(2026, 11, 24)

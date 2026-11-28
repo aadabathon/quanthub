@@ -37,7 +37,13 @@ import numpy as np
 from PySide6.QtCore import Qt, QUrl, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWebEngineWidgets import QWebEngineView
-from PySide6.QtWidgets import QFrame, QStackedLayout, QStackedWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QFrame,
+    QStackedLayout,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
+)
 
 from quant_hub.gui.components import EmptyState, set_role
 from quant_hub.gui.theme import FONT_UI, PALETTE, font_family

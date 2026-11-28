@@ -10,11 +10,17 @@ import pytest
 
 from quant_hub.data.options import OptionChain, OptionQuote
 from quant_hub.models.garch import (
-    GARCH11Parameters, average_variance_forecast, next_variance,
+    GARCH11Parameters,
+    average_variance_forecast,
+    next_variance,
 )
 from quant_hub.models.svi import RawSVI, SSVISurface
 from quant_hub.models.vol_surface import (
-    SyntheticChainSpec, chain_implied_vols, fit_surface, surface_grid, surface_mesh,
+    SyntheticChainSpec,
+    chain_implied_vols,
+    fit_surface,
+    surface_grid,
+    surface_mesh,
     synthetic_chain,
 )
 

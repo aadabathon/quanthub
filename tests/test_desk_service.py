@@ -7,13 +7,18 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from desk_fixtures import NOW, Bars, service
 from quant_hub.data.desk import Decision
 from quant_hub.data.types import PriceHistory
-from quant_hub.services.desk import (PAPERS, VOICES, DeskService, default_source,
-                                     tail_voice)
+from quant_hub.services.desk import (
+    PAPERS,
+    VOICES,
+    DeskService,
+    default_source,
+    tail_voice,
+)
 from quant_hub.services.market_service import MarketService
 from quant_hub.storage.canon_store import load_canon
-from desk_fixtures import NOW, Bars, service
 
 
 def test_the_book_is_the_newest_export_rolled_forward(parts):

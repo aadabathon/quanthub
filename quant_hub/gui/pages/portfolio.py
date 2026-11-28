@@ -62,8 +62,8 @@ from PySide6.QtWidgets import (
 from quant_hub.data.types import PriceBasis
 from quant_hub.gui.charts import Band, Histogram, Panel, Series, StackedTimeSeries
 from quant_hub.gui.components import (
-    CardGrid,
     Card,
+    CardGrid,
     DataTable,
     EmptyState,
     Field,

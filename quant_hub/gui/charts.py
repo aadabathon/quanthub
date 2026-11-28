@@ -31,7 +31,7 @@ from PySide6.QtGui import QBrush, QColor, QGradient, QLinearGradient, QPen
 from PySide6.QtWidgets import QLabel, QSizePolicy, QVBoxLayout, QWidget
 
 from quant_hub.gui.components import label
-from quant_hub.gui.theme import PALETTE, SPACE_XS, font_family, FONT_UI
+from quant_hub.gui.theme import FONT_UI, PALETTE, SPACE_XS, font_family
 
 _DAY_S = 86_400
 _TICK_FONT_PX = 11

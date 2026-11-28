@@ -5,10 +5,10 @@ from datetime import date, datetime
 
 import pytest
 
-from quant_hub.services.market_service import MarketService
-from quant_hub.services.portfolio import PortfolioService
 from book_fixtures import export
 from desk_fixtures import Bars
+from quant_hub.services.market_service import MarketService
+from quant_hub.services.portfolio import PortfolioService
 
 HEADER = "date,account,kind,symbol,quantity,price,commission,fees,amount\n"
 
@@ -100,6 +100,7 @@ class TestReading:
 
 def test_trips_since_keeps_whats_open_or_touched():
     from types import SimpleNamespace as NS
+
     from quant_hub.services import trades_report
     old = NS(account="A", symbol="OLD", side="long", opened=date(2025, 1, 2),
              closed=date(2025, 3, 3), pieces=(1,), invested=100.0, realized=10.0,

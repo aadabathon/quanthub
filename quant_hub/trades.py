@@ -32,6 +32,7 @@ import json
 import sys
 from datetime import date, datetime
 
+from quant_hub.console import safe_console
 from quant_hub.core import build_core
 from quant_hub.services import trades_report as report
 from quant_hub.services.desk import default_source
@@ -133,8 +134,7 @@ def main(argv: list[str] | None = None) -> int:
         if name in ("timing", "held"):
             sub.add_argument("--source", help="price source: massive, ibkr or file")
     args = parser.parse_args(argv)
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(errors="replace")
+    safe_console()
     now = datetime.now()
     core = build_core()
     try:

@@ -133,7 +133,12 @@ def test_plot_option_profile():
 
 def test_plot_strategy_pnl_with_and_without_horizon():
     from quant_hub.models.black_scholes import MarketInputs
-    from quant_hub.models.strategy import STRATEGY_TEMPLATES, expiry_profile, spot_grid, strategy_pnl
+    from quant_hub.models.strategy import (
+        STRATEGY_TEMPLATES,
+        expiry_profile,
+        spot_grid,
+        strategy_pnl,
+    )
     from quant_hub.visualization.charts import plot_strategy_pnl
 
     market = MarketInputs(100.0, 0.05, 0.25)
@@ -165,9 +170,17 @@ def test_volatility_lab_charts():
 
     from quant_hub.models.svi import SSVISurface
     from quant_hub.models.vol_surface import (
-        SyntheticChainSpec, fit_surface, smile_curves, surface_grid, synthetic_chain,
+        SyntheticChainSpec,
+        fit_surface,
+        smile_curves,
+        surface_grid,
+        synthetic_chain,
     )
-    from quant_hub.visualization.charts import plot_smiles, plot_vol_heatmap, plot_vol_term_structure
+    from quant_hub.visualization.charts import (
+        plot_smiles,
+        plot_vol_heatmap,
+        plot_vol_term_structure,
+    )
 
     truth = SSVISurface(v0=0.0625, v_inf=0.04, kappa=2.0, rho=-0.6, eta=1.2)
     fit = fit_surface(synthetic_chain(truth, SyntheticChainSpec(seed=3)))

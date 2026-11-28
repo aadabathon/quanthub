@@ -210,7 +210,7 @@ def round_trips(transactions: Iterable[Transaction],
     for (account, symbol), items in state.trips.items():
         lots = state.lots[(account, symbol)]
         for i, trip in enumerate(items):
-            still = sum(abs(l.units) for l in lots) if i == len(items) - 1 and trip.closed is None \
+            still = sum(abs(lot.units) for lot in lots) if i == len(items) - 1 and trip.closed is None \
                 else 0.0
             trips.append(RoundTrip(account, symbol, trip.side, trip.opened, trip.closed,
                                    tuple(trip.pieces), trip.invested, trip.peak, still,
@@ -308,14 +308,14 @@ def _replay(transactions: Iterable[Transaction], cash_funds: set[str]) -> _State
             trip = trips[-1]
             if cash is not None:
                 trip.invested += abs(remaining) * abs(cash)
-            trip.peak = max(trip.peak, sum(abs(l.units) for l in lots))
+            trip.peak = max(trip.peak, sum(abs(lot.units) for lot in lots))
             if remaining > 0:
                 _average_open(state.average[key], remaining, cash)
     return state
 
 
 def _split(lots: deque[_Lot], average: list[float | None], q: float) -> None:
-    held = sum(l.units for l in lots)
+    held = sum(lot.units for lot in lots)
     if abs(held) <= EPS:
         return
     ratio = (held + q) / held

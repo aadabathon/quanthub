@@ -71,7 +71,6 @@ import numpy as np
 
 from quant_hub.models.optimize import nelder_mead
 
-
 MIN_OBSERVATIONS = 20
 """Smallest return sample accepted by the four-parameter estimator."""
 

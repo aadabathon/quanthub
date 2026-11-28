@@ -437,7 +437,6 @@ from dataclasses import dataclass
 
 import numpy as np
 
-
 VARIANCE_FLOOR_RATIO = 0.01
 r""":math:`v_{\min}` as a fraction of the sample variance of returns (Estimation)."""
 

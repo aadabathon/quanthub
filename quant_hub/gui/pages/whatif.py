@@ -55,7 +55,13 @@ from quant_hub.gui.components import (
 from quant_hub.gui.pages.base import ScrollPage, saved_grid
 from quant_hub.gui.theme import PALETTE, SIDE_PANEL_WIDTH, SPACE_L, SPACE_M
 from quant_hub.models import whatif as W
-from quant_hub.services.whatif import MAX_SHARPE, Comparison, Context, Row, WhatIfService
+from quant_hub.services.whatif import (
+    MAX_SHARPE,
+    Comparison,
+    Context,
+    Row,
+    WhatIfService,
+)
 
 TODAY, PICKS, INDEX, NETTED, REFS = ("Today", "Today, picks to a total", "Index and cash",
                                      "Picks netted into the core", "The four references")

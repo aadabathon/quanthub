@@ -306,7 +306,7 @@ def _number(text: str | None, label: str) -> float | None:
     cleaned = text.strip()
     if cleaned.lower() in _EMPTY:
         return None
-    negative = cleaned.startswith("-") or cleaned.startswith("(")
+    negative = cleaned.startswith(("-", "("))
     digits = re.sub(r"[^0-9.]", "", cleaned)
     if not digits or digits.count(".") > 1 or digits == ".":
         raise ValueError(f"the {label} {text!r} isn't a number")

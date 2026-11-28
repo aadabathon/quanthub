@@ -5,13 +5,13 @@ from datetime import date, datetime
 
 import pytest
 
+from desk_fixtures import NOW, Bars, service
 from quant_hub.data.desk import LEVELS, Run
 from quant_hub.models import scoring
 from quant_hub.services import desk_report as report
 from quant_hub.services.desk import DeskRecord, DeskService
 from quant_hub.services.market_service import MarketService
 from quant_hub.storage.desk_store import DeskStore
-from desk_fixtures import NOW, Bars, service
 
 MONDAY = datetime(2026, 11, 23, 7, 45)          # the snapshot below is as of Friday 11-20
 ENDS = {"AAA": "2026-11-20", "BBB": "2026-11-20"}
@@ -150,7 +150,7 @@ class TestStatus:
         desk = service(parts, ENDS)
         desk.take("test", NOW)
         desk.record_run(run(datetime(2026, 11, 23, 7, 0)))
-        monkeypatch.setattr(activity, "imports", lambda: [])
+        monkeypatch.setattr(activity, "imports", list)
         doc = plain(report.status(desk, activity, backups(tmp_path), MONDAY))
         assert doc["ok"] and doc["book"]["current_to"] == "2026-11-10"
         assert doc["book"]["sessions_since"] == 8

@@ -53,7 +53,17 @@ import logging
 import time
 from collections.abc import Callable
 
-from PySide6.QtCore import QByteArray, QEvent, QObject, QPoint, QRect, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import (
+    QByteArray,
+    QEvent,
+    QObject,
+    QPoint,
+    QRect,
+    QSize,
+    Qt,
+    QTimer,
+    Signal,
+)
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QApplication, QDockWidget, QMainWindow, QWidget
 

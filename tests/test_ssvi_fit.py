@@ -15,7 +15,11 @@ from quant_hub.models.ssvi_fit import (
     total_variance,
 )
 from quant_hub.models.svi import SSVISurface, butterfly_g
-from quant_hub.models.vol_surface import SyntheticChainSpec, fit_surface, synthetic_chain
+from quant_hub.models.vol_surface import (
+    SyntheticChainSpec,
+    fit_surface,
+    synthetic_chain,
+)
 
 TRUTH = SSVISurface(v0=0.25**2, v_inf=0.20**2, kappa=2.0, rho=-0.6, eta=1.2)
 

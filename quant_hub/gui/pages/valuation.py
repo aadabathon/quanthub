@@ -40,8 +40,8 @@ from PySide6.QtWidgets import QFileDialog, QHBoxLayout
 from quant_hub.data.fundamentals import FinancialHistory
 from quant_hub.gui.charts import Heatmap
 from quant_hub.gui.components import (
-    CardGrid,
     Card,
+    CardGrid,
     DataTable,
     Field,
     MetricTile,
@@ -73,7 +73,13 @@ from quant_hub.models.dcf import (
     value,
 )
 from quant_hub.services.portfolio import PortfolioService
-from quant_hub.services.valuation import Price, ScreenRow, ValuationService, refusal, valuation_years
+from quant_hub.services.valuation import (
+    Price,
+    ScreenRow,
+    ValuationService,
+    refusal,
+    valuation_years,
+)
 from quant_hub.storage.state_store import ViewStateStore
 from quant_hub.tasks import TaskRunner
 

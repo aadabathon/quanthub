@@ -99,7 +99,13 @@ import numpy as np
 from quant_hub.data.options import OptionChain, OptionQuote
 from quant_hub.models.black_scholes import greeks_array, implied_volatility, price_array
 from quant_hub.models.ssvi_fit import JointSSVIFit, fit_joint_ssvi
-from quant_hub.models.svi import MIN_SLICE_QUOTES, SSVISurface, SVIFit, butterfly_g, fit_raw_svi
+from quant_hub.models.svi import (
+    MIN_SLICE_QUOTES,
+    SSVISurface,
+    SVIFit,
+    butterfly_g,
+    fit_raw_svi,
+)
 
 MIN_HALF_SPREAD = 0.005
 """Half of a one-cent tick: no quote is tighter than this."""
@@ -208,7 +214,8 @@ def synthetic_chain(surface: SSVISurface, spec: SyntheticChainSpec,
         strikes = np.round(forward * np.exp(k), 2)
         vols = surface.slice(years).implied_vol(np.log(strikes / forward), years)
 
-        def quote(strike: float, vol: float, option_type: str) -> OptionQuote:
+        def quote(strike: float, vol: float, option_type: str,
+                  dte: float = dte) -> OptionQuote:
             true_price = float(price_array(spec.spot, strike, dte, spec.rate, vol, option_type,
                                            spec.dividend_yield))
             half = max(MIN_HALF_SPREAD, 0.5 * spec.relative_spread * true_price)

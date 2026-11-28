@@ -5,10 +5,10 @@ from datetime import date, datetime
 
 import pytest
 
+from desk_fixtures import NOW, service
 from quant_hub.data.desk import Book, Holding
 from quant_hub.models.weighing import Move, apply, parse_move
 from quant_hub.services import desk_report as report
-from desk_fixtures import NOW, service
 
 ENDS = {"AAA": "2026-11-20", "BBB": "2026-11-20", "SPY": "2026-11-20"}
 BOOK = Book(date(2026, 11, 20), (Holding("AAA", 10.0, 50.0), Holding("BBB", 4.0, 25.0)),

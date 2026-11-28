@@ -98,15 +98,14 @@ from quant_hub.data.desk import (
     resolves_on,
 )
 from quant_hub.data.literature import CanonPaper
+from quant_hub.data.trading_calendar import trading_days
 from quant_hub.models import baseline as baseline_model
+from quant_hub.models import scoring, weighing
 from quant_hub.models import tail as tail_model
 from quant_hub.models import voices as voice_models
 from quant_hub.models.baseline import WINDOW, baseline
-from quant_hub.models import scoring
-from quant_hub.models import weighing
 from quant_hub.models.comparison import Comparison, compare, holding_bands
 from quant_hub.models.voices import bootstrap, garch, regimes
-from quant_hub.data.trading_calendar import trading_days
 from quant_hub.services.activity import ActivityService
 from quant_hub.services.external_data import ExternalDataService
 from quant_hub.services.market_service import MarketService
@@ -275,7 +274,7 @@ class DeskService:
         start = now - timedelta(days=LOOKBACK_DAYS)
         closes: dict[str, pd.Series] = {}
         unpriced = []
-        for symbol, units in sorted(held.units.items()):
+        for symbol in sorted(held.units):
             if symbol in held.options:
                 unpriced.append(f"{symbol} (an option)")
                 continue
