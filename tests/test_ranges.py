@@ -4,7 +4,12 @@ from datetime import datetime
 
 import pytest
 
-from quant_hub.data.ranges import DateRange, merge_ranges, subtract_ranges, weekdays_missed
+from quant_hub.data.ranges import (
+    DateRange,
+    merge_ranges,
+    subtract_ranges,
+    weekdays_missed,
+)
 
 
 def r(start: str, end: str) -> DateRange:

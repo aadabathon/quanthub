@@ -202,7 +202,9 @@ def test_on_a_merton_chain_the_log_contract_matches_its_closed_form():
     kappa = math.exp(m["mu"] + m["delta"] ** 2 / 2) - 1
     closed = m["sigma"] ** 2 * years + 2 * m["lam"] * years * (kappa - m["mu"])  # -2E[ln S_T/F]
     expected_qv = m["sigma"] ** 2 * years + m["lam"] * years * (m["mu"] ** 2 + m["delta"] ** 2)
-    otm = lambda k: np.where(k >= 0, merton_price(k, True), merton_price(k, False))
+    def otm(k):
+        return np.where(k >= 0, merton_price(k, True), merton_price(k, False))
+
     spanned = span_total(otm, -4.0, 3.0)
     assert spanned == pytest.approx(closed, rel=1e-6)
     jump_term = m["lam"] * years * (2 * (kappa - m["mu"]) - (m["mu"] ** 2 + m["delta"] ** 2))

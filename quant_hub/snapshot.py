@@ -36,15 +36,17 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from quant_hub.console import safe_console
 from quant_hub.core import build_core
 from quant_hub.data.desk import Run
-from quant_hub.storage.backup import backup_store
 from quant_hub.services.desk import default_source
+from quant_hub.storage.backup import backup_store
 
 _logger = logging.getLogger(__name__)
 
 
 def main(argv: list[str] | None = None) -> int:
+    safe_console()
     parser = argparse.ArgumentParser(prog="python -m quant_hub.snapshot",
                                      description="Take today's desk snapshot.")
     parser.add_argument("--source", help="price source: massive, ibkr or file (default: "

@@ -214,7 +214,7 @@ def _on_cycles(papers: Iterable[CanonPaper]) -> set[str]:
     Links to missing papers are reported elsewhere and ignored here."""
     papers = list(papers)
     ids = {p.id for p in papers}
-    out = {p.id: {l.to for l in p.links if l.directed} & ids for p in papers}
+    out = {p.id: {link.to for link in p.links if link.directed} & ids for p in papers}
     incoming = {pid: 0 for pid in out}
     for targets in out.values():
         for q in targets:
@@ -288,7 +288,7 @@ def _paper(raw: Mapping, strand: str) -> CanonPaper:
                               tuple(verified.get("matched", ())), verified.get("note", "")),
         question=raw.get("question", ""), assumed=raw.get("assumed", ""),
         lives_in=tuple(raw.get("lives_in", ())),
-        links=tuple(Link(l["to"], l["kind"]) for l in raw.get("links", ())),
+        links=tuple(Link(link["to"], link["kind"]) for link in raw.get("links", ())),
         circulated=int(raw["circulated"]) if raw.get("circulated") is not None else None,
         doi=raw.get("doi", ""), arxiv=raw.get("arxiv", ""), url=raw.get("url", ""),
         label_override=raw.get("label", ""))

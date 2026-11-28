@@ -70,7 +70,11 @@ import pandas as pd
 from quant_hub.data.types import PriceBasis
 from quant_hub.models import hedge as H
 from quant_hub.services.external_data import ExternalDataService
-from quant_hub.services.option_chains import ChainService, NoStoredChainError, load_market_surface
+from quant_hub.services.option_chains import (
+    ChainService,
+    NoStoredChainError,
+    load_market_surface,
+)
 from quant_hub.services.portfolio import PORTFOLIO_ROW, PortfolioView
 from quant_hub.storage.bar_store import BarStore, InstrumentKey
 

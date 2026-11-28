@@ -13,7 +13,6 @@ from collections.abc import Callable, Sequence
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
-    QStackedWidget,
     QAbstractItemView,
     QButtonGroup,
     QDockWidget,
@@ -27,6 +26,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QSizePolicy,
+    QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,

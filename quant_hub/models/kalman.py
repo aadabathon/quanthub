@@ -213,7 +213,6 @@ import numpy as np
 
 from quant_hub.models.optimize import nelder_mead
 
-
 DIFFUSE_SCALE = 1e4
 r""":math:`\kappa` in units of :math:`\mathrm{Var}(\Delta y)` (Initialization)."""
 

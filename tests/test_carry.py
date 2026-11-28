@@ -18,7 +18,11 @@ from quant_hub.models.carry import (
     parity_pairs,
 )
 from quant_hub.models.svi import SSVISurface
-from quant_hub.models.vol_surface import SyntheticChainSpec, chain_implied_vols, synthetic_chain
+from quant_hub.models.vol_surface import (
+    SyntheticChainSpec,
+    chain_implied_vols,
+    synthetic_chain,
+)
 
 TRUTH = SSVISurface(v0=0.25**2, v_inf=0.20**2, kappa=2.0, rho=-0.6, eta=1.2)
 # Two-sided 97.5% Student-t quantiles: the scale is estimated from the

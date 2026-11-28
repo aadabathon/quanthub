@@ -13,7 +13,6 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import QHBoxLayout
 
-from quant_hub.tasks import TaskRunner
 from quant_hub.gui.components import PageHeader, PageStack, SegmentedControl
 from quant_hub.gui.pages.base import ScrollPage, saved_grid
 from quant_hub.gui.pages.options_lab.monte_carlo import MonteCarloTab
@@ -23,6 +22,7 @@ from quant_hub.gui.pages.options_lab.underlying import UnderlyingCard
 from quant_hub.services.market_service import MarketService
 from quant_hub.services.option_chains import ChainService
 from quant_hub.storage.state_store import ViewStateStore
+from quant_hub.tasks import TaskRunner
 
 _STATE_KEY = "options_lab"
 _TABS = ("Pricer", "Strategy", "Monte Carlo")

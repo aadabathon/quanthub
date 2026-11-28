@@ -5,7 +5,16 @@ from PySide6.QtCore import QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QWidget
 
-from quant_hub.gui.components import Card, DataTable, Field, SelectField, TextArea, button, form_grid, label
+from quant_hub.gui.components import (
+    Card,
+    DataTable,
+    Field,
+    SelectField,
+    TextArea,
+    button,
+    form_grid,
+    label,
+)
 from quant_hub.gui.theme import SIDE_PANEL_WIDTH, SPACE_L, SPACE_M
 
 _HALF = (SIDE_PANEL_WIDTH - 2 * SPACE_L - SPACE_M) // 2

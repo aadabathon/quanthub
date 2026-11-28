@@ -11,7 +11,11 @@ from quant_hub.models.carry import implied_carry
 from quant_hub.models.market_surface import MarketSurface, apply_surface
 from quant_hub.models.strategy import OptionLeg, Strategy, leg_inputs, strategy_value
 from quant_hub.models.svi import SSVISurface
-from quant_hub.models.vol_surface import SyntheticChainSpec, fit_surface, synthetic_chain
+from quant_hub.models.vol_surface import (
+    SyntheticChainSpec,
+    fit_surface,
+    synthetic_chain,
+)
 
 TRUTH = SSVISurface(v0=0.25**2, v_inf=0.20**2, kappa=2.0, rho=-0.6, eta=1.2)
 SPEC = SyntheticChainSpec(rate=0.045, dividend_yield=0.015, noise=0.0, parity_pairs=5)

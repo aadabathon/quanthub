@@ -4,7 +4,13 @@ from pathlib import Path
 import pytest
 
 import quant_hub
-from quant_hub.data.literature import CanonError, CanonPaper, Verification, canon_from_dicts, surname
+from quant_hub.data.literature import (
+    CanonError,
+    CanonPaper,
+    Verification,
+    canon_from_dicts,
+    surname,
+)
 from quant_hub.storage.canon_store import load_canon
 
 REPO = Path(quant_hub.__file__).parent.parent

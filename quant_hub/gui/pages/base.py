@@ -99,7 +99,7 @@ class Shell:
     command by name, so a page's button and the search do the same thing.
     """
 
-    navigate: Callable[[str], "Page"]
+    navigate: Callable[[str], Page]
     publish_commands: Callable[[str, Commands], None]
     run: Callable[[str], None] = lambda _name: None
 

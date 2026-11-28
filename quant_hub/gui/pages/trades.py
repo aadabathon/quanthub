@@ -71,9 +71,9 @@ from quant_hub.gui.components import (
 )
 from quant_hub.gui.pages.base import ScrollPage, saved_grid
 from quant_hub.gui.theme import PALETTE, SIDE_PANEL_WIDTH, SPACE_L
+from quant_hub.models.held import HeldReport, drawdown, growth
 from quant_hub.models.ledger import Reconciliation
 from quant_hub.models.lots import BasisCheck, Piece, RoundTrip
-from quant_hub.models.held import HeldReport, drawdown, growth
 from quant_hub.models.timing import PieceTiming, TimingReport
 from quant_hub.services.activity import (
     ActivityImportError,

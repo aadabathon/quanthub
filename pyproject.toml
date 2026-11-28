@@ -30,7 +30,7 @@ dependencies = [
 # is distributed at https://interactivebrokers.github.io - either works for
 # the read-only functionality in v0.1.
 ibkr = ["ibapi"]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "ruff==0.17.0"]
 
 [project.gui-scripts]
 # gui-scripts (not scripts) so the generated launcher is a windowed exe --
@@ -53,3 +53,23 @@ version = {attr = "quant_hub.__version__"}
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+# The lint regime (D113): run in CI beside the tests. Pinned in the dev
+# extra, so a new ruff release can't change what passes.
+target-version = "py311"
+src = [".", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E4", "E7", "E9", "F",  # pyflakes and pycodestyle's error classes
+    "B",                    # bugbear: likely bugs
+    "I",                    # import order
+    "UP",                   # pyupgrade, to the 3.11 floor
+    "ISC001",               # implicit string concatenation on one line
+    "PIE",                  # unnecessary statements
+]
+ignore = [
+    "B008",  # a call in a default: the defaults called here are frozen dataclasses
+    "B905",  # zip without strict=: lengths are checked where they can differ
+]

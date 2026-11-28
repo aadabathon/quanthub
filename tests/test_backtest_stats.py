@@ -7,7 +7,10 @@ import pandas as pd
 import pytest
 
 from quant_hub.models.backtest_stats import (
-    deflated_sharpe, performance_summary, rolling_sharpe, sharpe_estimate,
+    deflated_sharpe,
+    performance_summary,
+    rolling_sharpe,
+    sharpe_estimate,
 )
 
 

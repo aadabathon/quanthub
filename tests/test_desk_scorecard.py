@@ -5,12 +5,12 @@ from datetime import date, datetime, timedelta
 
 import pytest
 
+from desk_fixtures import NOW, service
 from quant_hub.data.desk import Claim, Outcome, parse_claim
 from quant_hub.data.trading_calendar import trading_days
 from quant_hub.models import scoring
 from quant_hub.models.scoring import Scored, head_to_head
 from quant_hub.services import desk_report as report
-from desk_fixtures import NOW, service
 
 Q = Claim("book.return", 21, (-0.1, -0.03, 0.0, 0.03, 0.1))
 DAYS = trading_days(date(2026, 1, 2), date(2026, 12, 31))

@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from book_fixtures import NOW, bars, export
 from quant_hub.data.series import FetchedSeries, SeriesMeta
 from quant_hub.data.sources import SyntheticSource
 from quant_hub.models.stress import crash_stress
@@ -22,7 +23,6 @@ from quant_hub.services.whatif import MAX_SHARPE, REFERENCES, WhatIfService
 from quant_hub.storage.position_store import PositionStore
 from quant_hub.storage.series_store import SeriesStore
 from quant_hub.storage.state_store import ViewStateStore
-from book_fixtures import NOW, bars, export
 
 
 def french(store: SeriesStore) -> None:

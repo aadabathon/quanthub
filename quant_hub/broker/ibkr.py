@@ -48,9 +48,9 @@ import logging
 import math
 import threading
 import time
-from importlib.metadata import PackageNotFoundError, version
 from collections.abc import Sequence
 from datetime import date, datetime
+from importlib.metadata import PackageNotFoundError, version
 from typing import TYPE_CHECKING, Any
 
 from quant_hub.broker.base import ConnectionEvent, ConnectionState
@@ -288,7 +288,7 @@ if _HAVE_IBAPI:
         """ibapi glue object. Every method here runs on the network thread and
         must only touch thread-safe primitives on the owning broker."""
 
-        def __init__(self, owner: "IBKRBroker") -> None:
+        def __init__(self, owner: IBKRBroker) -> None:
             EClient.__init__(self, self)
             self._owner = owner
 
@@ -324,7 +324,7 @@ if _HAVE_IBAPI:
             self._owner._on_request_done(reqId)
 
         # -- historical data -------------------------------------------------
-        def historicalData(self, reqId: int, bar: "BarData") -> None:
+        def historicalData(self, reqId: int, bar: BarData) -> None:
             self._owner._on_bar(reqId, bar)
 
         def historicalDataEnd(self, reqId: int, start: str, end: str) -> None:
@@ -783,7 +783,7 @@ class IBKRBroker:
             pending.done.set()
 
     @staticmethod
-    def _to_contract(spec: ContractSpec) -> "Contract":
+    def _to_contract(spec: ContractSpec) -> Contract:
         contract = Contract()
         contract.symbol = spec.symbol.upper().strip()
         contract.secType = spec.sec_type
@@ -792,7 +792,7 @@ class IBKRBroker:
         return contract
 
     @staticmethod
-    def _to_option_contract(spec: OptionContractSpec) -> "Contract":
+    def _to_option_contract(spec: OptionContractSpec) -> Contract:
         contract = Contract()
         contract.symbol = spec.symbol.upper().strip()
         contract.secType = "OPT"
@@ -861,7 +861,7 @@ class IBKRBroker:
         if code in (502, 504):  # couldn't connect / not connected
             self._set_state(ConnectionState.ERROR, message)
 
-    def _on_bar(self, req_id: int, bar: "BarData") -> None:
+    def _on_bar(self, req_id: int, bar: BarData) -> None:
         with self._lock:
             pending = self._pending.get(req_id)
         if pending is None:

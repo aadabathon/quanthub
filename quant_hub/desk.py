@@ -39,6 +39,7 @@ import sys
 from datetime import date, datetime
 from pathlib import Path
 
+from quant_hub.console import safe_console
 from quant_hub.core import build_core
 from quant_hub.models.weighing import parse_move
 from quant_hub.services import desk_report as report
@@ -302,8 +303,7 @@ def main(argv: list[str] | None = None) -> int:
         if name == "record":
             sub.add_argument("--scored", action="store_true", help="every scored claim too")
     args = parser.parse_args(argv)
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(errors="replace")
+    safe_console()
     now = datetime.now()
     core = build_core()
     try:

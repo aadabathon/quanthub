@@ -2,8 +2,17 @@
 import numpy as np
 import pytest
 
-from quant_hub.gui.timeline import (EARLY, PIVOT, LabelBox, _TICK_SPACING, from_axis, pack_labels,
-                                    spread, to_axis, year_ticks)
+from quant_hub.gui.timeline import (
+    _TICK_SPACING,
+    EARLY,
+    PIVOT,
+    LabelBox,
+    from_axis,
+    pack_labels,
+    spread,
+    to_axis,
+    year_ticks,
+)
 
 
 def test_the_axis_is_identity_after_the_pivot_and_squeezed_before():

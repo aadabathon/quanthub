@@ -61,22 +61,21 @@ from __future__ import annotations
 from PySide6.QtCore import QUrl
 from PySide6.QtGui import QDesktopServices
 
-from quant_hub.data.desk import LEVELS, MARKET
+from quant_hub.data.desk import LEVELS, MARKET, parse_claim, parse_trades, resolves_on
 from quant_hub.data.literature import CanonPaper
 from quant_hub.gui.charts import BandRow, QuantileBands
-from quant_hub.data.desk import parse_claim, parse_trades, resolves_on
 from quant_hub.gui.components import (
     Card,
     CardGrid,
     DataTable,
+    Field,
     Note,
     PageHeader,
     SegmentedControl,
-    Field,
     Select,
-    TextArea,
     SelectField,
     StatTable,
+    TextArea,
     button,
     form_grid,
 )

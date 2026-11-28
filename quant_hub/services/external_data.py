@@ -32,10 +32,15 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from quant_hub.data.series import StoredSeries
-from quant_hub.importers.shiller_csv import SOURCE as SHILLER, ShillerImport, parse_shiller_csv
+from quant_hub.importers.shiller_csv import SOURCE as SHILLER
+from quant_hub.importers.shiller_csv import ShillerImport, parse_shiller_csv
 from quant_hub.providers.fred import (
     CATALOG as FRED_CATALOG,
+)
+from quant_hub.providers.fred import (
     SOURCE as FRED,
+)
+from quant_hub.providers.fred import (
     FredClient,
     FredError,
     parse_observations,
@@ -43,10 +48,12 @@ from quant_hub.providers.fred import (
 )
 from quant_hub.providers.ken_french import (
     DATASETS,
-    SOURCE as FRENCH,
     FrenchClient,
     FrenchError,
     parse_dataset,
+)
+from quant_hub.providers.ken_french import (
+    SOURCE as FRENCH,
 )
 from quant_hub.storage.series_store import CatalogRow, SeriesStore
 

@@ -332,6 +332,7 @@ trades.
 - `desk.py` — `python -m quant_hub.desk status / view / changes / record / scorecard / whatif`, text or `--json`; only reads (D109, D111, D112)
 - `models/weighing.py` — a trade weighed on the desk: the book after it at the snapshot's close (value unchanged, cash the other side), shorts and margin flagged (D111). `DeskService.whatif` runs every voice on both books from the returns `take` built (D111)
 - `trades.py` — `python -m quant_hub.trades import-activity / import-positions / trips / timing / held`, text or `--json` (`services/trades_report.py`); the imports only append (D110)
+- `console.py` — `safe_console()`: every command line's first call, so a redirected Windows console (cp1252) prints "?" for what it can't show instead of crashing the run (D113)
 - `storage/backup.py` — the store copied with SQLite's online backup to dated files, the newest `[backup] keep` kept (D108)
 
 ### Your trades

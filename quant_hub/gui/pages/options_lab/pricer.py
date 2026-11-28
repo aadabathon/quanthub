@@ -22,12 +22,12 @@ from PySide6.QtWidgets import QVBoxLayout, QWidget
 
 from quant_hub.gui.charts import Curve, CurveChart
 from quant_hub.gui.components import (
-    CardGrid,
     Card,
+    CardGrid,
     EmptyState,
-    PageStack,
     Field,
     MetricTile,
+    PageStack,
     SegmentedControl,
     StatTable,
     divider,
@@ -37,7 +37,6 @@ from quant_hub.gui.components import (
 )
 from quant_hub.gui.pages.base import debounce
 from quant_hub.gui.theme import PALETTE, SIDE_PANEL_WIDTH, SPACE_L, SPACE_M, SPACE_S
-from quant_hub.models.market_surface import MarketSurface, SurfacePoint
 from quant_hub.models.black_scholes import (
     BlackScholesInputs,
     MarketInputs,
@@ -48,7 +47,13 @@ from quant_hub.models.black_scholes import (
     price,
     price_array,
 )
-from quant_hub.models.strategy import OptionLeg, Strategy, nearest_listed_strike, spot_grid
+from quant_hub.models.market_surface import MarketSurface, SurfacePoint
+from quant_hub.models.strategy import (
+    OptionLeg,
+    Strategy,
+    nearest_listed_strike,
+    spot_grid,
+)
 
 Reporter = Callable[[str, bool], None]
 _HALF = (SIDE_PANEL_WIDTH - 2 * SPACE_L - SPACE_M) // 2

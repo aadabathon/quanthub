@@ -23,16 +23,21 @@ from datetime import datetime, timedelta
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence, QShortcut
-from PySide6.QtWidgets import QHBoxLayout, QLineEdit, QStackedWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QHBoxLayout,
+    QLineEdit,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
+)
 
 from quant_hub.data.sources import SourceOfflineError
 from quant_hub.data.types import MarketDataMode, PriceBasis, Quote
-from quant_hub.tasks import TaskRunner
 from quant_hub.gui.charts import Sparkline
 from quant_hub.gui.components import (
-    CardGrid,
     Badge,
     Card,
+    CardGrid,
     DataTable,
     EmptyState,
     Note,
@@ -54,8 +59,13 @@ from quant_hub.gui.theme import (
     SPACE_S,
 )
 from quant_hub.services.market_service import MarketService
-from quant_hub.services.workstation import SeriesSnapshot, WorkstationOverview, WorkstationService
+from quant_hub.services.workstation import (
+    SeriesSnapshot,
+    WorkstationOverview,
+    WorkstationService,
+)
 from quant_hub.storage.state_store import ViewStateStore
+from quant_hub.tasks import TaskRunner
 
 _logger = logging.getLogger(__name__)
 

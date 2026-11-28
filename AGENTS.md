@@ -73,6 +73,7 @@ this codebase themselves — the standing constraint is:
 ```bash
 # from quanthub/  (Windows; the project runs on Python 3.12)
 py -3.12 -m pip install -e ".[dev,ibkr]"   # once; [ibkr] optional
+py -3.12 -m ruff check .                   # lint (CI runs it first)
 py -3.12 -m pytest -q                      # full suite, no GUI/network needed
 py -3.12 -m quant_hub                      # launch the app
 ```
@@ -156,6 +157,41 @@ Qt WebEngine (the 3D surface, D32):
   first web view, and even then shader compiles sometimes fail. That's
   why the real-draw test runs in a subprocess and skips on WebGL errors.
 - **Screenshots.** `window.grab()` does capture the web view.
+
+## Lessons from past sessions (D113)
+
+Each of these went wrong at least once. Most are now checked; the rest are
+habits.
+
+- **Lint, then test.** `py -3.12 -m ruff check .` before committing (CI runs
+  it, pinned to the version in the dev extra), then the full suite.
+- **Edit files with a script you write to a file,** then run it. Shell
+  heredocs and nested quoting mangle backslashes: `\n` and `\b` came out
+  doubled or lost, and once a regex silently matched nothing. When a test
+  checks a pattern, give it a line it must catch.
+- **Example tickers are MSFT or AAPL,** never one the maintainer holds. The local
+  pre-commit hook runs the holdings scan
+  (`~/Projects/scripts/holdings_scan.py`) and refuses a commit that carries
+  a held symbol, an account id or a balance. Change the example; don't
+  bypass the hook.
+- **Tests don't expire.** Dates are relative to today, never fixed: a fixed
+  window once passed and failed the suite.
+- **GUI tests wait for a condition** (`wait_for`), never a fixed number of
+  event-loop passes: a worker's result can land on any pass.
+- **Share fixtures through `conftest.py`,** not by importing one test
+  module from another.
+- **An optional package's tests skip without it** (`pytest.importorskip`).
+  CI installs `.[dev,ibkr]` so they run there too.
+- **Command lines call `safe_console()` first** (`quant_hub/console.py`). A
+  redirected Windows console is cp1252, where a β crashed a run.
+- **A stored snapshot is cited by its stored hash.** One stored before a
+  field existed hashes differently once loaded again.
+- **Real-data checks run on a scratch copy of the store**
+  (`QUANT_HUB_SETTINGS` pointing at a copied `settings.toml`), never on the
+  live one.
+- **Nothing private in this public repository:** the private package's
+  name, its plan files and its rule file stay out
+  (`tests/test_public_hygiene.py`, and the hook's `--public` scan).
 
 ## Repo layout note
 

@@ -55,7 +55,11 @@ from typing import Protocol, runtime_checkable
 
 from quant_hub.data.positions import PositionSnapshot
 from quant_hub.services.market_service import MarketService
-from quant_hub.services.portfolio import PortfolioService, PortfolioView, example_snapshot
+from quant_hub.services.portfolio import (
+    PortfolioService,
+    PortfolioView,
+    example_snapshot,
+)
 from quant_hub.storage.state_store import ViewStateStore
 
 #: The record the Portfolio page saves its fields in, and PortfolioBook reads.

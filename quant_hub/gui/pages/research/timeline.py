@@ -12,13 +12,37 @@ from html import escape
 
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import (QFileDialog, QFrame, QHBoxLayout, QScrollArea, QVBoxLayout,
-                               QWidget)
+from PySide6.QtWidgets import (
+    QFileDialog,
+    QFrame,
+    QHBoxLayout,
+    QScrollArea,
+    QVBoxLayout,
+    QWidget,
+)
 
 from quant_hub.data.literature import CRITIQUES, INCOMING, LINK_KINDS
-from quant_hub.gui.components import (Badge, Card, EmptyState, Field, PageStack, SelectField,
-                                      button, divider, form_grid, label, set_role)
-from quant_hub.gui.theme import FIELD_L, PALETTE, SIDE_PANEL_WIDTH, SPACE_L, SPACE_M, SPACE_S
+from quant_hub.gui.components import (
+    Badge,
+    Card,
+    EmptyState,
+    Field,
+    PageStack,
+    SelectField,
+    button,
+    divider,
+    form_grid,
+    label,
+    set_role,
+)
+from quant_hub.gui.theme import (
+    FIELD_L,
+    PALETTE,
+    SIDE_PANEL_WIDTH,
+    SPACE_L,
+    SPACE_M,
+    SPACE_S,
+)
 from quant_hub.gui.timeline import Band, Edge, Node, TimelineChart, spread
 
 _STATUSES = ["To read", "Reading", "Read", "Replicated"]
@@ -219,10 +243,10 @@ class LiteratureTimeline(QWidget):
         self._section("The question", paper.question)
         self._section("What it changed", paper.changed)
         self._section("What it assumed", paper.assumed)
-        self._links("Builds on", [(LINK_KINDS[l.kind], l.to, self._canon.paper(l.to).label)
-                                  for l in paper.links])
-        self._links("Later work", [(INCOMING[l.kind], p.id, p.label)
-                                   for p, l in sorted(self._canon.cited_by(paper_id),
+        self._links("Builds on", [(LINK_KINDS[link.kind], link.to,
+                                   self._canon.paper(link.to).label) for link in paper.links])
+        self._links("Later work", [(INCOMING[link.kind], p.id, p.label)
+                                   for p, link in sorted(self._canon.cited_by(paper_id),
                                                       key=lambda pl: pl[0].when)])
         if paper.lives_in:
             self._section("In your code", "\n".join(path.removeprefix("quant_hub/")

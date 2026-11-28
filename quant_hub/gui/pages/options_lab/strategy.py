@@ -31,13 +31,13 @@ from PySide6.QtWidgets import QHBoxLayout, QSlider, QVBoxLayout, QWidget
 
 from quant_hub.gui.charts import Curve, CurveChart
 from quant_hub.gui.components import (
-    CardGrid,
     Card,
-    EmptyState,
-    PageStack,
+    CardGrid,
     DataTable,
+    EmptyState,
     Field,
     MetricTile,
+    PageStack,
     Select,
     SelectField,
     StatTable,

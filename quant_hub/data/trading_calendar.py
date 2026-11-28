@@ -53,7 +53,7 @@ day.
 from __future__ import annotations
 
 from datetime import date, timedelta
-from functools import lru_cache
+from functools import cache
 
 FIRST_YEAR = 1998
 SPECIAL_CLOSURES = frozenset({
@@ -71,7 +71,7 @@ def easter(year: int) -> date:
     g = (b - f + 1) // 3
     h = (19 * a + b - d - g + 15) % 30
     i, k = c // 4, c % 4
-    l = (32 + 2 * e + 2 * i - h - k) % 7
+    l = (32 + 2 * e + 2 * i - h - k) % 7  # noqa: E741 (the algorithm's own letters)
     m = (a + 11 * h + 22 * l) // 451
     n = h + l - 7 * m + 114
     return date(year, n // 31, n % 31 + 1)
@@ -97,7 +97,7 @@ def _observed(day: date) -> date:
     return day
 
 
-@lru_cache(maxsize=None)
+@cache
 def holidays(year: int) -> frozenset[date]:
     """NYSE full-day closures in ``year``: the rules, plus special closures."""
     if year < FIRST_YEAR:

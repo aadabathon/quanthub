@@ -35,8 +35,14 @@ from quant_hub.data.return_distribution import (
     analyze,
 )
 from quant_hub.data.types import PriceBasis, PriceHistory
-from quant_hub.tasks import TaskRunner
-from quant_hub.gui.charts import Curve, CurveChart, Histogram, Panel, Series, StackedTimeSeries
+from quant_hub.gui.charts import (
+    Curve,
+    CurveChart,
+    Histogram,
+    Panel,
+    Series,
+    StackedTimeSeries,
+)
 from quant_hub.gui.components import (
     Card,
     CardGrid,
@@ -53,12 +59,20 @@ from quant_hub.gui.components import (
     form_grid,
     metric_row,
 )
-from quant_hub.gui.pages.base import PRICE_BASES, ScrollPage, basis_field, history_note, saved_grid
+from quant_hub.gui.pages.base import (
+    PRICE_BASES,
+    ScrollPage,
+    basis_field,
+    history_note,
+    saved_grid,
+)
 from quant_hub.gui.theme import PALETTE, SIDE_PANEL_WIDTH, SPACE_L, SPACE_M
+
 # The series summary is the shape WorkstationService takes and returns; the
 # GUI may not import the bar store itself (tests/test_layering.py).
 from quant_hub.services.workstation import StoredSeriesSummary, WorkstationService
 from quant_hub.storage.state_store import ViewStateStore
+from quant_hub.tasks import TaskRunner
 
 _logger = logging.getLogger(__name__)
 

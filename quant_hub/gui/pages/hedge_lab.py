@@ -59,6 +59,7 @@ from quant_hub.gui.components import (
 from quant_hub.gui.pages.base import ScrollPage, saved_grid
 from quant_hub.gui.theme import PALETTE, SIDE_PANEL_WIDTH, SPACE_L, SPACE_M
 from quant_hub.models import hedge as H
+from quant_hub.services.book import BookSource
 from quant_hub.services.hedge import (
     SIZES,
     HedgeDataError,
@@ -69,7 +70,6 @@ from quant_hub.services.hedge import (
     TodayCost,
     v1_candidates,
 )
-from quant_hub.services.book import BookSource
 
 PROXY, MIX = "β proxy since 1926", "Today's mix"
 SURFACE, FLAT = "Today's surface", "Flat smile"

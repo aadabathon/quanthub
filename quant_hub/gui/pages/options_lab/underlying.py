@@ -30,7 +30,6 @@ from collections.abc import Callable
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QHBoxLayout
 
-from quant_hub.tasks import TaskRunner
 from quant_hub.gui.components import (
     Badge,
     Card,
@@ -47,6 +46,7 @@ from quant_hub.models.market_surface import MarketSurface
 from quant_hub.services.market_service import MarketService
 from quant_hub.services.option_chains import ChainService, load_market_surface
 from quant_hub.services.underlying import UnderlyingSnapshot, load_underlying
+from quant_hub.tasks import TaskRunner
 
 MANUAL = "manual"
 Reporter = Callable[[str, bool], None]

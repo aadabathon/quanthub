@@ -33,7 +33,6 @@ from PySide6.QtWidgets import (
 
 from quant_hub.config import AppConfig
 from quant_hub.data.types import PriceHistory
-from quant_hub.tasks import TaskRunner
 from quant_hub.gui.charts import FanChart, PriceVolumeChart, Sparkline
 from quant_hub.gui.components import (
     Card,
@@ -67,6 +66,7 @@ from quant_hub.services.workstation import (
     gbm_forecast,
 )
 from quant_hub.storage.state_store import ViewStateStore
+from quant_hub.tasks import TaskRunner
 
 _logger = logging.getLogger(__name__)
 

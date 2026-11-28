@@ -5,9 +5,8 @@ implied-volatility solver."""
 
 import math
 
-import pytest
-
 import numpy as np
+import pytest
 
 from quant_hub.models.black_scholes import (
     IV_MAX_SIGMA,

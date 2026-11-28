@@ -14,6 +14,7 @@ import pandas as pd
 import pytest
 
 from quant_hub.data.series import FetchedSeries, SeriesMeta
+from quant_hub.models import hedge as H
 from quant_hub.models.svi import SSVISurface
 from quant_hub.models.vol_surface import SyntheticChainSpec, synthetic_chain
 from quant_hub.services.external_data import ExternalDataService
@@ -27,7 +28,6 @@ from quant_hub.services.option_chains import ChainService
 from quant_hub.storage.bar_store import BarStore, InstrumentKey
 from quant_hub.storage.chain_store import ChainStore
 from quant_hub.storage.series_store import SeriesStore
-from quant_hub.models import hedge as H
 
 NOW = datetime(2026, 11, 4, 12, 0)
 TRUTH = SSVISurface(v0=0.25**2, v_inf=0.20**2, kappa=2.0, rho=-0.6, eta=1.2)
@@ -99,15 +99,17 @@ def test_option_candidates_run_on_vixs_window_and_the_rest_on_the_books(world):
 
 
 def test_todays_mix_is_portfolios_replay_and_h_zero_changes_nothing(world):
-    from book_fixtures import NOW as RNOW, bars, export
+    import tempfile
+    from pathlib import Path
+
+    from book_fixtures import NOW as RNOW
+    from book_fixtures import bars, export
     from quant_hub.data.sources import SyntheticSource
+    from quant_hub.importers.positions_csv import read_positions_csv
     from quant_hub.services.file_import import FileSource
     from quant_hub.services.market_service import MarketService
     from quant_hub.services.portfolio import PortfolioService
     from quant_hub.storage.position_store import PositionStore
-    from quant_hub.importers.positions_csv import read_positions_csv
-    import tempfile
-    from pathlib import Path
     service, *_ = world
     store_of_bars, _ = bars()
     portfolio = PortfolioService(MarketService(sources=[SyntheticSource(), FileSource(store_of_bars)]),

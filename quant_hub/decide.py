@@ -26,10 +26,10 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
 
-from datetime import datetime
-
+from quant_hub.console import safe_console
 from quant_hub.core import build_core
 from quant_hub.data.desk import Claim, parse_claim, parse_trades, resolves_on
 from quant_hub.services import desk_report
@@ -55,6 +55,7 @@ def _from_json(path: str) -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
+    safe_console()
     parser = argparse.ArgumentParser(prog="python -m quant_hub.decide",
                                      description="Record a decision on the desk.")
     parser.add_argument("--claim", action="append", default=[],

@@ -7,7 +7,10 @@ import pandas as pd
 import pytest
 
 from quant_hub.models.backtest import (
-    BacktestConfig, backtest, walk_forward_splits, walk_forward_targets,
+    BacktestConfig,
+    backtest,
+    walk_forward_splits,
+    walk_forward_targets,
 )
 
 

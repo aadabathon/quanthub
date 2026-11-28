@@ -176,7 +176,7 @@ class TestEstimation:
         assert np.all(np.abs(fit.model.means - model.means) <= 5.0 * model.sigmas / np.sqrt(days))
 
     def test_em_never_decreases_the_likelihood(self, sweeps):
-        for _model, sim, selection in sweeps.values():
+        for _model, _sim, selection in sweeps.values():
             for fit in selection.fits[1:]:          # K = 1 is closed form, no EM
                 assert np.diff(fit.log_likelihood_path).min() >= -1e-9
         # And from a poor start, where the climb is long.

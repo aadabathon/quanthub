@@ -4,14 +4,31 @@ from datetime import date, datetime
 import numpy as np
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 
+from quant_hub.data.splits import SplitGap
 from quant_hub.gui.charts import Heatmap, Panel, Series, StackedTimeSeries
 from quant_hub.gui.components import (
+    Card,
     CardGrid,
-    Card, DataTable, EmptyState, Field, MetricTile, PageHeader, PageStack,
-    SegmentedControl, SelectField, TextArea, button, form_grid, label,
+    DataTable,
+    EmptyState,
+    Field,
+    MetricTile,
+    PageHeader,
+    PageStack,
+    SegmentedControl,
+    SelectField,
+    TextArea,
+    button,
+    form_grid,
+    label,
 )
-from quant_hub.data.splits import SplitGap
-from quant_hub.gui.pages.base import PRICE_BASES, ScrollPage, basis_field, saved_grid, split_warning
+from quant_hub.gui.pages.base import (
+    PRICE_BASES,
+    ScrollPage,
+    basis_field,
+    saved_grid,
+    split_warning,
+)
 from quant_hub.gui.pages.research.history import SavedRuns
 from quant_hub.gui.pages.research.library import PaperLibrary
 from quant_hub.gui.pages.research.timeline import LiteratureTimeline
@@ -20,7 +37,7 @@ from quant_hub.models.backtest import BacktestConfig
 from quant_hub.models.backtest_stats import rolling_sharpe
 from quant_hub.models.research_worlds import WORLDS
 from quant_hub.models.strategies import STRATEGIES, StrategySpec
-from quant_hub.services.research import Experiment, WORLD_SOURCE
+from quant_hub.services.research import WORLD_SOURCE, Experiment
 
 _HALF = (SIDE_PANEL_WIDTH - 2 * SPACE_L - SPACE_M) // 2
 _FULL = 2 * _HALF + SPACE_M

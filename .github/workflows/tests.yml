@@ -1,4 +1,4 @@
-# The suite on every pull request and every push to main, as it runs
+# Lint, then the suite, on every pull request and every push to main, as it runs
 # locally: Windows, Python 3.12, no display (Qt's offscreen platform) and
 # no network. TWS's ibapi (the ibkr extra) is installed so its tests run;
 # without it they skip.
@@ -26,6 +26,8 @@ jobs:
           cache-dependency-path: pyproject.toml
       - name: Install
         run: python -m pip install -e ".[dev,ibkr]"
+      - name: Lint
+        run: python -m ruff check .
       - name: Test
         env:
           QT_QPA_PLATFORM: offscreen

@@ -4,6 +4,7 @@ import, and a setting Portfolio would refuse is named. Made-up holdings."""
 
 import pytest
 
+from book_fixtures import NOW, bars, export
 from quant_hub.data.sources import SyntheticSource
 from quant_hub.services.book import (
     MIN_LOOKBACK,
@@ -18,7 +19,6 @@ from quant_hub.services.market_service import MarketService
 from quant_hub.services.portfolio import PortfolioService
 from quant_hub.storage.position_store import PositionStore
 from quant_hub.storage.state_store import ViewStateStore
-from book_fixtures import NOW, bars, export
 
 SETTINGS = {"source": "file", "benchmark": "spy", "lookback": "365", "rate": "5.0"}
 

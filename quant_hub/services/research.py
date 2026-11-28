@@ -36,13 +36,13 @@ says what is wrong.
 """
 from __future__ import annotations
 
-from collections.abc import Mapping
-from dataclasses import asdict, dataclass, replace
-from datetime import datetime, timezone
 import hashlib
 import json
-from pathlib import Path
 import shutil
+from collections.abc import Mapping
+from dataclasses import asdict, dataclass, replace
+from datetime import UTC, datetime
+from pathlib import Path
 from uuid import uuid4
 
 import numpy as np
@@ -52,7 +52,7 @@ from quant_hub import __version__
 from quant_hub.data.literature import Canon, CanonError, CanonPaper
 from quant_hub.data.types import PriceBasis
 from quant_hub.models.backtest import BacktestConfig, BacktestResult, backtest
-from quant_hub.models.backtest_stats import performance_summary, deflated_sharpe
+from quant_hub.models.backtest_stats import deflated_sharpe, performance_summary
 from quant_hub.models.research_worlds import WORLDS, research_world
 from quant_hub.models.strategies import StrategySpec, strategy_targets
 from quant_hub.services.market_service import MarketService
@@ -195,7 +195,7 @@ class ResearchService:
                                       turnover=result.turnover)
         run_id = uuid4().hex
         payload = {"format": _FORMAT_VERSION, "id": run_id,
-                   "created_at": datetime.now(timezone.utc).isoformat(),
+                   "created_at": datetime.now(UTC).isoformat(),
                    "title": f"{experiment.strategy.name} · {', '.join(experiment.symbols)}",
                    "experiment": asdict(experiment), "provenance": provenance or {},
                    "software": {"version": __version__, "source_sha256": source_fingerprint(),
@@ -232,7 +232,7 @@ class ResearchService:
                                       turnover=result.turnover, cash=cash)
         run_id = uuid4().hex
         payload = {"format": _FORMAT_VERSION, "kind": "recorded", "id": run_id,
-                   "created_at": datetime.now(timezone.utc).isoformat(), "title": title.strip(),
+                   "created_at": datetime.now(UTC).isoformat(), "title": title.strip(),
                    "hypothesis": hypothesis, "costs": asdict(costs), "details": details or {},
                    "provenance": provenance or {},
                    "software": {"version": __version__, "source_sha256": source_fingerprint(),
@@ -270,7 +270,8 @@ class ResearchService:
             raise ValueError("effective independent trials must be between 1 and grid size")
         # Lookback is the risk window for model rules, and signal/risk window
         # for the two baselines. Keep training fixed, with one common OOS start.
-        specs = [replace(experiment.strategy, lookback=l, threshold=h) for h in thresholds for l in lookbacks]
+        specs = [replace(experiment.strategy, lookback=lb, threshold=h) for h in thresholds
+                 for lb in lookbacks]
         prices, provenance = self.prices(experiment)
         runs = [self.run(replace(experiment, strategy=s), prices=prices, provenance=provenance)
                 for s in specs]

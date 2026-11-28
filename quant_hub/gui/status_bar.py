@@ -11,7 +11,13 @@ from __future__ import annotations
 import html
 
 from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QPlainTextEdit, QPushButton, QVBoxLayout
+from PySide6.QtWidgets import (
+    QFrame,
+    QHBoxLayout,
+    QPlainTextEdit,
+    QPushButton,
+    QVBoxLayout,
+)
 
 from quant_hub.broker.base import ConnectionEvent, ConnectionState
 from quant_hub.events import EventBus, LogEvent
