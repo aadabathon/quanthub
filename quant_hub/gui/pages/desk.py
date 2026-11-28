@@ -91,8 +91,8 @@ _NOTE = SIDE_PANEL_WIDTH - 2 * SPACE_L
 _ROW = 30
 _STATE_KEY = "desk.view"
 _EMPTY = ("No snapshot yet. Take one here, or let the daily run take it "
-          "(python -m quant_hub.snapshot, after the close).")
-_TAKE = ("The daily run takes one after the close. Taking one now stores today's book if "
+          "(python -m quant_hub.snapshot, once a day).")
+_TAKE = ("The daily run takes one each day. Taking one now stores today's book if "
          "it's new: on the same prices, nothing new is stored.")
 _ALL = "All snapshots"
 _TARGETS = ("book.return", "book.fall", "book.vol", f"{MARKET}.return", f"{MARKET}.fall",

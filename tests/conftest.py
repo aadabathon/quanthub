@@ -8,6 +8,19 @@ or clear the variable themselves.
 
 import os
 
+import pytest
+
 from quant_hub.extensions import DISABLE_ENV
 
 os.environ[DISABLE_ENV] = "1"
+
+
+@pytest.fixture
+def parts(tmp_path):
+    """The desk's parts over a made-up book (``tests/desk_fixtures.py``):
+    the activity service, an empty desk store, and the folder."""
+    from desk_fixtures import build_parts
+    activity, store, closers = build_parts(tmp_path)
+    yield activity, store, tmp_path
+    for s in closers:
+        s.close()

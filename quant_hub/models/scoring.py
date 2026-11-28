@@ -156,6 +156,34 @@ models'. Only a claim the baseline also made can be compared.
 The daily run resolves what's due, then takes the new snapshot. The Desk
 page shows the record (D4b).
 
+8. Head to head (A5)
+--------------------
+Section 3 pairs a voice with the baseline. The scorecard pairs any author
+A with any other B the same way. A is you or an agent (a decision's
+author), and B is a voice or the other of you. They're paired on every
+snapshot where both made the same claim (target, horizon, form) and it
+resolved:
+
+.. math::  \text{skill}_{A|B} = 1 - \frac{\sum_s S_{A,s}}{\sum_s S_{B,s}},
+           \qquad d_s = S_{A,s} - S_{B,s}
+
+- **What the numbers mean.** Positive skill means A lost fewer points
+  than B on the claims they share. **Wins** counts the snapshots where A's
+  score was lower (ties count for neither).
+- **The test** is section 3's: a plain t on the non-overlapping
+  differences, nothing shown below ``MIN_WINDOWS``. Each (target,
+  horizon, form) is tested on its own, overall and within each regime.
+- **Section 3 is the case B = baseline.**
+- **Several claims on one snapshot.** A decision's author can claim on a
+  snapshot more than once, for instance two decisions the same day. Then
+  that author's scores on the snapshot are averaged first, so each
+  snapshot counts once.
+- **Different samples, different yardsticks.** You and an agent claim on
+  fewer snapshots than the voices. Comparing your skill against the
+  baseline with a voice's would compare different samples. Head to head
+  uses only the snapshots both made, which is why it's the fair
+  comparison between two authors.
+
 **Review:** three papers join the canon, each crossref-checked:
 - Diebold and Mariano (1995), testing the loss differential;
 - Harvey, Leybourne and Newbold (1997), whose correction the simulation
@@ -430,6 +458,55 @@ def record(scored: Sequence[Scored], regime: str | None = None) -> list[Series]:
                           float(theirs.mean()), skill,
                           skill_test(mine - theirs, as_ofs, horizon),
                           versions))
+    return out
+
+
+@dataclass(frozen=True)
+class Duel:
+    """Section 8 for one (author, against, target, horizon, form)."""
+
+    author: str
+    against: str
+    target: str
+    horizon: int
+    form: str
+    regime: str | None           # None: every snapshot
+    paired: int                  # snapshots where both made the claim
+    score: float                 # the author's mean on them
+    against_score: float         # the other's mean on them
+    skill: float | None
+    wins: int                    # snapshots where the author's score was lower
+    test: SkillTest
+
+
+def _by_snapshot(rows: Sequence[Scored], author: str) -> dict[tuple, tuple[float, date]]:
+    """``author``'s score per (snapshot, target, horizon, form), averaged
+    when it claimed more than once there (section 8)."""
+    acc: dict[tuple, list] = defaultdict(list)
+    for s in rows:
+        if s.voice == author:
+            acc[(s.snapshot_id, s.claim.target, s.claim.horizon, s.form)].append(s)
+    return {k: (float(np.mean([s.score for s in v])), v[0].as_of) for k, v in acc.items()}
+
+
+def head_to_head(scored: Sequence[Scored], author: str, against: str,
+                 regime: str | None = None) -> list[Duel]:
+    """``author`` against ``against`` on every claim both made (section 8),
+    overall or within one regime label."""
+    rows = [s for s in scored if regime is None or s.regime == regime]
+    mine, theirs = _by_snapshot(rows, author), _by_snapshot(rows, against)
+    series: dict[tuple, list] = defaultdict(list)
+    for key in sorted(set(mine) & set(theirs), key=lambda k: (mine[k][1], k[0])):
+        series[key[1:]].append((mine[key][0], theirs[key][0], mine[key][1]))
+    out = []
+    for (target, horizon, form), pairs in sorted(series.items()):
+        a = np.array([p[0] for p in pairs])
+        b = np.array([p[1] for p in pairs])
+        total = float(b.sum())
+        out.append(Duel(author, against, target, horizon, form, regime, len(pairs),
+                        float(a.mean()), float(b.mean()),
+                        1.0 - float(a.sum()) / total if total > 0 else None,
+                        int((a < b).sum()), skill_test(a - b, [p[2] for p in pairs], horizon)))
     return out
 
 

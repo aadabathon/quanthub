@@ -463,6 +463,36 @@ def record(r, now: datetime, scored: bool = False) -> dict:
     return out
 
 
+def _duel(d) -> dict:
+    return {"author": d.author, "against": d.against, "target": d.target,
+            "horizon": d.horizon, "form": d.form, "regime": d.regime, "paired": d.paired,
+            "score": d.score, "against_score": d.against_score, "skill": d.skill,
+            "wins": d.wins, "test": _test(d.test)}
+
+
+def scorecard(sc, now: datetime) -> dict:
+    """``DeskService.scorecard``'s ``DeskScorecard`` as data (A5): every
+    author against the baseline (the record), and each decision author
+    head to head with every other on the claims they share
+    (``models/scoring.py`` section 8)."""
+    r = sc.record
+    return document(
+        "scorecard", now, resolved=r.resolved, unresolvable=r.unresolvable,
+        next_due=_day(r.next_due),
+        regimes={"calm_below": r.cutoffs[0], "stormy_from": r.cutoffs[1]} if r.cutoffs else None,
+        judges=list(sc.judges), against_baseline=[_series(s) for s in r.series],
+        head_to_head=[_duel(d) for d in sc.duels],
+        by_regime={k: {"against_baseline": [_series(s) for s in r.by_regime.get(k, ())],
+                       "head_to_head": [_duel(d) for d in v]}
+                   for k, v in sc.by_regime.items()},
+        calibration=[{"author": c.voice, "target": c.target, "horizon": c.horizon,
+                      "form": c.form, "n": c.n, "windows": c.windows,
+                      "coverage": (dict(zip((str(x) for x in LEVELS), c.coverage))
+                                   if c.coverage is not None else None),
+                      "claimed": c.claimed, "happened": c.happened}
+                     for c in r.calibration if c.voice in sc.judges])
+
+
 def decisions(rows: Sequence[tuple[Decision, SnapshotSummary | None]], now: datetime) -> dict:
     """Recorded decisions, newest first, each with the snapshot it cites."""
     from quant_hub.data.desk import resolves_on
