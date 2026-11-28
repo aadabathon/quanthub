@@ -588,7 +588,8 @@ Key properties (decisions D17–D21):
   which would otherwise size pages to their *preferred* height). It never
   scrolls sideways, so it asks for its content's minimum width instead,
   and the window's minimum width is the sidebar plus the widest page built.
-  Only the window's minimum height is fixed. Tabbed content uses
+  Only the window's minimum height is fixed, so the sidebar's page list
+  scrolls when the window is shorter than it. Tabbed content uses
   `PageStack`, which sizes to the visible page, not the tallest.
 
 ## Quant-module conventions (follow the GBM exemplar)

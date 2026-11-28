@@ -723,6 +723,26 @@ def test_startup_and_first_visits_do_not_show_temporary_windows(tmp_path, monkey
             _close(app, window)
 
 
+def test_a_short_window_scrolls_the_sidebar_instead_of_squeezing_it(qt_app):
+    # The window's minimum height is fixed, not the sum of the sidebar's
+    # buttons. In a window that short a plain layout squeezed every button
+    # until its label was cut in half; the list scrolls instead.
+    app, window = qt_app
+    window.resize(1280, window.minimumHeight())
+    _settle(app)
+    sidebar = window._sidebar
+    assert all(button.height() >= button.sizeHint().height()
+               for button in sidebar._buttons.values())
+    assert sidebar._scroll.verticalScrollBar().maximum() > 0      # the list is longer
+    # A page opened from Ctrl+K scrolls its button into sight.
+    last = list(sidebar._buttons)[-1]
+    window.show_page(last)
+    _settle(app)
+    button, viewport = sidebar._buttons[last], sidebar._scroll.viewport()
+    top = button.mapTo(viewport, button.rect().topLeft()).y()
+    assert 0 <= top and top + button.height() <= viewport.height()
+
+
 def test_command_search_navigates(qt_app):
     app, window = qt_app
     dash = window.show_page("Dashboard")
