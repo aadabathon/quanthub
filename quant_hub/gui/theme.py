@@ -187,6 +187,8 @@ QFrame[role="vdivider"] {{ background: {p.border_strong}; border: none; max-widt
 
 /* ---- shell ------------------------------------------------------------- */
 QFrame#sidebar {{ background: {p.sidebar}; border-right: 1px solid {p.border}; }}
+QScrollArea#navScroll, QScrollArea#navScroll > QWidget#qt_scrollarea_viewport,
+QWidget#navList {{ background: transparent; border: none; }}
 QFrame#topBar {{ background: {p.page}; border-bottom: 1px solid {p.border}; }}
 QFrame#statusBar {{ background: {p.sidebar}; border-top: 1px solid {p.border}; }}
 QFrame#logDrawer {{ background: {p.sidebar}; border-top: 1px solid {p.border}; }}
